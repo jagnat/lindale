@@ -1,0 +1,36 @@
+{
+	"folders":
+	[
+		{
+			"path": ".",
+		}
+	],
+	"build_systems":
+	[
+		{
+			"name": "Odin Run Debug",
+			"windows": {
+				"shell_cmd": "odin run $project_path/src -debug -out:$project_path/Lindalë.exe",
+			}
+		},
+		{
+			"name": "Odin Run File",
+			"cmd": ["odin", "run", "$file", "-file"],
+		},
+		{
+			"name": "Odin Run Release",
+			"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindalë.exe"
+		},
+	],
+	"settings":
+	{
+		"LSP":
+		{
+			"auto_complete": false,
+			"odin":
+			{
+				"enabled": true
+			}
+		}
+	},
+}
