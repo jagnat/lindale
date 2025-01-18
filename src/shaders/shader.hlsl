@@ -1,19 +1,21 @@
-struct VSInput
-{
+
+cbuffer UniformBuffer : register(b0, space1) {
+	float4 UColor : COLOR;
+}
+
+struct VSInput {
 	[[vk::location(0)]]float3 Position : POSITION;
 	[[vk::location(1)]]float4 Color : COLOR;
 };
 
-struct VSOutput
-{
+struct VSOutput {
 	float4 Position : SV_POSITION;
 	float4 Color : COLOR;
 };
 
-VSOutput VSMain(VSInput input)
-{
+VSOutput VSMain(VSInput input) {
 	VSOutput output;
-	output.Color = input.Color;
+	output.Color = UColor;
 	output.Position = float4(input.Position, 1.f);
 	return output;
 }

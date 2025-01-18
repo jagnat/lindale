@@ -6,12 +6,21 @@ import "core:mem/virtual"
 import "core:slice"
 import sdl "thirdparty/sdl3"
 
+Color :: struct {
+	r, g, b, a: u8
+}
+
+Rect :: struct {
+	x, y, width, height: f32,
+	cornerColors: [4]Color,
+	cornerRadii: [4]f32,
+}
+
 RenderContext :: struct {
 	gpu: sdl.GPUDevice,
 	pipeline: sdl.GPUGraphicsPipeline,
 	window: sdl.Window,
 	buffer: VertexBuffer,
-	// arena: 
 }
 
 BUFFER_SIZE :: 8192
@@ -30,6 +39,12 @@ PosColorVertex :: struct {
 	r, g, b, a: u8,
 }
 
+UIRectVertex :: struct {
+	pos1: [2]f32,
+	pos2: [2]f32,
+
+}
+
 render_init :: proc(window: sdl.Window) {
 	ctx.window = window
 	ctx.gpu = sdl.CreateGPUDevice(.SPIRV, ODIN_DEBUG, nil)
@@ -46,6 +61,7 @@ render_init :: proc(window: sdl.Window) {
 	vertexCreate.entrypoint = "VSMain"
 	vertexCreate.format = .SPIRV
 	vertexCreate.stage = .GPU_SHADERSTAGE_VERTEX
+	vertexCreate.num_uniform_buffers = 1
 	vertexShader := sdl.CreateGPUShader(ctx.gpu, &vertexCreate)
 	assert(vertexShader != nil)
 	defer sdl.ReleaseGPUShader(ctx.gpu, vertexShader)
@@ -99,13 +115,13 @@ render_init :: proc(window: sdl.Window) {
 	ctx.buffer = render_create_vb(BUFFER_SIZE)
 
 	transferData: [6]PosColorVertex
-	transferData[3] = PosColorVertex{-1, -1, 0, 255,   0,   0, 255}
-	transferData[4] = PosColorVertex{ 1, -1, 0,   0, 255,   0, 255}
-	transferData[5] = PosColorVertex{ 1,  1, 0,   0,   0, 255, 255}
+	transferData[3] = PosColorVertex{-0.5, -0.5, 0, 255,   0,   0, 40}
+	transferData[4] = PosColorVertex{ 0.5, -0.5, 0,   0, 255,   0, 40}
+	transferData[5] = PosColorVertex{ 0.5,  0.5, 0,   0,   0, 255, 40}
 
-	transferData[0] = PosColorVertex{-1,  1, 0, 255,   0,   0, 255}
-	transferData[1] = PosColorVertex{ 1,  1, 0,   0, 255,   0, 255}
-	transferData[2] = PosColorVertex{-1, -1, 0,   0,   0, 255, 255}
+	transferData[0] = PosColorVertex{-0.5,  0.5, 0, 255,   0,   0, 255}
+	transferData[1] = PosColorVertex{ 0.5,  0.5, 0,   0, 255,   0, 255}
+	transferData[2] = PosColorVertex{-0.5, -0.5, 0,   0,   0, 255, 255}
 
 	render_upload_buffer_data(&ctx.buffer, transferData[:])
 }
@@ -146,6 +162,10 @@ render_upload_buffer_data :: proc(buffer: ^VertexBuffer, ary: []$T) {
 	buffer.vertexBufferSize = u32(len(data))
 }
 
+render_add_rectangle :: proc() {
+
+}
+
 render_render :: proc() {
 	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(cmdBuf != nil)
@@ -166,6 +186,9 @@ render_render :: proc() {
 	sdl.BindGPUGraphicsPipeline(renderPass, ctx.pipeline)
 	bufferBinding := sdl.GPUBufferBinding{buffer = ctx.buffer.vertexBuffer, offset = 0}
 	sdl.BindGPUVertexBuffers(renderPass, 0, &bufferBinding, 1)
+
+	col: [4]f32 = {0.5, 1, 0.5, 1}
+	sdl.PushGPUVertexUniformData(cmdBuf, 0, raw_data(col[:]), 4 * size_of(f32))
 
 	sdl.DrawGPUPrimitives(renderPass, 6, 1, 0, 0)
 	
