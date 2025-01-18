@@ -80,9 +80,20 @@ render_init :: proc(window: sdl.Window) {
 	defer sdl.ReleaseGPUShader(ctx.gpu, pixelShader)
 	fmt.println("Created pixel shader")
 
+	blendState: sdl.GPUColorTargetBlendState
+	blendState.enable_blend = true
+	blendState.src_color_blendfactor = .GPU_BLENDFACTOR_SRC_ALPHA
+	blendState.dst_color_blendfactor = .GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA
+	blendState.color_blend_op = .GPU_BLENDOP_ADD
+	blendState.src_alpha_blendfactor = .GPU_BLENDFACTOR_ONE
+	blendState.dst_alpha_blendfactor = .GPU_BLENDFACTOR_ZERO
+	blendState.alpha_blend_op = .GPU_BLENDOP_ADD
+
 	colorFmt := sdl.GetGPUSwapchainTextureFormat(ctx.gpu, ctx.window)
 	desc : sdl.GPUColorTargetDescription
 	desc.format = colorFmt
+	desc.blend_state = blendState
+
 	fmt.println("Created swapchain")
 
 	pipelineCreate: sdl.GPUGraphicsPipelineCreateInfo
@@ -187,7 +198,7 @@ render_render :: proc() {
 	bufferBinding := sdl.GPUBufferBinding{buffer = ctx.buffer.vertexBuffer, offset = 0}
 	sdl.BindGPUVertexBuffers(renderPass, 0, &bufferBinding, 1)
 
-	col: [4]f32 = {0.5, 1, 0.5, 1}
+	col: [4]f32 = {0.5, 1, 0.5, 0.01}
 	sdl.PushGPUVertexUniformData(cmdBuf, 0, raw_data(col[:]), 4 * size_of(f32))
 
 	sdl.DrawGPUPrimitives(renderPass, 6, 1, 0, 0)
