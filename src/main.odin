@@ -43,10 +43,14 @@ init :: proc() {
 	result := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO)
 	assert(result == true)
 
-	ctx.window = sdl.CreateWindow("Lindalë", 1600, 1000, sdl.WINDOW_HIDDEN)
+	ctx.window = sdl.CreateWindow("Lindalë", 1600, 1000, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
 	assert(ctx.window != nil)
 
 	render_init(ctx.window)
+
+	fmt.println(sdl.GetBasePath())
+	fmt.println(sdl.GetPrefPath("jagi", "lindale"))
+	fmt.println(sdl.GetUserFolder(.FOLDER_DOCUMENTS))
 
 	sdl.ShowWindow(ctx.window)
 }

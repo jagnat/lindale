@@ -9,7 +9,8 @@
 	[
 		{
 			"name": "Odin Run Debug",
-			"windows": {
+			"windows":
+			{
 				"shell_cmd": "odin run $project_path/src -debug -out:$project_path/Lindalë.exe",
 			}
 		},
@@ -19,8 +20,16 @@
 		},
 		{
 			"name": "Odin Run Release",
-			"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindalë.exe"
+			"windows":
+			{
+				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindalë.exe"
+			}
 		},
+		{
+			"name": "Compile Shaders",
+			"working_dir": "${project_path}/src/shaders",
+			"shell_cmd": "compile.bat"
+		}
 	],
 	"settings":
 	{
