@@ -1,5 +1,6 @@
 
 cbuffer UniformBuffer : register(b0, space1) {
+	float4x4 projMat;
 	float4 UColor : COLOR;
 }
 
@@ -16,7 +17,7 @@ struct VSOutput {
 VSOutput VSMain(VSInput input) {
 	VSOutput output;
 	output.Color = UColor;
-	output.Position = float4(input.Position, 1.f);
+	output.Position = mul(projMat, float4(input.Position, 1.f));
 	return output;
 }
 

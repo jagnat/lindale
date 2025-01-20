@@ -3312,16 +3312,16 @@ foreign lib {
 	SetGPUBlendConstants :: proc(render_pass: [^]GPURenderPass, blend_constants: FColor) ---
 	SetGPUStencilReference :: proc(render_pass: [^]GPURenderPass, reference: u8) ---
 	BindGPUVertexBuffers :: proc(render_pass: GPURenderPass, first_slot: u32, bindings: [^]GPUBufferBinding, num_bindings: u32) ---
-	BindGPUIndexBuffer :: proc(render_pass: [^]GPURenderPass, binding: ^GPUBufferBinding, index_element_size: GPUIndexElementSize) ---
-	BindGPUVertexSamplers :: proc(render_pass: [^]GPURenderPass, first_slot: u32, texture_sampler_bindings: [^]GPUTextureSamplerBinding, num_bindings: u32) ---
-	BindGPUVertexStorageTextures :: proc(render_pass: [^]GPURenderPass, first_slot: u32, storage_textures: ^[^]GPUTexture, num_bindings: u32) ---
-	BindGPUVertexStorageBuffers :: proc(render_pass: [^]GPURenderPass, first_slot: u32, storage_buffers: ^[^]GPUBuffer, num_bindings: u32) ---
-	BindGPUFragmentSamplers :: proc(render_pass: [^]GPURenderPass, first_slot: u32, texture_sampler_bindings: [^]GPUTextureSamplerBinding, num_bindings: u32) ---
-	BindGPUFragmentStorageTextures :: proc(render_pass: [^]GPURenderPass, first_slot: u32, storage_textures: ^[^]GPUTexture, num_bindings: u32) ---
-	BindGPUFragmentStorageBuffers :: proc(render_pass: [^]GPURenderPass, first_slot: u32, storage_buffers: ^[^]GPUBuffer, num_bindings: u32) ---
-	DrawGPUIndexedPrimitives :: proc(render_pass: [^]GPURenderPass, num_indices: u32, num_instances: u32, first_index: u32, vertex_offset: i32, first_instance: u32) ---
+	BindGPUIndexBuffer :: proc(render_pass: GPURenderPass, binding: ^GPUBufferBinding, index_element_size: GPUIndexElementSize) ---
+	BindGPUVertexSamplers :: proc(render_pass: GPURenderPass, first_slot: u32, texture_sampler_bindings: [^]GPUTextureSamplerBinding, num_bindings: u32) ---
+	BindGPUVertexStorageTextures :: proc(render_pass: GPURenderPass, first_slot: u32, storage_textures: ^[^]GPUTexture, num_bindings: u32) ---
+	BindGPUVertexStorageBuffers :: proc(render_pass: GPURenderPass, first_slot: u32, storage_buffers: [^]GPUBuffer, num_bindings: u32) ---
+	BindGPUFragmentSamplers :: proc(render_pass: GPURenderPass, first_slot: u32, texture_sampler_bindings: [^]GPUTextureSamplerBinding, num_bindings: u32) ---
+	BindGPUFragmentStorageTextures :: proc(render_pass: GPURenderPass, first_slot: u32, storage_textures: ^[^]GPUTexture, num_bindings: u32) ---
+	BindGPUFragmentStorageBuffers :: proc(render_pass: GPURenderPass, first_slot: u32, storage_buffers: [^]GPUBuffer, num_bindings: u32) ---
+	DrawGPUIndexedPrimitives :: proc(render_pass: GPURenderPass, num_indices: u32, num_instances: u32, first_index: u32, vertex_offset: i32, first_instance: u32) ---
 	DrawGPUPrimitives :: proc(render_pass: GPURenderPass, num_vertices: u32, num_instances: u32, first_vertex: u32, first_instance: u32) ---
-	DrawGPUPrimitivesIndirect :: proc(render_pass: [^]GPURenderPass, buffer: GPUBuffer, offset: u32, draw_count: u32) ---
+	DrawGPUPrimitivesIndirect :: proc(render_pass: GPURenderPass, buffer: GPUBuffer, offset: u32, draw_count: u32) ---
 	DrawGPUIndexedPrimitivesIndirect :: proc(render_pass: [^]GPURenderPass, buffer: GPUBuffer, offset: u32, draw_count: u32) ---
 	EndGPURenderPass :: proc(render_pass: GPURenderPass) ---
 	BeginGPUComputePass :: proc(command_buffer: GPUCommandBuffer, storage_texture_bindings: [^]GPUStorageTextureReadWriteBinding, num_storage_texture_bindings: u32, storage_buffer_bindings: [^]GPUStorageBufferReadWriteBinding, num_storage_buffer_bindings: u32) -> GPUComputePass ---

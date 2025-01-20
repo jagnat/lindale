@@ -32,6 +32,8 @@ main :: proc() {
 				if event.key.scancode == .SCANCODE_ESCAPE {
 					sdl.Quit()
 				}
+			case .EVENT_WINDOW_RESIZED:
+				render_resize(event.window.data1, event.window.data2)
 			}
 		}
 
@@ -47,6 +49,8 @@ init :: proc() {
 	assert(ctx.window != nil)
 
 	render_init(ctx.window)
+
+	render_resize(1600, 1000)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))

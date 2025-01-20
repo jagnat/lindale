@@ -4,15 +4,22 @@ import "core:fmt"
 import "core:mem"
 import "core:mem/virtual"
 import "core:slice"
+import "core:math/linalg"
 import sdl "thirdparty/sdl3"
 
-Color :: struct {
+ColorU8 :: struct {
 	r, g, b, a: u8
 }
 
+ColorF32 :: struct {
+	r, g, b, a: f32
+}
+
+clearColor: ColorF32
+
 Rect :: struct {
 	x, y, width, height: f32,
-	cornerColors: [4]Color,
+	cornerColors: [4]ColorU8,
 	cornerRadii: [4]f32,
 }
 
@@ -20,7 +27,8 @@ RenderContext :: struct {
 	gpu: sdl.GPUDevice,
 	pipeline: sdl.GPUGraphicsPipeline,
 	window: sdl.Window,
-	buffer: VertexBuffer,
+	vb: GPUBuffer, // Vertex buffer
+	width, height: f32,
 }
 
 BUFFER_SIZE :: 8192
@@ -28,10 +36,16 @@ BUFFER_SIZE :: 8192
 @(private="file")
 ctx: RenderContext
 
-VertexBuffer :: struct {
-	vertexBuffer: sdl.GPUBuffer,
-	vertexBufferCapacity: u32,
-	vertexBufferSize: u32,
+UniformBufferContents :: struct {
+	projMatrix: linalg.Matrix4x4f32,
+	shapeColor: ColorF32,
+}
+
+GPUBuffer :: struct {
+	handle: sdl.GPUBuffer,
+	capacity: u32,
+	size: u32,
+	usage: sdl.GPUBufferUsageFlags,
 }
 
 PosColorVertex :: struct {
@@ -42,7 +56,6 @@ PosColorVertex :: struct {
 UIRectVertex :: struct {
 	pos1: [2]f32,
 	pos2: [2]f32,
-
 }
 
 render_init :: proc(window: sdl.Window) {
@@ -52,6 +65,8 @@ render_init :: proc(window: sdl.Window) {
 
 	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
 	assert(result == true)
+
+	clearColor = {0.1333,0.1333,0.1333,1}
 
 	vShaderBits := #load("shaders/vs.spv")
 
@@ -123,32 +138,47 @@ render_init :: proc(window: sdl.Window) {
 	assert(ctx.pipeline != nil)
 	fmt.println("Created GPU pipeline")
 
-	ctx.buffer = render_create_vb(BUFFER_SIZE)
+	ctx.vb = render_create_gpu_buffer(BUFFER_SIZE, .VERTEX)
 
 	transferData: [6]PosColorVertex
-	transferData[3] = PosColorVertex{-0.5, -0.5, 0, 255,   0,   0, 40}
-	transferData[4] = PosColorVertex{ 0.5, -0.5, 0,   0, 255,   0, 40}
-	transferData[5] = PosColorVertex{ 0.5,  0.5, 0,   0,   0, 255, 40}
+	// transferData[3] = PosColorVertex{-0.5, -0.5, 0, 255,   0,   0, 40}
+	// transferData[4] = PosColorVertex{ 0.5, -0.5, 0,   0, 255,   0, 40}
+	// transferData[5] = PosColorVertex{ 0.5,  0.5, 0,   0,   0, 255, 40}
 
-	transferData[0] = PosColorVertex{-0.5,  0.5, 0, 255,   0,   0, 255}
-	transferData[1] = PosColorVertex{ 0.5,  0.5, 0,   0, 255,   0, 255}
-	transferData[2] = PosColorVertex{-0.5, -0.5, 0,   0,   0, 255, 255}
+	// transferData[0] = PosColorVertex{-0.5,  0.5, 0, 255,   0,   0, 255}
+	// transferData[1] = PosColorVertex{ 0.5,  0.5, 0,   0, 255,   0, 255}
+	// transferData[2] = PosColorVertex{-0.5, -0.5, 0,   0,   0, 255, 255}
 
-	render_upload_buffer_data(&ctx.buffer, transferData[:])
+	v0 := PosColorVertex{10, 10, 0, 255, 0, 0, 255}
+	v0_0 := PosColorVertex{10, 210, 0, 255, 0, 0, 255}
+	v0_1 := PosColorVertex{210, 10, 0, 255, 0, 0, 255}
+	v1 := PosColorVertex{210, 210, 0, 255, 0, 0, 255}
+	transferData[0] = v0
+	transferData[1] = v0_1
+	transferData[2] = v0_0
+	transferData[3] = v1
+	transferData[4] = v0_0
+	transferData[5] = v0_1
+
+	render_upload_buffer_data(&ctx.vb, transferData[:])
+
+	// Ortho matrix, hard coded for now
+	orthoMatrix := linalg.matrix_ortho3d_f32(0, 500, 500, 0, -1, 1)
+	ary := linalg.matrix_flatten(orthoMatrix)
 }
 
-render_create_vb :: proc(sizeInBytes: u32) -> VertexBuffer {
+render_create_gpu_buffer :: proc(sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GPUBuffer {
 	bufferCreate: sdl.GPUBufferCreateInfo
 	bufferCreate.size = sizeInBytes
-	bufferCreate.usage = .VERTEX
-	vertexBuffer := sdl.CreateGPUBuffer(ctx.gpu, &bufferCreate)
-	assert(vertexBuffer != nil)
-	return VertexBuffer{vertexBuffer, sizeInBytes, 0}
+	bufferCreate.usage = usage
+	buffer := sdl.CreateGPUBuffer(ctx.gpu, &bufferCreate)
+	assert(buffer != nil)
+	return GPUBuffer{buffer, sizeInBytes, 0, usage}
 }
 
-render_upload_buffer_data :: proc(buffer: ^VertexBuffer, ary: []$T) {
+render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	data := slice.to_bytes(ary)
-	assert(u64(len(data)) < u64(buffer.vertexBufferCapacity))
+	assert(u64(len(data)) < u64(buffer.capacity))
 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
 	transferBufferCreate.usage = .GPU_TRANSFERBUFFERUSAGE_UPLOAD
 	transferBufferCreate.size = u32(len(data))
@@ -164,13 +194,13 @@ render_upload_buffer_data :: proc(buffer: ^VertexBuffer, ary: []$T) {
 	copyPass := sdl.BeginGPUCopyPass(cmdBuf)
 
 	tbl := sdl.GPUTransferBufferLocation{transfer_buffer = transferBuffer, offset = 0}
-	gbr := sdl.GPUBufferRegion{buffer = buffer.vertexBuffer, offset = 0, size = u32(len(data))}
+	gbr := sdl.GPUBufferRegion{buffer = buffer.handle, offset = 0, size = u32(len(data))}
 	sdl.UploadToGPUBuffer(copyPass, &tbl, &gbr, false)
 
 	sdl.EndGPUCopyPass(copyPass)
 	sdl.SubmitGPUCommandBuffer(cmdBuf)
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
-	buffer.vertexBufferSize = u32(len(data))
+	buffer.size = u32(len(data))
 }
 
 render_add_rectangle :: proc() {
@@ -189,21 +219,30 @@ render_render :: proc() {
 
 	targetInfo: sdl.GPUColorTargetInfo
 	targetInfo.texture = swapchainTexture
-	targetInfo.clear_color = sdl.FColor{0.157, 0.161, 0.137, 1}
+	targetInfo.clear_color = sdl.FColor(clearColor)
 	targetInfo.load_op = .GPU_LOADOP_CLEAR
 	targetInfo.store_op = .GPU_STOREOP_STORE
 
 	renderPass := sdl.BeginGPURenderPass(cmdBuf, &targetInfo, 1, nil)
 	sdl.BindGPUGraphicsPipeline(renderPass, ctx.pipeline)
-	bufferBinding := sdl.GPUBufferBinding{buffer = ctx.buffer.vertexBuffer, offset = 0}
+	bufferBinding := sdl.GPUBufferBinding{buffer = ctx.vb.handle, offset = 0}
 	sdl.BindGPUVertexBuffers(renderPass, 0, &bufferBinding, 1)
 
-	col: [4]f32 = {0.5, 1, 0.5, 0.01}
-	sdl.PushGPUVertexUniformData(cmdBuf, 0, raw_data(col[:]), 4 * size_of(f32))
+	unif: UniformBufferContents
+	unif.shapeColor = {0.5, 1, 0.5, 1}
+	unif.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
+
+	sdl.PushGPUVertexUniformData(cmdBuf, 0, rawptr(&unif), size_of(UniformBufferContents))
 
 	sdl.DrawGPUPrimitives(renderPass, 6, 1, 0, 0)
 	
 	sdl.EndGPURenderPass(renderPass)
 
 	sdl.SubmitGPUCommandBuffer(cmdBuf)
+}
+
+render_resize :: proc(w, h: i32) {
+	ctx.width = f32(w)
+	ctx.height = f32(h)
+	fmt.println("Render resize:", ctx.width, ctx.height)
 }
