@@ -8,7 +8,10 @@ import tt "vendor:stb/truetype"
 ProgramContext :: struct {
 	window: sdl.Window,
 	audioDevice: sdl.AudioDeviceID,
+	drawGroup: RectDrawGroup,
 }
+
+WINDOW_WIDTH, WINDOW_HEIGHT :i32= 1600, 1000
 
 @(private="file")
 ctx: ProgramContext
@@ -45,12 +48,18 @@ init :: proc() {
 	result := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO)
 	assert(result == true)
 
-	ctx.window = sdl.CreateWindow("Lindalë", 1600, 1000, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
+	ctx.window = sdl.CreateWindow("Lindalë", WINDOW_WIDTH, WINDOW_HEIGHT, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
 	assert(ctx.window != nil)
 
 	render_init(ctx.window)
 
-	render_resize(1600, 1000)
+	render_resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+
+	draw_init()
+
+	draw_init_rect_group(&ctx.drawGroup)
+
+	
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))

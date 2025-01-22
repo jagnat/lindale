@@ -39,10 +39,10 @@ PosColorVertex :: struct {
 	r, g, b, a: u8,
 }
 
-UIRectInstance :: struct {
+RectInstance :: struct {
 	pos1: [2]f32, // Top left
 	pos2: [2]f32, // Bottom right
-	color: [4]ColorU8, // top left, bottom left, top right, bottom right
+	colors: [4]ColorU8, // top left, bottom left, top right, bottom right
 	cornerRad: [4]f32, // Same order as above
 }
 
@@ -101,20 +101,20 @@ render_init :: proc(window: sdl.Window) {
 	transferData[5] = v0_1
 
 	red := ColorU8{100, 0, 0, 255}
-	instanceData: [2] UIRectInstance
+	instanceData: [2] RectInstance
 	instanceData[0].pos1 = {200, 200}
 	instanceData[0].pos2 = {400, 400}
-	instanceData[0].color[0] = red
-	instanceData[0].color[1] = red
-	instanceData[0].color[2] = red
-	instanceData[0].color[3] = red
+	instanceData[0].colors[0] = red
+	instanceData[0].colors[1] = red
+	instanceData[0].colors[2] = red
+	instanceData[0].colors[3] = red
 
 	instanceData[1].pos1 = {550, 550}
 	instanceData[1].pos2 = {850, 850}
-	instanceData[1].color[0] = ColorU8{255, 0, 0, 255}
-	instanceData[1].color[1] = ColorU8{0, 0, 0, 0}
-	instanceData[1].color[2] = ColorU8{0, 0, 255, 255}
-	instanceData[1].color[3] = ColorU8{0, 0, 0, 255}
+	instanceData[1].colors[0] = ColorU8{255, 0, 0, 255}
+	instanceData[1].colors[1] = ColorU8{0, 0, 0, 0}
+	instanceData[1].colors[2] = ColorU8{0, 0, 255, 255}
+	instanceData[1].colors[3] = ColorU8{0, 0, 0, 255}
 
 	render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
 }
@@ -145,7 +145,7 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: rawptr) {
 	vbDesc.slot = 0
 	vbDesc.input_rate = .GPU_VERTEXINPUTRATE_INSTANCE
 	vbDesc.instance_step_rate = 1
-	vbDesc.pitch = size_of(UIRectInstance)
+	vbDesc.pitch = size_of(RectInstance)
 
 	vertexInputState: sdl.GPUVertexInputState
 
@@ -204,10 +204,6 @@ render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	sdl.SubmitGPUCommandBuffer(cmdBuf)
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
 	buffer.size = u32(len(data))
-}
-
-render_add_rectangle :: proc() {
-
 }
 
 render_render :: proc() {

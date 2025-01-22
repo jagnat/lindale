@@ -2,18 +2,17 @@ package lindale
 
 import "core:mem"
 import "core:slice"
+import "core:math/rand"
 import vm "core:mem/virtual"
 
 RectDrawGroup :: struct {
 	arena: mem.Arena,
 	numRects: u32,
-	numVertices: u32,
 }
 
-UIRect :: struct {
+SimpleUIRect :: struct {
 	x, y, width, height: f32,
-	cornerRadii: [4]f32,
-	cornerColors: [4]ColorU8,
+	color: ColorU8,
 }
 
 DrawContext :: struct {
@@ -33,14 +32,34 @@ draw_init_rect_group :: proc(drawGroup: ^RectDrawGroup) {
 	assert(err == .None)
 	mem.arena_init(&drawGroup.arena, bytes)
 	drawGroup.numRects = 0
-	drawGroup.numVertices = 0
 }
 
-// draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: UIRect) {
-// 	assert(drawGroup.arena.offset + 6 * size_of(UIRectVertex) < len(drawGroup.arena.data))
-// 	vertRaw, err := mem.arena_alloc(&drawGroup.arena, 6 * size_of(UIRectVertex), 0)
-// 	assert(err == .None)
-// 	vertices := slice.from_ptr(cast(^UIRectVertex)vertRaw, 6)
+draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: SimpleUIRect) {
+	assert(drawGroup.arena.offset + size_of(RectInstance) < len(drawGroup.arena.data))
+	instanceRaw, err := mem.arena_alloc(&drawGroup.arena, size_of(RectInstance), 0)
+	assert(err == .None)
+	instance := cast(^RectInstance)instanceRaw
+	instance.pos1 = {rect.x, rect.y}
+	instance.pos2 = {rect.x + rect.width, rect.y + rect.height}
+	instance.colors = {rect.color, rect.color, rect.color, rect.color}
+	drawGroup.numRects += 1
+}
 
-// 	vertices[0] = UIRectVertex{}
-// }
+draw_clear :: proc(drawGroup: ^RectDrawGroup) {
+	mem.arena_free_all(&drawGroup.arena)
+	drawGroup.numRects = 0
+}
+
+draw_group_get_memory :: proc(drawGroup: ^RectDrawGroup) -> (ptr: rawptr, bytes: u32) {
+	return raw_data(drawGroup.arena.data), u32(drawGroup.arena.offset)
+}
+
+draw_generate_random_rects :: proc(drawGroup: ^RectDrawGroup) {
+	NUM_RECTS :: 20
+	colors := []ColorU8{{0, 0, 0, 0}, {0, 0, 0, 0}}
+	for i in 0 ..< NUM_RECTS {
+		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
+			rand.float32() * 300, rand.float32() * 300, rand.choice(colors)}
+		draw_push_rect(drawGroup, rect)
+	}
+}
