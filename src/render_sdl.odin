@@ -2,32 +2,19 @@ package lindale
 
 import "core:fmt"
 import "core:mem"
-import "core:mem/virtual"
+import vm "core:mem/virtual"
 import "core:slice"
 import "core:math/linalg"
 import sdl "thirdparty/sdl3"
 
-ColorU8 :: struct {
-	r, g, b, a: u8
-}
-
-ColorF32 :: struct {
-	r, g, b, a: f32
-}
-
 clearColor: ColorF32
-
-Rect :: struct {
-	x, y, width, height: f32,
-	cornerColors: [4]ColorU8,
-	cornerRadii: [4]f32,
-}
 
 RenderContext :: struct {
 	gpu: sdl.GPUDevice,
 	pipeline: sdl.GPUGraphicsPipeline,
 	window: sdl.Window,
 	vb: GPUBuffer, // Vertex buffer
+	ib: GPUBuffer, // Index buffer
 	width, height: f32,
 }
 
@@ -53,9 +40,10 @@ PosColorVertex :: struct {
 	r, g, b, a: u8,
 }
 
-UIRectVertex :: struct {
-	pos1: [2]f32,
-	pos2: [2]f32,
+UIRectInstance :: struct {
+	pos1: [2]f32, // Top left
+	pos2: [2]f32, // Bottom right
+	color: ColorU8,
 }
 
 render_init :: proc(window: sdl.Window) {
@@ -114,22 +102,33 @@ render_init :: proc(window: sdl.Window) {
 	pipelineCreate: sdl.GPUGraphicsPipelineCreateInfo
 	pipelineCreate.target_info.num_color_targets = 1
 	pipelineCreate.target_info.color_target_descriptions = &desc
-	pipelineCreate.primitive_type = .GPU_PRIMITIVETYPE_TRIANGLELIST
+	pipelineCreate.primitive_type = .GPU_PRIMITIVETYPE_TRIANGLESTRIP
 	pipelineCreate.vertex_shader = vertexShader
 	pipelineCreate.fragment_shader = pixelShader
 
 	vbDesc: sdl.GPUVertexBufferDescription
 	vbDesc.slot = 0
-	vbDesc.input_rate = .GPU_VERTEXINPUTRATE_VERTEX
-	vbDesc.pitch = size_of(PosColorVertex)
+	// vbDesc.input_rate = .GPU_VERTEXINPUTRATE_VERTEX
+	vbDesc.input_rate = .GPU_VERTEXINPUTRATE_INSTANCE
+	vbDesc.instance_step_rate = 1
+	// vbDesc.pitch = size_of(PosColorVertex)
+	vbDesc.pitch = size_of(UIRectInstance)
 
-	vaDesc: [2]sdl.GPUVertexAttribute
-	vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0, buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_FLOAT3}
-	vaDesc[1] = sdl.GPUVertexAttribute{location = 1, offset = 3 * size_of(f32), buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM}
 	vertexInputState: sdl.GPUVertexInputState
+
+	// vaDesc: [2]sdl.GPUVertexAttribute
+	// vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0, buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_FLOAT3}
+	// vaDesc[1] = sdl.GPUVertexAttribute{location = 1, offset = 3 * size_of(f32), buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM}
+	// vertexInputState.num_vertex_attributes = 2
+
+	vaDesc: [3]sdl.GPUVertexAttribute
+	vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0, buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_FLOAT2}
+	vaDesc[1] = sdl.GPUVertexAttribute{location = 1, offset = 2 * size_of(f32), buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_FLOAT2}
+	vaDesc[2] = sdl.GPUVertexAttribute{location = 2, offset = 4 * size_of(f32), buffer_slot = 0, format = .GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM}
+	vertexInputState.num_vertex_attributes = 3
+
 	vertexInputState.num_vertex_buffers = 1
 	vertexInputState.vertex_buffer_descriptions = &vbDesc
-	vertexInputState.num_vertex_attributes = 2
 	vertexInputState.vertex_attributes = &vaDesc[0]
 	pipelineCreate.vertex_input_state = vertexInputState
 
@@ -139,15 +138,9 @@ render_init :: proc(window: sdl.Window) {
 	fmt.println("Created GPU pipeline")
 
 	ctx.vb = render_create_gpu_buffer(BUFFER_SIZE, .VERTEX)
+	ctx.ib = render_create_gpu_buffer(BUFFER_SIZE, .INDEX)
 
 	transferData: [6]PosColorVertex
-	// transferData[3] = PosColorVertex{-0.5, -0.5, 0, 255,   0,   0, 40}
-	// transferData[4] = PosColorVertex{ 0.5, -0.5, 0,   0, 255,   0, 40}
-	// transferData[5] = PosColorVertex{ 0.5,  0.5, 0,   0,   0, 255, 40}
-
-	// transferData[0] = PosColorVertex{-0.5,  0.5, 0, 255,   0,   0, 255}
-	// transferData[1] = PosColorVertex{ 0.5,  0.5, 0,   0, 255,   0, 255}
-	// transferData[2] = PosColorVertex{-0.5, -0.5, 0,   0,   0, 255, 255}
 
 	v0 := PosColorVertex{10, 10, 0, 255, 0, 0, 255}
 	v0_0 := PosColorVertex{10, 210, 0, 255, 0, 0, 255}
@@ -160,7 +153,20 @@ render_init :: proc(window: sdl.Window) {
 	transferData[4] = v0_0
 	transferData[5] = v0_1
 
-	render_upload_buffer_data(&ctx.vb, transferData[:])
+	// render_upload_buffer_data(&ctx.vb, transferData[:])
+
+	red := ColorU8{100, 0, 0, 255}
+	blue := ColorU8{0, 0, 100, 255}
+	instanceData: [2] UIRectInstance
+	instanceData[0].pos1 = {200, 200}
+	instanceData[0].pos2 = {400, 400}
+	instanceData[0].color = red
+
+	instanceData[1].pos1 = {800, 200}
+	instanceData[1].pos2 = {900, 400}
+	instanceData[1].color = blue
+
+	render_upload_buffer_data(&ctx.vb, instanceData[:])
 
 	// Ortho matrix, hard coded for now
 	orthoMatrix := linalg.matrix_ortho3d_f32(0, 500, 500, 0, -1, 1)
@@ -225,8 +231,11 @@ render_render :: proc() {
 
 	renderPass := sdl.BeginGPURenderPass(cmdBuf, &targetInfo, 1, nil)
 	sdl.BindGPUGraphicsPipeline(renderPass, ctx.pipeline)
-	bufferBinding := sdl.GPUBufferBinding{buffer = ctx.vb.handle, offset = 0}
-	sdl.BindGPUVertexBuffers(renderPass, 0, &bufferBinding, 1)
+	vbBinding := sdl.GPUBufferBinding{buffer = ctx.vb.handle, offset = 0}
+	sdl.BindGPUVertexBuffers(renderPass, 0, &vbBinding, 1)
+
+	// ibBinding := sdl.GPUBufferBinding{buffer = ctx.ib.handle, offset = 0}
+	// sdl.BindGPUIndexBuffer(renderPass, &ibBinding, size_of(UIRectInstance))
 
 	unif: UniformBufferContents
 	unif.shapeColor = {0.5, 1, 0.5, 1}
@@ -234,7 +243,9 @@ render_render :: proc() {
 
 	sdl.PushGPUVertexUniformData(cmdBuf, 0, rawptr(&unif), size_of(UniformBufferContents))
 
-	sdl.DrawGPUPrimitives(renderPass, 6, 1, 0, 0)
+	// sdl.DrawGPUPrimitives(renderPass, 6, 1, 0, 0)
+	sdl.DrawGPUPrimitives(renderPass, 4, 2, 0, 0)
+	// sdl.DrawGPUIndexedPrimitives(renderPass, 3, 2, 0, 0, 0)
 	
 	sdl.EndGPURenderPass(renderPass)
 
@@ -244,5 +255,4 @@ render_render :: proc() {
 render_resize :: proc(w, h: i32) {
 	ctx.width = f32(w)
 	ctx.height = f32(h)
-	fmt.println("Render resize:", ctx.width, ctx.height)
 }

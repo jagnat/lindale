@@ -58,4 +58,3 @@ init :: proc() {
 
 	sdl.ShowWindow(ctx.window)
 }
-
