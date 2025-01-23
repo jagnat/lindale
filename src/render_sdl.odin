@@ -24,7 +24,7 @@ ctx: RenderContext
 
 UniformBufferContents :: struct {
 	projMatrix: linalg.Matrix4x4f32,
-	shapeColor: ColorF32,
+	dim: [2]f32,
 }
 
 GPUBuffer :: struct {
@@ -206,6 +206,10 @@ render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	buffer.size = u32(len(data))
 }
 
+render_upload_rect_instances :: proc(data: rawptr, bytes: u32) {
+	
+}
+
 render_render :: proc() {
 	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(cmdBuf != nil)
@@ -228,7 +232,6 @@ render_render :: proc() {
 	sdl.BindGPUVertexBuffers(renderPass, 0, &instanceBinding, 1)
 
 	unif: UniformBufferContents
-	unif.shapeColor = {0.5, 1, 0.5, 1}
 	unif.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
 
 	sdl.PushGPUVertexUniformData(cmdBuf, 0, rawptr(&unif), size_of(UniformBufferContents))

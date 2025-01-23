@@ -25,7 +25,7 @@
 			"name": "Odin Run Release",
 			"windows":
 			{
-				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindalë.exe"
+				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindale.exe"
 			}
 		},
 	],

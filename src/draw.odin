@@ -1,5 +1,6 @@
 package lindale
 
+import "core:fmt"
 import "core:mem"
 import "core:slice"
 import "core:math/rand"
@@ -25,10 +26,11 @@ ctx: DrawContext
 draw_init :: proc() {
 	err := vm.arena_init_growing(&ctx.arena)
 	assert(err == .None)
+	fmt.println("Size of rect instance:", size_of(RectInstance))
 }
 
 draw_init_rect_group :: proc(drawGroup: ^RectDrawGroup) {
-	bytes, err := vm.arena_alloc(&ctx.arena, 8192, 32)
+	bytes, err := vm.arena_alloc(&ctx.arena, 8192, 8)
 	assert(err == .None)
 	mem.arena_init(&drawGroup.arena, bytes)
 	drawGroup.numRects = 0
@@ -36,7 +38,7 @@ draw_init_rect_group :: proc(drawGroup: ^RectDrawGroup) {
 
 draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: SimpleUIRect) {
 	assert(drawGroup.arena.offset + size_of(RectInstance) < len(drawGroup.arena.data))
-	instanceRaw, err := mem.arena_alloc(&drawGroup.arena, size_of(RectInstance), 0)
+	instanceRaw, err := mem.arena_alloc(&drawGroup.arena, size_of(RectInstance))
 	assert(err == .None)
 	instance := cast(^RectInstance)instanceRaw
 	instance.pos1 = {rect.x, rect.y}

@@ -1,7 +1,7 @@
 
 cbuffer UniformBuffer : register(b0, space1) {
 	float4x4 projMat;
-	float4 UColor : COLOR;
+	float2 dims;
 }
 
 struct VSInput {
@@ -37,15 +37,12 @@ VSOutput VSMain(VSInput input) {
 	}
 	output.pos = mul(projMat, float4(posToPick, 0.f, 1.f));
 
-	// float4 colorAry[] = {input.Color00, input.Color01, input.Color10, input.Color11};
 	output.color00 = input.color00;
 	output.color01 = input.color01;
 	output.color10 = input.color10;
 	output.color11 = input.color11;
 
 	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
-
-	// float cornerRadAry[] = {input.cornerRads.x, input.cornerRads.z, input.cornerRads.y, input.cornerRads.w};
 
 	return output;
 }

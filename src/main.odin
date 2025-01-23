@@ -40,6 +40,7 @@ main :: proc() {
 			}
 		}
 
+		render_upload_rect_instances(draw_group_get_memory(&ctx.drawGroup))
 		render_render()
 	}
 }
@@ -58,8 +59,7 @@ init :: proc() {
 	draw_init()
 
 	draw_init_rect_group(&ctx.drawGroup)
-
-	
+	draw_generate_random_rects(&ctx.drawGroup)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))
