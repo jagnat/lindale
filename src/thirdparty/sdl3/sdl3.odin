@@ -4,6 +4,12 @@ when ODIN_OS == .Windows {
 	foreign import lib {
 		"windows/SDL3.lib",
 	}
+} else when ODIN_OS == .Linux {
+	foreign import lib {
+		"system:SDL3",
+		"system:dl",
+		"system:pthread",
+	}
 }
 
 AssertState :: enum u32 {

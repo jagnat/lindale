@@ -10,7 +10,12 @@
 		{
 			"name": "Odin Run Debug",
 			"working_dir": "${project_path}",
-			"shell_cmd": "build.bat"
+			"windows": {
+				"shell_cmd": "build.bat"
+			},
+			"linux": {
+				"shell_cmd": "sh build.sh"
+			}
 		},
 		{
 			"name": "Odin Run File",
