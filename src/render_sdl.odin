@@ -7,7 +7,7 @@ import "core:slice"
 import "core:math/linalg"
 import sdl "thirdparty/sdl3"
 
-clearColor: ColorF32
+clearColor: ColorF32 = {0.1333,0.1333,0.1333,1}
 
 RenderContext :: struct {
 	gpu: sdl.GPUDevice,
@@ -53,8 +53,6 @@ render_init :: proc(window: sdl.Window) {
 
 	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
 	assert(result == true)
-
-	clearColor = {0.1333,0.1333,0.1333,1}
 
 	vShaderBits := #load("shaders/vs.spv")
 

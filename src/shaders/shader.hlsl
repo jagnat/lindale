@@ -24,6 +24,19 @@ struct VSOutput {
 	nointerpolation float4 color11 : TEXCOORD4;
 };
 
+float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
+	return lerp(lerp(c00, c01, uv.y), lerp(c10, c11, uv.y), uv.x);
+}
+
+float rounded_rect_sdf(float2 input, float2 rectSize, float cornerRad)
+{
+  return length(max(abs(input) - (input / 2) + cornerRad, 0.0)) - cornerRad;
+}
+
+float circle_sdf(float2 input, float rad) {
+	return length(input) - rad;
+}
+
 VSOutput VSMain(VSInput input) {
 	VSOutput output;
 
@@ -47,10 +60,10 @@ VSOutput VSMain(VSInput input) {
 	return output;
 }
 
-float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
-	return lerp(lerp(c00, c01, uv.y), lerp(c10, c11, uv.y), uv.x);
-}
-
 float4 PSMain(VSOutput input) : SV_TARGET {
-	return blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+	float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+	if (circle_sdf(input.pos.xy, 400) < 0)
+		return outputColor;
+	else
+		return float4(0, 0, 0, 0);
 }
