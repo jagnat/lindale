@@ -12,12 +12,14 @@ struct VSInput {
 	[[vk::location(4)]]float4 color10 : COLOR2;
 	[[vk::location(5)]]float4 color11 : COLOR3;
 	[[vk::location(6)]]float4 cornerRads : CORNER;
-	uint vertexId : SV_VertexID;
+	uint vertexId : SV_VertexID; // TL, BL, TR, BR
 };
 
 struct VSOutput {
 	float4 pos : SV_POSITION;
 	float2 uv : TEXCOORD0;
+	float2 rectPos : RECTPOS;
+	nointerpolation float2 halfRectSize: RECTSZ;
 	nointerpolation float4 color00 : TEXCOORD1;
 	nointerpolation float4 color01 : TEXCOORD2;
 	nointerpolation float4 color10 : TEXCOORD3;
@@ -28,9 +30,9 @@ float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
 	return lerp(lerp(c00, c01, uv.y), lerp(c10, c11, uv.y), uv.x);
 }
 
-float rounded_rect_sdf(float2 input, float2 rectSize, float cornerRad)
+float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad)
 {
-  return length(max(abs(input) - (input / 2) + cornerRad, 0.0)) - cornerRad;
+	return length(max(abs(input) - halfRectSize + cornerRad, 0.0)) - cornerRad;
 }
 
 float circle_sdf(float2 input, float rad) {
@@ -41,28 +43,32 @@ VSOutput VSMain(VSInput input) {
 	VSOutput output;
 
 	float2 posToPick = input.pos1;
+	float2 rectMult = float2(-1, -1);
 	if (input.vertexId & 1)
 	{
 		posToPick.y = input.pos2.y;
+		rectMult.y = 1;
 	}
 	if  ((input.vertexId >> 1) & 1) {
 		posToPick.x = input.pos2.x;
+		rectMult.x = 1;
 	}
-	output.pos = mul(projMat, float4(posToPick, 0.f, 1.f));
 
+	output.pos = mul(projMat, float4(posToPick, 0.f, 1.f));
+	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
+	output.halfRectSize = (input.pos2 - input.pos1) / 2;
+	output.rectPos = rectMult * output.halfRectSize;
 	output.color00 = input.color00;
 	output.color01 = input.color01;
 	output.color10 = input.color10;
 	output.color11 = input.color11;
-
-	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
 
 	return output;
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
-	if (circle_sdf(input.pos.xy, 400) < 0)
+	if (rounded_rect_sdf(input.rectPos, input.halfRectSize, 30) < 0)
 		return outputColor;
 	else
 		return float4(0, 0, 0, 0);
