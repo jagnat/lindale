@@ -24,15 +24,19 @@ struct VSOutput {
 	nointerpolation float4 color01 : TEXCOORD2;
 	nointerpolation float4 color10 : TEXCOORD3;
 	nointerpolation float4 color11 : TEXCOORD4;
+	nointerpolation float4 cornerRads : CORNER;
 };
 
 float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
 	return lerp(lerp(c00, c01, uv.y), lerp(c10, c11, uv.y), uv.x);
 }
 
-float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad)
+float rounded_rect_sdf(float2 input, float2 halfRectSize, float4 cornerRad)
 {
-	return length(max(abs(input) - halfRectSize + cornerRad, 0.0)) - cornerRad;
+	float2 radSide = input.x > 0? cornerRad.zw : cornerRad.xy;
+	float rad = input.y > 0? radSide.y : radSide.x;
+	float2 q = abs(input) - halfRectSize + rad;
+	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
 
 float circle_sdf(float2 input, float rad) {
@@ -62,13 +66,14 @@ VSOutput VSMain(VSInput input) {
 	output.color01 = input.color01;
 	output.color10 = input.color10;
 	output.color11 = input.color11;
+	output.cornerRads = input.cornerRads;
 
 	return output;
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
-	if (rounded_rect_sdf(input.rectPos, input.halfRectSize, 30) < 0)
+	if (rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads) < 0)
 		return outputColor;
 	else
 		return float4(0, 0, 0, 0);

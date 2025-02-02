@@ -110,9 +110,10 @@ render_init :: proc(window: sdl.Window) {
 	instanceData[1].pos1 = {550, 550}
 	instanceData[1].pos2 = {850, 850}
 	instanceData[1].colors[0] = ColorU8{255, 0, 0, 255}
-	instanceData[1].colors[1] = ColorU8{0, 0, 0, 0}
+	instanceData[1].colors[1] = ColorU8{0, 0, 0, 255}
 	instanceData[1].colors[2] = ColorU8{0, 0, 255, 255}
 	instanceData[1].colors[3] = ColorU8{0, 0, 0, 255}
+	instanceData[1].cornerRad = [4]f32{10, 0, 3, 30}
 
 	render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
 }
