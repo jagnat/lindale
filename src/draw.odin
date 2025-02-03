@@ -7,8 +7,8 @@ import "core:math/rand"
 import vm "core:mem/virtual"
 
 RectDrawGroup :: struct {
-	arena: mem.Arena,
-	numRects: u32,
+	instancePool: []RectInstance,
+	numRects: int,
 }
 
 SimpleUIRect :: struct {
@@ -30,38 +30,38 @@ draw_init :: proc() {
 }
 
 draw_init_rect_group :: proc(drawGroup: ^RectDrawGroup) {
-	bytes, err := vm.arena_alloc(&ctx.arena, 8192, 8)
+	bytes, err := vm.arena_alloc(&ctx.arena, 1000 * size_of(RectInstance), 8)
 	assert(err == .None)
-	mem.arena_init(&drawGroup.arena, bytes)
 	drawGroup.numRects = 0
+	drawGroup.instancePool = slice.from_ptr((^RectInstance)(&bytes[0]), 1000 * size_of(RectInstance))
 }
 
 draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: SimpleUIRect) {
-	assert(drawGroup.arena.offset + size_of(RectInstance) < len(drawGroup.arena.data))
-	instanceRaw, err := mem.arena_alloc(&drawGroup.arena, size_of(RectInstance))
-	assert(err == .None)
-	instance := cast(^RectInstance)instanceRaw
+	assert(drawGroup.numRects + 1 <= len(drawGroup.instancePool))
+	instance : RectInstance
 	instance.pos1 = {rect.x, rect.y}
 	instance.pos2 = {rect.x + rect.width, rect.y + rect.height}
 	instance.colors = {rect.color, rect.color, rect.color, rect.color}
+	instance.cornerRad = {20, 20, 20, 20}
+	drawGroup.instancePool[drawGroup.numRects] = instance
 	drawGroup.numRects += 1
 }
 
 draw_clear :: proc(drawGroup: ^RectDrawGroup) {
-	mem.arena_free_all(&drawGroup.arena)
 	drawGroup.numRects = 0
 }
 
-draw_group_get_memory :: proc(drawGroup: ^RectDrawGroup) -> (ptr: rawptr, bytes: u32) {
-	return raw_data(drawGroup.arena.data), u32(drawGroup.arena.offset)
-}
-
 draw_generate_random_rects :: proc(drawGroup: ^RectDrawGroup) {
-	NUM_RECTS :: 20
-	colors := []ColorU8{{0, 0, 0, 0}, {0, 0, 0, 0}}
+	NUM_RECTS :: 240
+	draw_clear(drawGroup)
+	colors := []ColorU8{{255, 0, 0, 40}, {0, 255, 0, 40}}
 	for i in 0 ..< NUM_RECTS {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
 			rand.float32() * 300, rand.float32() * 300, rand.choice(colors)}
 		draw_push_rect(drawGroup, rect)
 	}
+}
+
+draw_get_rects :: proc(drawGroup: ^RectDrawGroup) -> []RectInstance {
+	return drawGroup.instancePool[:drawGroup.numRects]
 }

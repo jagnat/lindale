@@ -76,6 +76,6 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads);
 	float mixFactor = smoothstep(-0.5, 0.5, sdf);
 
-	outputColor.a = 1 - mixFactor;
+	outputColor.a *= 1 - mixFactor;
 	return outputColor;
 }

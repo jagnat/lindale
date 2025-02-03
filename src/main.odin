@@ -11,7 +11,7 @@ ProgramContext :: struct {
 	drawGroup: RectDrawGroup,
 }
 
-WINDOW_WIDTH, WINDOW_HEIGHT :i32= 1600, 1000
+WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
 
 @(private="file")
 ctx: ProgramContext
@@ -22,6 +22,9 @@ main :: proc() {
 	fmt.println("Successful Init")
 
 	result: b8
+
+	count: u64
+	tick: u64 = sdl.GetTicksNS()
 
 	running := true
 	for running {
@@ -39,9 +42,19 @@ main :: proc() {
 				render_resize(event.window.data1, event.window.data2)
 			}
 		}
-
-		// render_upload_rect_instances(draw_group_get_memory(&ctx.drawGroup))
+		render_upload_rect_instances(draw_get_rects(&ctx.drawGroup))
 		render_render()
+		count += 1
+		if count % 256 == 0 {
+			newTicks := sdl.GetTicksNS()
+
+			elapsedTimeMs := (newTicks - tick) / 1_000_000
+
+			fmt.println("elapsedMs: ", elapsedTimeMs)
+			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			tick = newTicks
+			draw_generate_random_rects(&ctx.drawGroup)
+		}
 	}
 }
 

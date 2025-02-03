@@ -15,10 +15,11 @@ RenderContext :: struct {
 	pipeline: sdl.GPUGraphicsPipeline,
 	window: sdl.Window,
 	instanceBuffer: GPUBuffer, // Instance buffer
+	numInstances: int,
 	width, height: f32,
 }
 
-BUFFER_SIZE :: 8192
+BUFFER_SIZE :: 32768
 
 @(private="file")
 ctx: RenderContext
@@ -215,8 +216,9 @@ render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	buffer.size = u32(len(data))
 }
 
-render_upload_rect_instances :: proc(data: rawptr, bytes: u32) {
-	
+render_upload_rect_instances :: proc(rects: []RectInstance) {
+	render_upload_buffer_data(&ctx.instanceBuffer, rects)
+	ctx.numInstances = len(rects)
 }
 
 render_render :: proc() {
@@ -245,7 +247,7 @@ render_render :: proc() {
 
 	sdl.PushGPUVertexUniformData(cmdBuf, 0, rawptr(&unif), size_of(UniformBufferContents))
 
-	sdl.DrawGPUPrimitives(renderPass, 4, 2, 0, 0)
+	sdl.DrawGPUPrimitives(renderPass, 4, u32(ctx.numInstances), 0, 0)
 	
 	sdl.EndGPURenderPass(renderPass)
 
