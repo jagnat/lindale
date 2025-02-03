@@ -53,7 +53,8 @@ main :: proc() {
 			fmt.println("elapsedMs: ", elapsedTimeMs)
 			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
-			draw_generate_random_rects(&ctx.drawGroup)
+			// draw_generate_random_rects(&ctx.drawGroup)
+			draw_one_rect(&ctx.drawGroup)
 		}
 	}
 }
@@ -72,7 +73,8 @@ init :: proc() {
 	draw_init()
 
 	draw_init_rect_group(&ctx.drawGroup)
-	draw_generate_random_rects(&ctx.drawGroup)
+	// draw_generate_random_rects(&ctx.drawGroup)
+	draw_one_rect(&ctx.drawGroup)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))

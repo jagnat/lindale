@@ -2,6 +2,7 @@ package lindale
 
 import "core:fmt"
 import "core:mem"
+import "core:math"
 import "core:slice"
 import "core:math/rand"
 import vm "core:mem/virtual"
@@ -42,7 +43,7 @@ draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: SimpleUIRect) {
 	instance.pos1 = {rect.x, rect.y}
 	instance.pos2 = {rect.x + rect.width, rect.y + rect.height}
 	instance.colors = {rect.color, rect.color, rect.color, rect.color}
-	instance.cornerRad = {20, 20, 20, 20}
+	// instance.cornerRad = {20, 20, 20, 20}
 	drawGroup.instancePool[drawGroup.numRects] = instance
 	drawGroup.numRects += 1
 }
@@ -52,14 +53,22 @@ draw_clear :: proc(drawGroup: ^RectDrawGroup) {
 }
 
 draw_generate_random_rects :: proc(drawGroup: ^RectDrawGroup) {
-	NUM_RECTS :: 240
+	NUM_RECTS :: 40
 	draw_clear(drawGroup)
-	colors := []ColorU8{{255, 0, 0, 40}, {0, 255, 0, 40}}
+	alph :: 255
+	colors := []ColorU8{{255, 0, 0, alph}, {0, 255, 0, alph}, {0, 0, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
-			rand.float32() * 300, rand.float32() * 300, rand.choice(colors)}
+			rand.float32() * 100 + 10, rand.float32() * 100 + 10, rand.choice(colors)}
 		draw_push_rect(drawGroup, rect)
 	}
+}
+
+draw_one_rect :: proc(drawGroup: ^RectDrawGroup) {
+	draw_clear(drawGroup)
+	rect := SimpleUIRect{200, 200,
+			100, 100, {0, 255, 0, 255}}
+	draw_push_rect(drawGroup, rect)
 }
 
 draw_get_rects :: proc(drawGroup: ^RectDrawGroup) -> []RectInstance {

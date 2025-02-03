@@ -126,7 +126,7 @@ render_init :: proc(window: sdl.Window) {
 	instanceData[1].colors[3] = ColorU8{0, 0, 0, 255}
 	instanceData[1].cornerRad = [4]f32{10, 0, 4, 140}
 
-	render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
+	// render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
 }
 
 render_init_rect_pipeline :: proc(vertexShader, pixelShader: rawptr) {
@@ -175,6 +175,7 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: rawptr) {
 	pipelineCreate.vertex_input_state = vertexInputState
 
 	pipelineCreate.rasterizer_state.fill_mode = .GPU_FILLMODE_FILL
+	pipelineCreate.rasterizer_state.front_face = .GPU_FRONTFACE_CLOCKWISE
 	ctx.pipeline = sdl.CreateGPUGraphicsPipeline(ctx.gpu, &pipelineCreate)
 	assert(ctx.pipeline != nil)
 	fmt.println("Created GPU pipeline")

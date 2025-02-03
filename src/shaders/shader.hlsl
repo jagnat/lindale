@@ -1,6 +1,6 @@
 
 cbuffer UniformBuffer : register(b0, space1) {
-	float4x4 projMat;
+	float4x4 orthoMat;
 	float2 dims;
 }
 
@@ -58,7 +58,9 @@ VSOutput VSMain(VSInput input) {
 		rectMult.x = 1;
 	}
 
-	output.pos = mul(projMat, float4(posToPick, 0.f, 1.f));
+	// posToPick += 0.5f;
+
+	output.pos = mul(orthoMat, float4(posToPick, 0.f, 1.f));
 	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
 	output.halfRectSize = (input.pos2 - input.pos1) / 2;
 	output.rectPos = rectMult * output.halfRectSize;
@@ -72,10 +74,11 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-	float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+	// float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+	float4 outputColor = input.color00;
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads);
 	float mixFactor = smoothstep(-0.5, 0.5, sdf);
 
-	outputColor.a *= 1 - mixFactor;
+	// outputColor.a *= 1 - mixFactor;
 	return outputColor;
 }
