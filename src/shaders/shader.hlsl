@@ -73,8 +73,9 @@ VSOutput VSMain(VSInput input) {
 
 float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
-	if (rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads) < 0)
-		return outputColor;
-	else
-		return float4(0, 0, 0, 0);
+	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads);
+	float mixFactor = smoothstep(-0.5, 0.5, sdf);
+
+	outputColor.a = 1 - mixFactor;
+	return outputColor;
 }

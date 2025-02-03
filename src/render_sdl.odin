@@ -7,7 +7,8 @@ import "core:slice"
 import "core:math/linalg"
 import sdl "thirdparty/sdl3"
 
-clearColor: ColorF32 = {0.1333,0.1333,0.1333,1}
+// clearColor: ColorF32 = {0.1333,0.1333,0.1333,1}
+clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1}
 
 RenderContext :: struct {
 	gpu: sdl.GPUDevice,
@@ -98,14 +99,23 @@ render_init :: proc(window: sdl.Window) {
 	transferData[4] = v0_0
 	transferData[5] = v0_1
 
-	red := ColorU8{100, 0, 0, 255}
+	red := ColorU8_from_hex(0x565656ff)
 	instanceData: [2] RectInstance
+	// instanceData[0].pos1 = {200, 200}
+	// instanceData[0].pos2 = {400, 400}
+	// instanceData[0].colors[0] = red
+	// instanceData[0].colors[1] = red
+	// instanceData[0].colors[2] = red
+	// instanceData[0].colors[3] = red
+	// instanceData[0].cornerRad = [4]f32{80, 80, 80, 80}
+
 	instanceData[0].pos1 = {200, 200}
-	instanceData[0].pos2 = {400, 400}
+	instanceData[0].pos2 = {344, 244}
 	instanceData[0].colors[0] = red
 	instanceData[0].colors[1] = red
 	instanceData[0].colors[2] = red
 	instanceData[0].colors[3] = red
+	instanceData[0].cornerRad = [4]f32{22, 22, 22, 22}
 
 	instanceData[1].pos1 = {550, 550}
 	instanceData[1].pos2 = {850, 850}
@@ -113,7 +123,7 @@ render_init :: proc(window: sdl.Window) {
 	instanceData[1].colors[1] = ColorU8{0, 0, 0, 255}
 	instanceData[1].colors[2] = ColorU8{0, 0, 255, 255}
 	instanceData[1].colors[3] = ColorU8{0, 0, 0, 255}
-	instanceData[1].cornerRad = [4]f32{10, 0, 3, 30}
+	instanceData[1].cornerRad = [4]f32{10, 0, 4, 140}
 
 	render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
 }

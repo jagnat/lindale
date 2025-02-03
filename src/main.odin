@@ -40,7 +40,7 @@ main :: proc() {
 			}
 		}
 
-		render_upload_rect_instances(draw_group_get_memory(&ctx.drawGroup))
+		// render_upload_rect_instances(draw_group_get_memory(&ctx.drawGroup))
 		render_render()
 	}
 }
