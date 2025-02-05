@@ -43,7 +43,7 @@ draw_push_rect :: proc(drawGroup: ^RectDrawGroup, rect: SimpleUIRect) {
 	instance.pos1 = {rect.x, rect.y}
 	instance.pos2 = {rect.x + rect.width, rect.y + rect.height}
 	instance.colors = {rect.color, rect.color, rect.color, rect.color}
-	// instance.cornerRad = {20, 20, 20, 20}
+	instance.cornerRad = {20, 20, 20, 20}
 	drawGroup.instancePool[drawGroup.numRects] = instance
 	drawGroup.numRects += 1
 }
@@ -53,13 +53,14 @@ draw_clear :: proc(drawGroup: ^RectDrawGroup) {
 }
 
 draw_generate_random_rects :: proc(drawGroup: ^RectDrawGroup) {
-	NUM_RECTS :: 40
+	NUM_RECTS :: 400
 	draw_clear(drawGroup)
 	alph :: 255
-	colors := []ColorU8{{255, 0, 0, alph}, {0, 255, 0, alph}, {0, 0, 255, alph}}
+	// colors := []ColorU8{{255, 0, 0, alph}, {0, 255, 0, alph}, {0, 0, 255, alph}}
+	colors := []ColorU8{{255, 255, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
-			rand.float32() * 100 + 10, rand.float32() * 100 + 10, rand.choice(colors)}
+			rand.float32() * 300 + 10, rand.float32() * 300 + 10, rand.choice(colors)}
 		draw_push_rect(drawGroup, rect)
 	}
 }

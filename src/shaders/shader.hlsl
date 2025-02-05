@@ -4,6 +4,9 @@ cbuffer UniformBuffer : register(b0, space1) {
 	float2 dims;
 }
 
+Texture2D tex : register(t0, space2);
+SamplerState sampl : register(s0, space2);
+
 struct VSInput {
 	[[vk::location(0)]]float2 pos1 : POSITION0;
 	[[vk::location(1)]]float2 pos2 : POSITION1;
@@ -74,11 +77,16 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-	// float4 outputColor = blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
-	float4 outputColor = input.color00;
+	// texture sample
+	float4 outputColor = tex.Sample(sampl, input.uv);
+
+	// interpolated vertex color
+	outputColor *= blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+
+	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads);
 	float mixFactor = smoothstep(-0.5, 0.5, sdf);
+	outputColor.a *= 1 - mixFactor;
 
-	// outputColor.a *= 1 - mixFactor;
 	return outputColor;
 }

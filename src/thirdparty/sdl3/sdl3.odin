@@ -3341,7 +3341,7 @@ foreign lib {
 	MapGPUTransferBuffer :: proc(device: GPUDevice, transfer_buffer: GPUTransferBuffer, cycle: b8) -> rawptr ---
 	UnmapGPUTransferBuffer :: proc(device: GPUDevice, transfer_buffer: GPUTransferBuffer) ---
 	BeginGPUCopyPass :: proc(command_buffer: GPUCommandBuffer) -> GPUCopyPass ---
-	UploadToGPUTexture :: proc(copy_pass: [^]GPUCopyPass, source: ^GPUTextureTransferInfo, destination: ^GPUTextureRegion, cycle: b8) ---
+	UploadToGPUTexture :: proc(copy_pass: GPUCopyPass, source: ^GPUTextureTransferInfo, destination: ^GPUTextureRegion, cycle: b8) ---
 	UploadToGPUBuffer :: proc(copy_pass: GPUCopyPass, source: ^GPUTransferBufferLocation, destination: ^GPUBufferRegion, cycle: b8) ---
 	CopyGPUTextureToTexture :: proc(copy_pass: [^]GPUCopyPass, source: ^GPUTextureLocation, destination: ^GPUTextureLocation, w: u32, h: u32, d: u32, cycle: b8) ---
 	CopyGPUBufferToBuffer :: proc(copy_pass: [^]GPUCopyPass, source: ^GPUBufferLocation, destination: ^GPUBufferLocation, size: u32, cycle: b8) ---

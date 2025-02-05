@@ -3,7 +3,7 @@ package lindale
 import "core:fmt"
 import "core:os"
 import sdl "thirdparty/sdl3"
-import tt "vendor:stb/truetype"
+import ttf "thirdparty/sdl3_ttf"
 
 ProgramContext :: struct {
 	window: sdl.Window,
@@ -50,11 +50,11 @@ main :: proc() {
 
 			elapsedTimeMs := (newTicks - tick) / 1_000_000
 
-			fmt.println("elapsedMs: ", elapsedTimeMs)
-			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			// fmt.println("elapsedMs: ", elapsedTimeMs)
+			// fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
-			// draw_generate_random_rects(&ctx.drawGroup)
-			draw_one_rect(&ctx.drawGroup)
+			draw_generate_random_rects(&ctx.drawGroup)
+			// draw_one_rect(&ctx.drawGroup)
 		}
 	}
 }
@@ -70,11 +70,13 @@ init :: proc() {
 
 	render_resize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
+	font_init()
+
 	draw_init()
 
 	draw_init_rect_group(&ctx.drawGroup)
-	// draw_generate_random_rects(&ctx.drawGroup)
-	draw_one_rect(&ctx.drawGroup)
+	draw_generate_random_rects(&ctx.drawGroup)
+	// draw_one_rect(&ctx.drawGroup)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))

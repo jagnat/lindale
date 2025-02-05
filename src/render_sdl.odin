@@ -5,9 +5,10 @@ import "core:mem"
 import vm "core:mem/virtual"
 import "core:slice"
 import "core:math/linalg"
+import "core:c"
 import sdl "thirdparty/sdl3"
+import stbi "vendor:stb/image"
 
-// clearColor: ColorF32 = {0.1333,0.1333,0.1333,1}
 clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1}
 
 RenderContext :: struct {
@@ -17,6 +18,8 @@ RenderContext :: struct {
 	instanceBuffer: GPUBuffer, // Instance buffer
 	numInstances: int,
 	width, height: f32,
+	testTexture: Texture2D,
+	sampler: sdl.GPUSampler,
 }
 
 BUFFER_SIZE :: 32768
@@ -36,12 +39,13 @@ GPUBuffer :: struct {
 	usage: sdl.GPUBufferUsageFlags,
 }
 
-PosColorVertex :: struct {
-	x, y, z: f32,
-	r, g, b, a: u8,
+Texture2D :: struct {
+	texHandle: sdl.GPUTexture,
+	w, h: u32,
+	bytesPerPixel: u32
 }
 
-RectInstance :: struct {
+RectInstance :: struct #packed {
 	pos1: [2]f32, // Top left
 	pos2: [2]f32, // Bottom right
 	colors: [4]ColorU8, // top left, bottom left, top right, bottom right
@@ -78,6 +82,7 @@ render_init :: proc(window: sdl.Window) {
 	pixelCreate.entrypoint = "PSMain"
 	pixelCreate.format = .SPIRV
 	pixelCreate.stage = .GPU_SHADERSTAGE_FRAGMENT
+	pixelCreate.num_samplers = 1
 	pixelShader := sdl.CreateGPUShader(ctx.gpu, &pixelCreate)
 	assert(pixelShader != nil)
 	defer sdl.ReleaseGPUShader(ctx.gpu, pixelShader)
@@ -87,46 +92,25 @@ render_init :: proc(window: sdl.Window) {
 
 	ctx.instanceBuffer = render_create_gpu_buffer(BUFFER_SIZE, .VERTEX)
 
-	transferData: [6]PosColorVertex
+	ctx.testTexture = render_create_texture(.GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 128, 128)
+	ctx.testTexture.bytesPerPixel = 4
 
-	v0 := PosColorVertex{10, 10, 0, 255, 0, 0, 255}
-	v0_0 := PosColorVertex{10, 210, 0, 255, 0, 0, 255}
-	v0_1 := PosColorVertex{210, 10, 0, 255, 0, 0, 255}
-	v1 := PosColorVertex{210, 210, 0, 255, 0, 0, 255}
-	transferData[0] = v0
-	transferData[1] = v0_1
-	transferData[2] = v0_0
-	transferData[3] = v1
-	transferData[4] = v0_0
-	transferData[5] = v0_1
+	img := #load("../resources/Fe.png")
+	x, y, channels: c.int
+	bitz := stbi.load_from_memory(raw_data(img), i32(len(img)), &x, &y, &channels, 4)
+	fmt.println("image: ", x, y, channels)
 
-	red := ColorU8_from_hex(0x565656ff)
-	instanceData: [2] RectInstance
-	// instanceData[0].pos1 = {200, 200}
-	// instanceData[0].pos2 = {400, 400}
-	// instanceData[0].colors[0] = red
-	// instanceData[0].colors[1] = red
-	// instanceData[0].colors[2] = red
-	// instanceData[0].colors[3] = red
-	// instanceData[0].cornerRad = [4]f32{80, 80, 80, 80}
+	render_upload_texture(ctx.testTexture, bitz[:(x*y*4)])
 
-	instanceData[0].pos1 = {200, 200}
-	instanceData[0].pos2 = {344, 244}
-	instanceData[0].colors[0] = red
-	instanceData[0].colors[1] = red
-	instanceData[0].colors[2] = red
-	instanceData[0].colors[3] = red
-	instanceData[0].cornerRad = [4]f32{22, 22, 22, 22}
-
-	instanceData[1].pos1 = {550, 550}
-	instanceData[1].pos2 = {850, 850}
-	instanceData[1].colors[0] = ColorU8{255, 0, 0, 255}
-	instanceData[1].colors[1] = ColorU8{0, 0, 0, 255}
-	instanceData[1].colors[2] = ColorU8{0, 0, 255, 255}
-	instanceData[1].colors[3] = ColorU8{0, 0, 0, 255}
-	instanceData[1].cornerRad = [4]f32{10, 0, 4, 140}
-
-	// render_upload_buffer_data(&ctx.instanceBuffer, instanceData[:])
+	// Create sampler
+	sci: sdl.GPUSamplerCreateInfo
+	sci.min_filter = .GPU_FILTER_NEAREST
+	sci.mag_filter = .GPU_FILTER_NEAREST
+	sci.mipmap_mode = .GPU_SAMPLERMIPMAPMODE_NEAREST
+	sci.mip_lod_bias = 0
+	sci.compare_op = .GPU_COMPAREOP_ALWAYS
+	ctx.sampler = sdl.CreateGPUSampler(ctx.gpu, &sci)
+	assert(ctx.sampler != nil)
 }
 
 render_init_rect_pipeline :: proc(vertexShader, pixelShader: rawptr) {
@@ -200,6 +184,8 @@ render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	assert(transferBuffer != nil)
 
 	transferData := sdl.MapGPUTransferBuffer(ctx.gpu, transferBuffer, false)
+	assert(transferData != nil)
+
 	mem.copy(transferData, raw_data(data), len(data))
 
 	sdl.UnmapGPUTransferBuffer(ctx.gpu, transferBuffer)
@@ -222,6 +208,57 @@ render_upload_rect_instances :: proc(rects: []RectInstance) {
 	ctx.numInstances = len(rects)
 }
 
+render_create_texture :: proc(format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
+	textureCreate: sdl.GPUTextureCreateInfo
+	textureCreate.type = .GPU_TEXTURETYPE_2D
+	textureCreate.format = format
+	// TODO: Add more flags if needed (such as writing to texture)
+	textureCreate.usage = (1 << 0) // SDL_GPU_TEXTUREUSAGE_SAMPLER
+	textureCreate.width = w
+	textureCreate.height = h
+	textureCreate.layer_count_or_depth = 1
+	textureCreate.num_levels = 1
+	texture := sdl.CreateGPUTexture(ctx.gpu, &textureCreate)
+	assert(texture != nil)
+
+	tex2d: Texture2D
+	tex2d.texHandle = texture
+	tex2d.w = w
+	tex2d.h = h
+
+	return tex2d
+}
+
+render_upload_texture :: proc(tex: Texture2D, data: []byte) {
+	// assert(u64(len(data)) < u64(buffer.capacity))
+	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
+	transferBufferCreate.usage = .GPU_TRANSFERBUFFERUSAGE_UPLOAD
+	transferBufferCreate.size = u32(len(data))
+	transferBuffer := sdl.CreateGPUTransferBuffer(ctx.gpu, &transferBufferCreate)
+	assert(transferBuffer != nil)
+
+	transferData := sdl.MapGPUTransferBuffer(ctx.gpu, transferBuffer, false)
+	assert(transferData != nil)
+
+	mem.copy(transferData, raw_data(data), len(data))
+
+	sdl.UnmapGPUTransferBuffer(ctx.gpu, transferBuffer)
+
+	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
+	copyPass := sdl.BeginGPUCopyPass(cmdBuf)
+
+	tbl := sdl.GPUTransferBufferLocation{transfer_buffer = transferBuffer, offset = 0}
+	tti := sdl.GPUTextureTransferInfo{transfer_buffer = transferBuffer, offset = 0, pixels_per_row = tex.w, rows_per_layer = tex.h}
+	tr := sdl.GPUTextureRegion{texture = tex.texHandle, mip_level = 0, layer = 0, x = 0, y = 0, z = 0, w = tex.w, h = tex.h, d = 1}
+	// gbr := sdl.GPUBufferRegion{buffer = buffer.handle, offset = 0, size = u32(len(data))}
+	// sdl.UploadToGPUBuffer(copyPass, &tbl, &gbr, false)
+	sdl.UploadToGPUTexture(copyPass, &tti, &tr, false)
+
+	sdl.EndGPUCopyPass(copyPass)
+	sdl.SubmitGPUCommandBuffer(cmdBuf)
+	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
+}
+
 render_render :: proc() {
 	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(cmdBuf != nil)
@@ -242,6 +279,11 @@ render_render :: proc() {
 	sdl.BindGPUGraphicsPipeline(renderPass, ctx.pipeline)
 	instanceBinding := sdl.GPUBufferBinding{buffer = ctx.instanceBuffer.handle, offset = 0}
 	sdl.BindGPUVertexBuffers(renderPass, 0, &instanceBinding, 1)
+
+	textureBinding : sdl.GPUTextureSamplerBinding
+	textureBinding.texture = ctx.testTexture.texHandle
+	textureBinding.sampler = ctx.sampler
+	sdl.BindGPUFragmentSamplers(renderPass, 0, &textureBinding, 1)
 
 	unif: UniformBufferContents
 	unif.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
