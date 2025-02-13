@@ -2,11 +2,10 @@ package lindale
 
 import "core:fmt"
 import "core:os"
-import sdl "thirdparty/sdl3"
-import ttf "thirdparty/sdl3_ttf"
+import sdl "vendor:sdl3"
 
 ProgramContext :: struct {
-	window: sdl.Window,
+	window: ^sdl.Window,
 	audioDevice: sdl.AudioDeviceID,
 }
 
@@ -29,15 +28,15 @@ main :: proc() {
 	for running {
 		event: sdl.Event
 		for sdl.PollEvent(&event) {
-			eventType := sdl.EventType(event.type)
+			eventType := event.type
 			#partial switch eventType {
-			case .EVENT_QUIT:
+			case .QUIT:
 				os.exit(0)
-			case .EVENT_KEY_DOWN:
-				if event.key.scancode == .SCANCODE_ESCAPE {
+			case .KEY_DOWN:
+				if event.key.scancode == .ESCAPE {
 					sdl.Quit()
 				}
-			case .EVENT_WINDOW_RESIZED:
+			case .WINDOW_RESIZED:
 				render_resize(event.window.data1, event.window.data2)
 			}
 		}
@@ -83,7 +82,7 @@ init :: proc() {
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))
-	fmt.println(sdl.GetUserFolder(.FOLDER_DOCUMENTS))
+	fmt.println(sdl.GetUserFolder(.DOCUMENTS))
 
 	sdl.ShowWindow(ctx.window)
 }

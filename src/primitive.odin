@@ -8,9 +8,7 @@ ColorU8 :: struct {
 	r, g, b, a: u8
 }
 
-ColorF32 :: struct {
-	r, g, b, a: f32
-}
+ColorF32 :: [4]f32
 
 ColorU8_from_hex :: proc(hexCode: u32) -> ColorU8 {
 	col: ColorU8
