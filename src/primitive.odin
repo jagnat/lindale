@@ -1,5 +1,9 @@
 package lindale
 
+RectI32 :: struct {
+    x, y, w, h: i32
+}
+
 ColorU8 :: struct {
 	r, g, b, a: u8
 }

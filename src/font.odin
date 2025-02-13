@@ -38,8 +38,6 @@ font_draw_text :: proc() {
 		quad: fs.Quad
 		fs.TextIterNext(&ctx.fontContext, &iter, &quad) or_break
 	}
-
-	stbi.write_png("fa.png", i32(ctx.fontContext.width), i32(ctx.fontContext.height), 1, raw_data(ctx.fontContext.textureData), i32(ctx.fontContext.width))
 }
 
 __fs_resize :: proc(data: rawptr, w, h: int) {

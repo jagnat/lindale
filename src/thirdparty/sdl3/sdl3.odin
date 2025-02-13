@@ -3313,8 +3313,8 @@ foreign lib {
 	PushGPUComputeUniformData :: proc(command_buffer: GPUCommandBuffer, slot_index: u32, data: rawptr, length: u32) ---
 	BeginGPURenderPass :: proc(command_buffer: GPUCommandBuffer, color_target_infos: [^]GPUColorTargetInfo, num_color_targets: u32, depth_stencil_target_info: ^GPUDepthStencilTargetInfo) -> GPURenderPass ---
 	BindGPUGraphicsPipeline :: proc(render_pass: GPURenderPass, graphics_pipeline: GPUGraphicsPipeline) ---
-	SetGPUViewport :: proc(render_pass: [^]GPURenderPass, viewport: ^GPUViewport) ---
-	SetGPUScissor :: proc(render_pass: [^]GPURenderPass, scissor: ^Rect) ---
+	SetGPUViewport :: proc(render_pass: GPURenderPass, viewport: ^GPUViewport) ---
+	SetGPUScissor :: proc(render_pass: GPURenderPass, scissor: ^Rect) ---
 	SetGPUBlendConstants :: proc(render_pass: [^]GPURenderPass, blend_constants: FColor) ---
 	SetGPUStencilReference :: proc(render_pass: [^]GPURenderPass, reference: u8) ---
 	BindGPUVertexBuffers :: proc(render_pass: GPURenderPass, first_slot: u32, bindings: [^]GPUBufferBinding, num_bindings: u32) ---

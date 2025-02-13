@@ -8,7 +8,6 @@ import ttf "thirdparty/sdl3_ttf"
 ProgramContext :: struct {
 	window: sdl.Window,
 	audioDevice: sdl.AudioDeviceID,
-	drawGroup: RectDrawGroup,
 }
 
 WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
@@ -42,19 +41,25 @@ main :: proc() {
 				render_resize(event.window.data1, event.window.data2)
 			}
 		}
-		render_upload_rect_instances(draw_get_rects(&ctx.drawGroup))
-		render_render()
+
+		draw_upload()
+
+		render_begin()
+		render_draw_rects(true)
+		render_end()
+
 		count += 1
 		if count % 256 == 0 {
 			newTicks := sdl.GetTicksNS()
 
 			elapsedTimeMs := (newTicks - tick) / 1_000_000
 
-			// fmt.println("elapsedMs: ", elapsedTimeMs)
-			// fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			fmt.println("elapsedMs: ", elapsedTimeMs)
+			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
-			draw_generate_random_rects(&ctx.drawGroup)
-			// draw_one_rect(&ctx.drawGroup)
+			// draw_generate_random_rects(&ctx.drawGroup)
+			// draw_generate_random_spheres(&ctx.drawGroup)
+			draw_generate_random_rects()
 		}
 	}
 }
@@ -74,9 +79,7 @@ init :: proc() {
 
 	draw_init()
 
-	draw_init_rect_group(&ctx.drawGroup)
-	draw_generate_random_rects(&ctx.drawGroup)
-	// draw_one_rect(&ctx.drawGroup)
+	draw_generate_random_rects()
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(sdl.GetPrefPath("jagi", "lindale"))
