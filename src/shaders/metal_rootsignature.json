@@ -1,0 +1,75 @@
+{
+	"version": 1,
+	"descriptor_tables": [],
+	"vertex_buffers": [
+		{
+			"binding": 14,  // Metal vertex buffer starts at 14
+			"input_rate": "vertex",
+			"stride": 28,   // Total size of all attributes (2 + 2 + 2 + 2 + 4 + 1 = 13 floats = 52 bytes)
+			"attributes": [
+				{
+					"semantic_name": "POSITION0",
+					"semantic_index": 0,
+					"format": "R32G32_FLOAT",    // float2
+					"offset": 0,
+					"shader_location": 0         // Maps to vk::location(0)
+				},
+				{
+					"semantic_name": "POSITION1",
+					"semantic_index": 0,
+					"format": "R32G32_FLOAT",    // float2
+					"offset": 8,                 // After first float2
+					"shader_location": 1         // Maps to vk::location(1)
+				},
+				{
+					"semantic_name": "TEXCOORD0",
+					"semantic_index": 0,
+					"format": "R32G32_FLOAT",    // float2
+					"offset": 16,                // After second float2
+					"shader_location": 2         // Maps to vk::location(2)
+				},
+				{
+					"semantic_name": "TEXCOORD1",
+					"semantic_index": 0,
+					"format": "R32G32_FLOAT",    // float2
+					"offset": 24,                // After third float2
+					"shader_location": 3         // Maps to vk::location(3)
+				},
+				{
+					"semantic_name": "COLOR",
+					"semantic_index": 0,
+					"format": "R32G32B32A32_FLOAT", // float4
+					"offset": 32,                   // After fourth float2
+					"shader_location": 4            // Maps to vk::location(4)
+				},
+				{
+					"semantic_name": "CORNER",
+					"semantic_index": 0,
+					"format": "R32_FLOAT",         // float
+					"offset": 48,                  // After float4
+					"shader_location": 5           // Maps to vk::location(5)
+				}
+			]
+		}
+	],
+	"bindings": [
+		{
+			"type": "uniform_buffer",
+			"space": 1,
+			"binding": 0,
+			"metal_binding": 0
+		},
+		{
+			"type": "texture",
+			"space": 2,
+			"binding": 0,
+			"metal_binding": 0
+		},
+		{
+			"type": "sampler",
+			"space": 2,
+			"binding": 0,
+			"metal_binding": 0
+		}
+	]
+}
