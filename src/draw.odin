@@ -46,6 +46,7 @@ DrawContext :: struct {
 	alloc: mem.Allocator,
 	batchesFirst: ^RectDrawBatch,
 	batchesLast: ^RectDrawBatch,
+	fontTexture: Texture2D
 }
 
 @(private="file")
@@ -55,6 +56,8 @@ draw_init :: proc() {
 	err := vm.arena_init_growing(&ctx.arena)
 	assert(err == .None)
 	ctx.alloc = vm.arena_allocator(&ctx.arena)
+
+	ctx.fontTexture = render_create_texture(1, .A8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
 
 	fmt.println("size of rect instance:", size_of(RectInstance))
 }
@@ -67,7 +70,7 @@ draw_get_current_batch :: proc() -> ^RectDrawBatch {
 	return ctx.batchesLast
 }
 
-draw_put_instance :: proc(batch: ^RectDrawBatch, instance: RectInstance) {
+draw_add_instance_to_batch :: proc(batch: ^RectDrawBatch, instance: RectInstance) {
 	lastChunk := batch.chunkLast
 	if lastChunk == nil || lastChunk.instanceCount + 1 >= len(lastChunk.instancePool) {
 		newChunk := new(RectDrawChunk, allocator = ctx.alloc)
@@ -85,11 +88,16 @@ draw_push_rect :: proc(rect: SimpleUIRect) {
 	curBatch := draw_get_current_batch()
 
 	instance : RectInstance
-	instance.pos1 = {rect.x, rect.y}
-	instance.pos2 = {rect.x + rect.width, rect.y + rect.height}
-	instance.colors = {rect.color, rect.color, rect.color, rect.color}
-	instance.cornerRad = {rect.cornerRad, rect.cornerRad, rect.cornerRad, rect.cornerRad}
-	draw_put_instance(curBatch, instance)
+	instance.pos0 = {rect.x, rect.y}
+	instance.pos1 = {rect.x + rect.width, rect.y + rect.height}
+	instance.color = rect.color
+	instance.cornerRad = rect.cornerRad
+	draw_add_instance_to_batch(curBatch, instance)
+}
+
+draw_push_instance :: proc(rect: RectInstance) {
+	curBatch := draw_get_current_batch()
+	draw_add_instance_to_batch(curBatch, rect)
 }
 
 draw_upload :: proc() {
@@ -103,9 +111,9 @@ draw_clear :: proc() {
 }
 
 draw_generate_random_rects :: proc() {
-	NUM_RECTS :: 4000
+	NUM_RECTS :: 40
 	draw_clear()
-	alph :: 1
+	alph :: 10
 	colors := []ColorU8{{255, 255, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
@@ -151,4 +159,19 @@ draw_one_rect :: proc() {
 	rect := SimpleUIRect{200, 200,
 			100, 100, {0, 255, 0, 255}, 0}
 	draw_push_rect(rect)
+}
+
+draw_text :: proc(text: string, x, y: f32) {
+	draw_clear()
+
+	strLen := len(text)
+	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
+
+	counts := font_get_text_quads("Hello, 世界", buf[:])
+	fmt.println("Got ", counts, " characters")
+
+	for &rect in buf {
+		rect.color = {255, 255, 255, 255}
+		draw_push_instance(rect)
+	}
 }

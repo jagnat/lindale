@@ -53,13 +53,15 @@ main :: proc() {
 
 			elapsedTimeMs := (newTicks - tick) / 1_000_000
 
-			fmt.println("elapsedMs: ", elapsedTimeMs)
-			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			// fmt.println("elapsedMs: ", elapsedTimeMs)
+			// fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
 			// draw_generate_random_rects(&ctx.drawGroup)
 			// draw_generate_random_spheres(&ctx.drawGroup)
-			draw_generate_random_rects()
+			draw_text(" THIS IS A TEST", 300, 300)
+			// draw_generate_random_rects()
 		}
+		free_all(context.temp_allocator)
 	}
 }
 
@@ -81,7 +83,7 @@ init :: proc() {
 	draw_generate_random_rects()
 
 	fmt.println(sdl.GetBasePath())
-	fmt.println(sdl.GetPrefPath("jagi", "lindale"))
+	fmt.println(cstring(sdl.GetPrefPath("jagi", "lindale")))
 	fmt.println(sdl.GetUserFolder(.DOCUMENTS))
 
 	sdl.ShowWindow(ctx.window)

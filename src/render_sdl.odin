@@ -15,8 +15,7 @@ RenderContext :: struct {
 	gpu: ^sdl.GPUDevice,
 	pipeline: ^sdl.GPUGraphicsPipeline,
 	window: ^sdl.Window,
-	instanceBuffer: GPUBuffer, // Instance buffer
-	numInstances: int,
+	instanceBuffer: GraphicsBuffer, // Instance buffer
 	width, height: f32,
 	emptyTexture: Texture2D,
 	sampler: ^sdl.GPUSampler,
@@ -34,7 +33,7 @@ UniformBufferContents :: struct {
 	dim: [2]f32,
 }
 
-GPUBuffer :: struct {
+GraphicsBuffer :: struct {
 	handle: ^sdl.GPUBuffer,
 	capacity: u32,
 	size: u32,
@@ -49,10 +48,12 @@ Texture2D :: struct {
 }
 
 RectInstance :: struct #packed {
-	pos1: [2]f32, // Top left
-	pos2: [2]f32, // Bottom right
-	colors: [4]ColorU8, // top left, bottom left, top right, bottom right
-	cornerRad: [4]f32, // Same order as above
+	pos0: [2]f32, // Top left
+	pos1: [2]f32, // Bottom right
+	uv0: [2]f32, // Top left
+	uv1: [2]f32, // Bottom right
+	color: ColorU8, // rect color
+	cornerRad: f32, // corner radiustc
 }
 
 render_init :: proc(window: ^sdl.Window) {
@@ -140,15 +141,14 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
 
 	vertexInputState: sdl.GPUVertexInputState
 
-	vaDesc: [7]sdl.GPUVertexAttribute
-	vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0, buffer_slot = 0, format = .FLOAT2}
+	vaDesc: [6]sdl.GPUVertexAttribute
+	vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[1] = sdl.GPUVertexAttribute{location = 1, offset = 2 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
-	vaDesc[2] = sdl.GPUVertexAttribute{location = 2, offset = 4 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[3] = sdl.GPUVertexAttribute{location = 3, offset = 5 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[4] = sdl.GPUVertexAttribute{location = 4, offset = 6 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 7 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[6] = sdl.GPUVertexAttribute{location = 6, offset = 8 * size_of(f32), buffer_slot = 0, format = .FLOAT4}
-	vertexInputState.num_vertex_attributes = 7
+	vaDesc[2] = sdl.GPUVertexAttribute{location = 2, offset = 4 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
+	vaDesc[3] = sdl.GPUVertexAttribute{location = 3, offset = 6 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
+	vaDesc[4] = sdl.GPUVertexAttribute{location = 4, offset = 8 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
+	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 9 * size_of(f32), buffer_slot = 0, format = .FLOAT}
+	vertexInputState.num_vertex_attributes = 6
 
 	vertexInputState.num_vertex_buffers = 1
 	vertexInputState.vertex_buffer_descriptions = &vbDesc
@@ -162,13 +162,13 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
 	fmt.println("Created GPU pipeline")
 }
 
-render_create_gpu_buffer :: proc(sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GPUBuffer {
+render_create_gpu_buffer :: proc(sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GraphicsBuffer {
 	bufferCreate: sdl.GPUBufferCreateInfo
 	bufferCreate.size = sizeInBytes
 	bufferCreate.usage = usage
 	buffer := sdl.CreateGPUBuffer(ctx.gpu, bufferCreate)
 	assert(buffer != nil)
-	return GPUBuffer{buffer, sizeInBytes, 0, 0, usage}
+	return GraphicsBuffer{buffer, sizeInBytes, 0, 0, usage}
 }
 
 render_upload_rect_draw_batch :: proc(batch: ^RectDrawBatch) {
@@ -208,7 +208,7 @@ render_upload_rect_draw_batch :: proc(batch: ^RectDrawBatch) {
 	buffer.count = u32(batch.totalInstanceCount)
 }
 
-render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
+render_upload_buffer_data :: proc(buffer: ^GraphicsBuffer, ary: []$T) {
 	data := slice.to_bytes(ary)
 	assert(u64(len(data)) < u64(buffer.capacity))
 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
@@ -236,11 +236,6 @@ render_upload_buffer_data :: proc(buffer: ^GPUBuffer, ary: []$T) {
 	assert(result)
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
 	buffer.size = u32(len(data))
-}
-
-render_upload_rect_instances :: proc(rects: []RectInstance) {
-	render_upload_buffer_data(&ctx.instanceBuffer, rects)
-	ctx.numInstances = len(rects)
 }
 
 render_create_texture :: proc(bpp: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {

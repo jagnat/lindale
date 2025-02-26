@@ -8,13 +8,12 @@ Texture2D tex : register(t0, space2);
 SamplerState sampl : register(s0, space2);
 
 struct VSInput {
-	[[vk::location(0)]]float2 pos1 : POSITION0;
-	[[vk::location(1)]]float2 pos2 : POSITION1;
-	[[vk::location(2)]]float4 color00 : COLOR0;
-	[[vk::location(3)]]float4 color01 : COLOR1;
-	[[vk::location(4)]]float4 color10 : COLOR2;
-	[[vk::location(5)]]float4 color11 : COLOR3;
-	[[vk::location(6)]]float4 cornerRads : CORNER;
+	[[vk::location(0)]] float2 pos0 : POSITION0;
+	[[vk::location(1)]] float2 pos1 : POSITION1;
+	[[vk::location(2)]] float2 uv0 : TEXCOORD0;
+	[[vk::location(3)]] float2 uv1 : TEXCOORD1;
+	[[vk::location(4)]] float4 color : COLOR;
+	[[vk::location(5)]] float cornerRad : CORNER;
 	uint vertexId : SV_VertexID; // TL, BL, TR, BR
 };
 
@@ -23,21 +22,19 @@ struct VSOutput {
 	float2 uv : TEXCOORD0;
 	float2 rectPos : RECTPOS;
 	nointerpolation float2 halfRectSize: RECTSZ;
-	nointerpolation float4 color00 : TEXCOORD1;
-	nointerpolation float4 color01 : TEXCOORD2;
-	nointerpolation float4 color10 : TEXCOORD3;
-	nointerpolation float4 color11 : TEXCOORD4;
-	nointerpolation float4 cornerRads : CORNER;
+	nointerpolation float4 color : COLOR;
+	nointerpolation float cornerRad : CORNER;
 };
 
 float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
 	return lerp(lerp(c00, c01, uv.y), lerp(c10, c11, uv.y), uv.x);
 }
 
-float rounded_rect_sdf(float2 input, float2 halfRectSize, float4 cornerRad)
+float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad)
 {
-	float2 radSide = input.x > 0? cornerRad.zw : cornerRad.xy;
-	float rad = input.y > 0? radSide.y : radSide.x;
+	// float2 radSide = input.x > 0? cornerRad.zw : cornerRad.xy;
+	// float rad = input.y > 0? radSide.y : radSide.x;
+	float rad = cornerRad;
 	float2 q = abs(input) - halfRectSize + rad;
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
@@ -49,27 +46,25 @@ float circle_sdf(float2 input, float rad) {
 VSOutput VSMain(VSInput input) {
 	VSOutput output;
 
-	float2 posToPick = input.pos1;
+	// Determine position of this vertex from vertex id
+	float2 posToPick = input.pos0;
 	float2 rectMult = float2(-1, -1);
 	if (input.vertexId & 1)
 	{
-		posToPick.y = input.pos2.y;
+		posToPick.y = input.pos1.y;
 		rectMult.y = 1;
 	}
 	if  ((input.vertexId >> 1) & 1) {
-		posToPick.x = input.pos2.x;
+		posToPick.x = input.pos1.x;
 		rectMult.x = 1;
 	}
 
 	output.pos = mul(orthoMat, float4(posToPick, 0.f, 1.f));
 	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
-	output.halfRectSize = (input.pos2 - input.pos1) / 2;
+	output.halfRectSize = (input.pos1 - input.pos0) / 2;
 	output.rectPos = rectMult * output.halfRectSize;
-	output.color00 = input.color00;
-	output.color01 = input.color01;
-	output.color10 = input.color10;
-	output.color11 = input.color11;
-	output.cornerRads = input.cornerRads;
+	output.color = input.color;
+	output.cornerRad = input.cornerRad;
 
 	return output;
 }
@@ -79,10 +74,10 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 outputColor = tex.Sample(sampl, input.uv);
 
 	// interpolated vertex color
-	outputColor *= blerp(input.color00, input.color01, input.color10, input.color11, input.uv);
+	outputColor *= input.color;
 
 	// SDF corners
-	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRads);
+	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);
 	float mixFactor = smoothstep(-0.75f, 0.75f, sdf);
 	outputColor.a *= 1 - mixFactor;
 

@@ -18,27 +18,38 @@ FontState :: struct {
 ctx: FontState
 
 font_init :: proc() {
-	ctx.fontContext.callbackResize = __fs_resize
-	ctx.fontContext.callbackUpdate = __fs_update
 
 	fs.Init(&ctx.fontContext, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE, .TOPLEFT)
 
 	fs.AddFontMem(&ctx.fontContext, "Noto Sans", font_NotoSans, false)
-
-	font_draw_text()
 }
 
-font_draw_text :: proc() {
+font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 	state := fs.__getState(&ctx.fontContext)
-	state.size = 16
+	state.size = 32
 
-	iter := fs.TextIterInit(&ctx.fontContext, 0, 0, "The quick brown fox jumps over the lazy dog")
+	iter := fs.TextIterInit(&ctx.fontContext, 300, 300, text)
+
+	i := 0
 
 	for {
 		quad: fs.Quad
 		fs.TextIterNext(&ctx.fontContext, &iter, &quad) or_break
+		instance := RectInstance{
+			{quad.x0, quad.y0},
+			{quad.x1, quad.y1},
+			{quad.s0, quad.t0},
+			{quad.s1, quad.t1}, 
+			{}, // Color
+			0 // Corner Radius
+		}
+		rects[i] = instance
+		i += 1
 	}
+
+	return i
 }
+
 
 __fs_resize :: proc(data: rawptr, w, h: int) {
 	fmt.println("HERE>")
