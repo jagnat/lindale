@@ -3,3 +3,5 @@
 *.pdb
 *.rdi
 *.sublime-workspace
+*.DS_Store
+*.dSYM
