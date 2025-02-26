@@ -57,19 +57,29 @@ RectInstance :: struct #packed {
 
 render_init :: proc(window: ^sdl.Window) {
 	ctx.window = window
-	ctx.gpu = sdl.CreateGPUDevice({.SPIRV}, ODIN_DEBUG, nil)
+	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		shaderFormat = {.SPIRV}
+	} else when ODIN_OS == .Darwin {
+		shaderFormat = {.MSL}
+	}
+	ctx.gpu = sdl.CreateGPUDevice(shaderFormat, ODIN_DEBUG, nil)
 	assert(ctx.gpu != nil)
 
 	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
 	assert(result == true)
 
-	vShaderBits := #load("shaders/vs.spv")
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		vShaderBits := #load("shaders/vs.spv")
+	} else when ODIN_OS == .Darwin {
+		vShaderBits := #load("shaders/shader.metal")
+	}
 
 	vertexCreate: sdl.GPUShaderCreateInfo
 	vertexCreate.code_size = uint(len(vShaderBits))
 	vertexCreate.code = &vShaderBits[0]
 	vertexCreate.entrypoint = "VSMain"
-	vertexCreate.format = {.SPIRV}
+	vertexCreate.format = shaderFormat
 	vertexCreate.stage = .VERTEX
 	vertexCreate.num_uniform_buffers = 1
 	vertexShader := sdl.CreateGPUShader(ctx.gpu, vertexCreate)
@@ -77,13 +87,17 @@ render_init :: proc(window: ^sdl.Window) {
 	defer sdl.ReleaseGPUShader(ctx.gpu, vertexShader)
 	fmt.println("Created vertex shader")
 
-	pShaderBits := #load("shaders/ps.spv")
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		pShaderBits := #load("shaders/ps.spv")
+	} else when ODIN_OS == .Darwin {
+		pShaderBits := #load("shaders/shader.metal")
+	}
 
 	pixelCreate: sdl.GPUShaderCreateInfo
 	pixelCreate.code_size = uint(len(pShaderBits))
 	pixelCreate.code = &pShaderBits[0]
 	pixelCreate.entrypoint = "PSMain"
-	pixelCreate.format = {.SPIRV}
+	pixelCreate.format = shaderFormat
 	pixelCreate.stage = .FRAGMENT
 	pixelCreate.num_samplers = 1
 	pixelShader := sdl.CreateGPUShader(ctx.gpu, pixelCreate)

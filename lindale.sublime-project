@@ -15,6 +15,9 @@
 			},
 			"linux": {
 				"shell_cmd": "sh build.sh"
+			},
+			"osx": {
+				"shell_cmd": "sh build.sh"
 			}
 		},
 		{
@@ -24,7 +27,18 @@
 		{
 			"name": "Odin Compile Shaders",
 			"working_dir": "${project_path}/src/shaders",
-			"shell_cmd": "compile.bat"
+			"windows":
+			{
+				"shell_cmd": "compile.bat",
+			},
+			"osx":
+			{
+				"shell_cmd": "sh ./compile_osx.sh",
+			},
+			"linux":
+			{
+				"shell_cmd": "compile_osx.sh",
+			}
 		},
 		{
 			"name": "Odin Run Release",
