@@ -3,6 +3,8 @@ using namespace metal;
 
 struct UniformBuffer {
 	float4x4 orthoMat;
+	float4 samplerAlphaChannel;
+	float4 samplerFillChannels;
 	float2 dims;
 };
 
@@ -44,18 +46,21 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	VSOutput output;
 
 	float2 posToPick = input.pos0;
+	float2 uvToPick = input.uv0;
 	float2 rectMult = float2(-1, -1);
 	if (vertexId & 1) {
 		posToPick.y = input.pos1.y;
+		uvToPick.y = input.uv1.y;
 		rectMult.y = 1;
 	}
 	if ((vertexId >> 1) & 1) {
 		posToPick.x = input.pos1.x;
+		uvToPick.x = input.uv1.x;
 		rectMult.x = 1;
 	}
 
 	output.pos = uniformBuffer.orthoMat * float4(posToPick, 0.0, 1.0);
-	output.uv = float2((vertexId >> 1) & 1, vertexId & 1);
+	output.uv = uvToPick;
 	output.halfRectSize = (input.pos1 - input.pos0) / 2.0;
 	output.rectPos = rectMult * output.halfRectSize;
 	output.color = input.color;
@@ -64,12 +69,11 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	return output;
 }
 
-fragment float4 PSMain(VSOutput input [[stage_in]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
-	// texture sample
-	float4 outputColor = tex.sample(sampl, input.uv);
-
-	// interpolated vertex color
-	outputColor *= input.color;
+fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
+	float4 outputColor = input.color;
+	float4 sampleColor = tex.sample(sampl, input.uv);
+	float sampleAlpha = dot(sampleColor, uniformBuffer.samplerAlphaChannel);
+	outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);

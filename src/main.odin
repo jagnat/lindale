@@ -7,6 +7,7 @@ import sdl "vendor:sdl3"
 ProgramContext :: struct {
 	window: ^sdl.Window,
 	audioDevice: sdl.AudioDeviceID,
+	texture: Texture2D,
 }
 
 WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
@@ -34,7 +35,7 @@ main :: proc() {
 				os.exit(0)
 			case .KEY_DOWN:
 				if event.key.scancode == .ESCAPE {
-					sdl.Quit()
+					os.exit(0)
 				}
 			case .WINDOW_RESIZED:
 				render_resize(event.window.data1, event.window.data2)
@@ -53,13 +54,14 @@ main :: proc() {
 
 			elapsedTimeMs := (newTicks - tick) / 1_000_000
 
-			// fmt.println("elapsedMs: ", elapsedTimeMs)
-			// fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			fmt.println("elapsedMs: ", elapsedTimeMs)
+			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
 			// draw_generate_random_rects(&ctx.drawGroup)
 			// draw_generate_random_spheres(&ctx.drawGroup)
-			draw_text(" THIS IS A TEST", 300, 300)
+			draw_text("This is a test.", 300, 300)
 			// draw_generate_random_rects()
+			// draw_generate_random_textured_rects();
 		}
 		free_all(context.temp_allocator)
 	}

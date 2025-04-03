@@ -1,5 +1,10 @@
 package lindale
 
+import "core:math/linalg"
+
+Vec4f :: linalg.Vector4f32
+Mat4f :: linalg.Matrix4x4f32
+
 RectI32 :: struct {
     x, y, w, h: i32
 }

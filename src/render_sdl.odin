@@ -21,6 +21,8 @@ RenderContext :: struct {
 	sampler: ^sdl.GPUSampler,
 	cmdBuf: ^sdl.GPUCommandBuffer,
 	renderPass: ^sdl.GPURenderPass,
+	boundTexture: ^Texture2D,
+	uniforms: UniformBufferContents,
 }
 
 BUFFER_SIZE :: 1024 * 1024
@@ -29,7 +31,9 @@ BUFFER_SIZE :: 1024 * 1024
 ctx: RenderContext
 
 UniformBufferContents :: struct {
-	projMatrix: linalg.Matrix4x4f32,
+	projMatrix: Mat4f,
+	samplerAlphaChannel: Vec4f,
+	samplerFillChannels: Vec4f,
 	dim: [2]f32,
 }
 
@@ -100,6 +104,7 @@ render_init :: proc(window: ^sdl.Window) {
 	pixelCreate.entrypoint = "PSMain"
 	pixelCreate.format = shaderFormat
 	pixelCreate.stage = .FRAGMENT
+	pixelCreate.num_uniform_buffers = 1
 	pixelCreate.num_samplers = 1
 	pixelShader := sdl.CreateGPUShader(ctx.gpu, pixelCreate)
 	assert(pixelShader != nil)
@@ -114,6 +119,8 @@ render_init :: proc(window: ^sdl.Window) {
 	textureData := []byte{255, 255, 255, 255}
 	render_upload_texture(ctx.emptyTexture, textureData)
 
+	render_bind_texture(&ctx.emptyTexture)
+
 	// Create sampler
 	sci: sdl.GPUSamplerCreateInfo
 	sci.min_filter = .NEAREST
@@ -123,6 +130,9 @@ render_init :: proc(window: ^sdl.Window) {
 	sci.compare_op = .ALWAYS
 	ctx.sampler = sdl.CreateGPUSampler(ctx.gpu, sci)
 	assert(ctx.sampler != nil)
+
+	ctx.uniforms.samplerAlphaChannel = {0, 0, 0, 1}
+	ctx.uniforms.samplerFillChannels = {}
 }
 
 render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
@@ -150,7 +160,6 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
 	vbDesc: sdl.GPUVertexBufferDescription
 	vbDesc.slot = 0
 	vbDesc.input_rate = .INSTANCE
-	vbDesc.instance_step_rate = 1
 	vbDesc.pitch = size_of(RectInstance)
 
 	vertexInputState: sdl.GPUVertexInputState
@@ -252,11 +261,10 @@ render_upload_buffer_data :: proc(buffer: ^GraphicsBuffer, ary: []$T) {
 	buffer.size = u32(len(data))
 }
 
-render_create_texture :: proc(bpp: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
+render_create_texture :: proc(bytesPerPixel: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
 	textureCreate: sdl.GPUTextureCreateInfo
 	textureCreate.type = .D2
 	textureCreate.format = format
-	// TODO: Add more flags if needed (such as writing to texture)
 	textureCreate.usage = {.SAMPLER}
 	textureCreate.width = w
 	textureCreate.height = h
@@ -269,7 +277,7 @@ render_create_texture :: proc(bpp: u32, format: sdl.GPUTextureFormat, w, h: u32)
 	tex2d.texHandle = texture
 	tex2d.w = w
 	tex2d.h = h
-	tex2d.bytesPerPixel = bpp
+	tex2d.bytesPerPixel = bytesPerPixel
 
 	return tex2d
 }
@@ -300,6 +308,18 @@ render_upload_texture :: proc(tex: Texture2D, data: []byte) {
 	result := sdl.SubmitGPUCommandBuffer(cmdBuf)
 	assert(result)
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
+}
+
+render_create_texture_from_file :: proc(file: []u8) -> Texture2D {
+	x, y, channels: c.int
+	tex: Texture2D
+
+	bits := stbi.load_from_memory(raw_data(file), i32(len(file)), &x, &y, &channels, 4)
+
+	tex = render_create_texture(u32(channels), .R8G8B8A8_UNORM, u32(x), u32(y))
+	render_upload_texture(tex, bits[:channels * x * y])
+
+	return tex
 }
 
 render_begin :: proc() {
@@ -334,16 +354,22 @@ render_draw_rects :: proc(scissor: bool = false) {
 	sdl.BindGPUVertexBuffers(ctx.renderPass, 0, &instanceBinding, 1)
 
 	textureBinding : sdl.GPUTextureSamplerBinding
-	textureBinding.texture = ctx.emptyTexture.texHandle
+	textureBinding.texture = ctx.boundTexture.texHandle
 	textureBinding.sampler = ctx.sampler
 	sdl.BindGPUFragmentSamplers(ctx.renderPass, 0, &textureBinding, 1)
 
-	unif: UniformBufferContents
-	unif.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
-
-	sdl.PushGPUVertexUniformData(ctx.cmdBuf, 0, rawptr(&unif), size_of(UniformBufferContents))
+	sdl.PushGPUVertexUniformData(ctx.cmdBuf, 0, rawptr(&ctx.uniforms), size_of(UniformBufferContents))
 
 	sdl.DrawGPUPrimitives(ctx.renderPass, 4, u32(ctx.instanceBuffer.count), 0, 0)
+}
+
+render_bind_texture :: proc(texture: ^Texture2D) {
+	ctx.boundTexture = texture
+}
+
+render_set_sampler_channels :: proc(samplerAlphaChannel, samplerFillChannels : Vec4f) {
+	ctx.uniforms.samplerAlphaChannel = samplerAlphaChannel
+	ctx.uniforms.samplerFillChannels = samplerFillChannels
 }
 
 render_end :: proc() {
@@ -355,4 +381,5 @@ render_end :: proc() {
 render_resize :: proc(w, h: i32) {
 	ctx.width = f32(w)
 	ctx.height = f32(h)
+	ctx.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
 }

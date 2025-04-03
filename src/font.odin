@@ -26,7 +26,7 @@ font_init :: proc() {
 
 font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 	state := fs.__getState(&ctx.fontContext)
-	state.size = 32
+	state.size = 22
 
 	iter := fs.TextIterInit(&ctx.fontContext, 300, 300, text)
 
@@ -39,7 +39,7 @@ font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 			{quad.x0, quad.y0},
 			{quad.x1, quad.y1},
 			{quad.s0, quad.t0},
-			{quad.s1, quad.t1}, 
+			{quad.s1, quad.t1},
 			{}, // Color
 			0 // Corner Radius
 		}
@@ -48,6 +48,10 @@ font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 	}
 
 	return i
+}
+
+font_get_atlas :: proc() -> []byte {
+	return ctx.fontContext.textureData
 }
 
 

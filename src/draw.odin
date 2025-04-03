@@ -37,6 +37,7 @@ RectDrawBatchIterator :: struct {
 
 SimpleUIRect :: struct {
 	x, y, width, height: f32,
+	u, v, uw, vh: f32,
 	color: ColorU8,
 	cornerRad: f32,
 }
@@ -46,7 +47,7 @@ DrawContext :: struct {
 	alloc: mem.Allocator,
 	batchesFirst: ^RectDrawBatch,
 	batchesLast: ^RectDrawBatch,
-	fontTexture: Texture2D
+	fontTexture: Texture2D,
 }
 
 @(private="file")
@@ -57,7 +58,7 @@ draw_init :: proc() {
 	assert(err == .None)
 	ctx.alloc = vm.arena_allocator(&ctx.arena)
 
-	ctx.fontTexture = render_create_texture(1, .A8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
+	ctx.fontTexture = render_create_texture(1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
 
 	fmt.println("size of rect instance:", size_of(RectInstance))
 }
@@ -90,6 +91,8 @@ draw_push_rect :: proc(rect: SimpleUIRect) {
 	instance : RectInstance
 	instance.pos0 = {rect.x, rect.y}
 	instance.pos1 = {rect.x + rect.width, rect.y + rect.height}
+	instance.uv0 = {rect.u, rect.v}
+	instance.uv1 = {rect.u + rect.uw, rect.v + rect.vh}
 	instance.color = rect.color
 	instance.cornerRad = rect.cornerRad
 	draw_add_instance_to_batch(curBatch, instance)
@@ -113,11 +116,29 @@ draw_clear :: proc() {
 draw_generate_random_rects :: proc() {
 	NUM_RECTS :: 40
 	draw_clear()
-	alph :: 10
+	alph :: 100
 	colors := []ColorU8{{255, 255, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
-			rand.float32() * 300 + 10, rand.float32() * 300 + 10, rand.choice(colors), 20}
+			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
+			0, 0, 0, 0, // UVs
+			 rand.choice(colors), 20}
+		draw_push_rect(rect)
+	}
+}
+
+draw_generate_random_textured_rects :: proc() {
+	NUM_RECTS :: 40
+	draw_clear()
+	alph :: 255
+	colors := []ColorU8{{255, 255, 255, alph}}
+	for i in 0 ..< NUM_RECTS {
+		u := rand.choice([]f32{0, 0.5});
+		v := rand.choice([]f32{0, 0.5});
+		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
+			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
+			u, v, 0.5, 0.5, // UVs
+			rand.choice(colors), 0}
 		draw_push_rect(rect)
 	}
 }
@@ -133,7 +154,9 @@ draw_generate_random_spheres :: proc() {
 		x := math.floor(rand.float32() * f32(WINDOW_WIDTH))
 		y := math.floor(rand.float32() * f32(WINDOW_HEIGHT))
 		rect := SimpleUIRect{x, y,
-			2 * rad, 2 * rad, rand.choice(colors), rad}
+			2 * rad, 2 * rad,
+			0, 0, 0, 0,
+			rand.choice(colors), rad}
 		draw_push_rect(rect)
 	}
 }
@@ -144,12 +167,13 @@ draw_generate_random_subpixelrects :: proc() {
 	alph :: 255
 	colors := []ColorU8{{139, 139, 139, alph}}
 	for i in 0 ..< NUM {
-		// rad := rand.float32() * 40 + 10
 		rad :: 7
 		x := math.floor(rand.float32() * f32(WINDOW_WIDTH))
 		y := math.floor(rand.float32() * f32(WINDOW_HEIGHT))
 		rect := SimpleUIRect{x, y,
-			1.5, 4.5, rand.choice(colors), 0}
+			1.5, 4.5,
+			0, 0, 0, 0,
+			rand.choice(colors), 0}
 		draw_push_rect(rect)
 	}
 }
@@ -157,7 +181,9 @@ draw_generate_random_subpixelrects :: proc() {
 draw_one_rect :: proc() {
 	draw_clear()
 	rect := SimpleUIRect{200, 200,
-			100, 100, {0, 255, 0, 255}, 0}
+			100, 100, 
+			0, 0, 0, 0,
+			{0, 255, 0, 255}, 0}
 	draw_push_rect(rect)
 }
 
@@ -167,11 +193,16 @@ draw_text :: proc(text: string, x, y: f32) {
 	strLen := len(text)
 	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
 
-	counts := font_get_text_quads("Hello, 世界", buf[:])
+	counts := font_get_text_quads(text, buf[:])
 	fmt.println("Got ", counts, " characters")
 
 	for &rect in buf {
 		rect.color = {255, 255, 255, 255}
 		draw_push_instance(rect)
 	}
+
+	render_set_sampler_channels({1, 0, 0, 0}, {1, 1, 1, 0})
+	render_upload_texture(ctx.fontTexture, font_get_atlas())
+
+	render_bind_texture(&ctx.fontTexture)
 }

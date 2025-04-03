@@ -1,6 +1,8 @@
 
 cbuffer UniformBuffer : register(b0, space1) {
 	float4x4 orthoMat;
+	float4 samplerAlphaChannel;
+	float4 samplerFillChannels;
 	float2 dims;
 }
 
@@ -70,11 +72,16 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-	// texture sample
-	float4 outputColor = tex.Sample(sampl, input.uv);
+	// // texture sample
+	// float4 outputColor = tex.Sample(sampl, input.uv);
 
-	// interpolated vertex color
-	outputColor *= input.color;
+	// // interpolated vertex color
+	// outputColor *= input.color;
+
+	float4 outputColor = input.color;
+	float4 sampleColor = tex.Sample(sampl, input.uv);
+	float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
+	outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);
