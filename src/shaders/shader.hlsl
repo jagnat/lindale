@@ -50,19 +50,22 @@ VSOutput VSMain(VSInput input) {
 
 	// Determine position of this vertex from vertex id
 	float2 posToPick = input.pos0;
+	float2 uvToPick = input.uv0;
 	float2 rectMult = float2(-1, -1);
 	if (input.vertexId & 1)
 	{
 		posToPick.y = input.pos1.y;
+		uvToPick.y = input.uv1.y;
 		rectMult.y = 1;
 	}
 	if  ((input.vertexId >> 1) & 1) {
 		posToPick.x = input.pos1.x;
+		uvToPick.x = input.uv1.x;
 		rectMult.x = 1;
 	}
 
 	output.pos = mul(orthoMat, float4(posToPick, 0.f, 1.f));
-	output.uv = float2((input.vertexId >> 1) & 1,input.vertexId & 1);
+	output.uv = uvToPick;
 	output.halfRectSize = (input.pos1 - input.pos0) / 2;
 	output.rectPos = rectMult * output.halfRectSize;
 	output.color = input.color;
@@ -86,7 +89,7 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);
 	float mixFactor = smoothstep(-0.75f, 0.75f, sdf);
-	outputColor.a *= 1 - mixFactor;
+	outputColor.a *= 1.0f - mixFactor;
 
 	return outputColor;
 }
