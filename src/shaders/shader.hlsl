@@ -1,5 +1,11 @@
 
-cbuffer UniformBuffer : register(b0, space1) {
+#ifdef VERTEX
+#define UNIFORM_SPACE space1
+#else
+#define UNIFORM_SPACE space3
+#endif
+
+cbuffer UniformBuffer : register(b0, UNIFORM_SPACE) {
 	float4x4 orthoMat;
 	float4 samplerAlphaChannel;
 	float4 samplerFillChannels;
