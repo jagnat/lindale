@@ -19,7 +19,9 @@ RectDrawChunk :: struct {
 RectDrawBatchParams :: struct {
 	scissor: RectI32,
 	transform: linalg.Matrix4x4f32,
-	texture: rawptr,
+	texture: ^Texture2D,
+	shaderParams: UniformBuffer,
+	zDepth: int,
 }
 
 RectDrawBatch :: struct {

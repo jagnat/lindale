@@ -22,7 +22,7 @@ RenderContext :: struct {
 	cmdBuf: ^sdl.GPUCommandBuffer,
 	renderPass: ^sdl.GPURenderPass,
 	boundTexture: ^Texture2D,
-	uniforms: UniformBufferContents,
+	uniforms: UniformBuffer,
 }
 
 BUFFER_SIZE :: 1024 * 1024
@@ -30,7 +30,7 @@ BUFFER_SIZE :: 1024 * 1024
 @(private="file")
 ctx: RenderContext
 
-UniformBufferContents :: struct {
+UniformBuffer :: struct {
 	projMatrix: Mat4f,
 	samplerAlphaChannel: Vec4f,
 	samplerFillChannels: Vec4f,
@@ -358,7 +358,7 @@ render_draw_rects :: proc(scissor: bool = false) {
 	textureBinding.sampler = ctx.sampler
 	sdl.BindGPUFragmentSamplers(ctx.renderPass, 0, &textureBinding, 1)
 
-	sdl.PushGPUVertexUniformData(ctx.cmdBuf, 0, rawptr(&ctx.uniforms), size_of(UniformBufferContents))
+	sdl.PushGPUVertexUniformData(ctx.cmdBuf, 0, rawptr(&ctx.uniforms), size_of(UniformBuffer))
 
 	sdl.DrawGPUPrimitives(ctx.renderPass, 4, u32(ctx.instanceBuffer.count), 0, 0)
 }

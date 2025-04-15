@@ -81,12 +81,6 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-	// // texture sample
-	// float4 outputColor = tex.Sample(sampl, input.uv);
-
-	// // interpolated vertex color
-	// outputColor *= input.color;
-
 	float4 outputColor = input.color;
 	float4 sampleColor = tex.Sample(sampl, input.uv);
 	float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
