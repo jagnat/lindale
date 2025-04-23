@@ -15,7 +15,7 @@ WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
 @(private="file")
 ctx: ProgramContext
 
-main :: proc() {
+main2 :: proc() {
 
 	init()
 	fmt.println("Successful Init")

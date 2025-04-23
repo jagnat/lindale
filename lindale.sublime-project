@@ -47,6 +47,13 @@
 				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindale.exe"
 			}
 		},
+		{
+			"name": "Odin compile dll",
+			"windows":
+			{
+				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/lindale.dll"
+			}
+		}
 	],
 	"settings":
 	{
