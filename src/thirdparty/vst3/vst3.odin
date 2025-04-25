@@ -294,9 +294,9 @@ PClassInfo :: struct {
 // Vtable structs
 
 FUnknownVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef : proc "std" (this: rawptr) -> u32,
-	release : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef : proc "system" (this: rawptr) -> u32,
+	release : proc "system" (this: rawptr) -> u32,
 }
 
 FUnknown :: struct {
@@ -304,14 +304,14 @@ FUnknown :: struct {
 }
 
 IBStreamVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	read  : proc "std" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesRead: ^i32) -> TResult,
-	write : proc "std" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesWritten: ^i32) -> TResult,
-	seek  : proc "std" (this: rawptr, pos: i64, mode: i32, result: ^i64) -> TResult,
-	tell  : proc "std" (this: rawptr, pos: ^i64) -> TResult,
+	read  : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesRead: ^i32) -> TResult,
+	write : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesWritten: ^i32) -> TResult,
+	seek  : proc "system" (this: rawptr, pos: i64, mode: i32, result: ^i64) -> TResult,
+	tell  : proc "system" (this: rawptr, pos: ^i64) -> TResult,
 }
 
 IBStream :: struct {
@@ -319,14 +319,14 @@ IBStream :: struct {
 }
 
 IParamValueQueueVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	getParameterId : proc "std" (this: rawptr) -> ParamID,
-	getPointCount : proc "std" (this: rawptr) -> i32,
-	getPoint: proc "std" (this: rawptr, index: i32, sampleoffset: ^i32, value: ^ParamValue) -> TResult,
-	addPoint: proc "std" (this: rawptr, sampleOffset: i32, value: ParamValue, index: ^i32) -> TResult,
+	getParameterId : proc "system" (this: rawptr) -> ParamID,
+	getPointCount : proc "system" (this: rawptr) -> i32,
+	getPoint: proc "system" (this: rawptr, index: i32, sampleoffset: ^i32, value: ^ParamValue) -> TResult,
+	addPoint: proc "system" (this: rawptr, sampleOffset: i32, value: ParamValue, index: ^i32) -> TResult,
 }
 
 IParamValueQueue :: struct {
@@ -334,13 +334,13 @@ IParamValueQueue :: struct {
 }
 
 IParameterChangesVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	getParameterCount : proc "std" (this: rawptr) -> i32,
-	getParameterData  : proc "std" (this: rawptr, index: i32) -> ^IParamValueQueue,
-	addParameterData  : proc "std" (this: rawptr, id: ^ParamID, index: ^i32) -> ^IParamValueQueue,
+	getParameterCount : proc "system" (this: rawptr) -> i32,
+	getParameterData  : proc "system" (this: rawptr, index: i32) -> ^IParamValueQueue,
+	addParameterData  : proc "system" (this: rawptr, id: ^ParamID, index: ^i32) -> ^IParamValueQueue,
 }
 
 IParameterChanges :: struct {
@@ -348,13 +348,13 @@ IParameterChanges :: struct {
 }
 
 IEventListVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	getEventCount : proc "std" (this: rawptr) -> i32,
-	getEvent      : proc "std" (this: rawptr, index: i32, e: ^Event) -> TResult,
-	addEvent      : proc "std" (this: rawptr, e: ^Event) -> TResult,
+	getEventCount : proc "system" (this: rawptr) -> i32,
+	getEvent      : proc "system" (this: rawptr, index: i32, e: ^Event) -> TResult,
+	addEvent      : proc "system" (this: rawptr, e: ^Event) -> TResult,
 }
 
 IEventList :: struct {
@@ -362,48 +362,48 @@ IEventList :: struct {
 }
 
 IComponentVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	initialize : proc "std" (this: rawptr, ctx: ^FUnknown) -> TResult,
-	terminate  : proc "std" (this: rawptr) -> TResult,
+	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
+	terminate  : proc "system" (this: rawptr) -> TResult,
 
-	getControllerClassId : proc "std" (this: rawptr, classId: TUID) -> TResult,
-	setIoMode            : proc "std" (this: rawptr, mode: IoMode) -> TResult,
-	getBusCount          : proc "std" (this: rawptr, type: MediaType, dir: BusDirection) -> i32,
-	getBusInfo           : proc "std" (this: rawptr, type: MediaType, dir: BusDirection, index: i32, bus: ^BusInfo) -> TResult,
-	getRoutingInfo       : proc "std" (this: rawptr, inInfo, outInfo: ^RoutingInfo) -> TResult,
-	activateBus          : proc "std" (this: rawptr, type: MediaType, dir: BusDirection, index: i32, state: TBool) -> TResult,
-	setActive            : proc "std" (this: rawptr, state: TBool) -> TResult,
-	setState             : proc "std" (this: rawptr, state: ^IBStream) -> TResult,
-	getState             : proc "std" (this: rawptr, state: ^IBStream) -> TResult,
+	getControllerClassId : proc "system" (this: rawptr, classId: TUID) -> TResult,
+	setIoMode            : proc "system" (this: rawptr, mode: IoMode) -> TResult,
+	getBusCount          : proc "system" (this: rawptr, type: MediaType, dir: BusDirection) -> i32,
+	getBusInfo           : proc "system" (this: rawptr, type: MediaType, dir: BusDirection, index: i32, bus: ^BusInfo) -> TResult,
+	getRoutingInfo       : proc "system" (this: rawptr, inInfo, outInfo: ^RoutingInfo) -> TResult,
+	activateBus          : proc "system" (this: rawptr, type: MediaType, dir: BusDirection, index: i32, state: TBool) -> TResult,
+	setActive            : proc "system" (this: rawptr, state: TBool) -> TResult,
+	setState             : proc "system" (this: rawptr, state: ^IBStream) -> TResult,
+	getState             : proc "system" (this: rawptr, state: ^IBStream) -> TResult,
 }
 
 IAudioProcessorVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	setBusArrangements   : proc "std" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
-	getBusArrangement    : proc "std" (this: rawptr, dir: BusDirection, index: i32, arr: ^SpeakerArrangement) -> TResult,
-	canProcessSampleSize : proc "std" (this: rawptr, symbolicSampleSize: i32) -> TResult,
-	getLatencySamples    : proc "std" (this: rawptr) -> u32,
-	setupProcessing      : proc "std" (this: rawptr, setup: ^ProcessSetup) -> TResult,
-	setProcessing        : proc "std" (this: rawptr, state: TBool) -> TResult,
-	process              : proc "std" (this: rawptr, data: ^ProcessData) -> TResult,
-	getTailSamples       : proc "std" (this: rawptr) -> u32,
+	setBusArrangements   : proc "system" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
+	getBusArrangement    : proc "system" (this: rawptr, dir: BusDirection, index: i32, arr: ^SpeakerArrangement) -> TResult,
+	canProcessSampleSize : proc "system" (this: rawptr, symbolicSampleSize: i32) -> TResult,
+	getLatencySamples    : proc "system" (this: rawptr) -> u32,
+	setupProcessing      : proc "system" (this: rawptr, setup: ^ProcessSetup) -> TResult,
+	setProcessing        : proc "system" (this: rawptr, state: TBool) -> TResult,
+	process              : proc "system" (this: rawptr, data: ^ProcessData) -> TResult,
+	getTailSamples       : proc "system" (this: rawptr) -> u32,
 }
 
 IPluginFactoryVtbl :: struct {
-	queryInterface : proc "std" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "std" (this: rawptr) -> u32,
-	release        : proc "std" (this: rawptr) -> u32,
+	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 
-	getFactoryInfo : proc "std" (this: rawptr, info: ^PFactoryInfo) -> TResult,
-	countClasses : proc "std" (this: rawptr) -> i32,
-	getClassInfo : proc "std" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
-	createInstance : proc "std" (this: rawptr, cid, iid: FIDString, obj: ^rawptr) -> TResult,
+	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
+	countClasses : proc "system" (this: rawptr) -> i32,
+	getClassInfo : proc "system" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
+	createInstance : proc "system" (this: rawptr, cid, iid: FIDString, obj: ^rawptr) -> TResult,
 }
 
 IPluginFactory :: struct {

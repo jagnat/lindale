@@ -52,6 +52,10 @@
 			"windows":
 			{
 				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/lindale.dll"
+			},
+			"osx":
+			{
+				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/lindale.dylib"
 			}
 		}
 	],

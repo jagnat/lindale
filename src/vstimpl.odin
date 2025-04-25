@@ -11,29 +11,29 @@ LindalePluginFactory :: struct {
 
 pluginFactory: LindalePluginFactory
 
-@export InitModule :: proc "std" () -> c.bool {
+@export InitModule :: proc "system" () -> c.bool {
 	return true
 }
 
-@export DeinitModule :: proc "std" () -> c.bool {
+@export DeinitModule :: proc "system" () -> c.bool {
 	return true
 }
 
-@export GetPluginFactory :: proc "std" () -> ^vst3.IPluginFactory {
+@export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory {
 	if !pluginFactory.initialized {
 
-			pf_queryInterface :: proc "std" (this: rawptr, iid: vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+			pf_queryInterface :: proc "system" (this: rawptr, iid: vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 				if iid == vst3.iid_FUnknown || iid == vst3.iid_IPluginFactory {
 					obj^ = this
 				}
 				return 0
 			}
 
-			pf_addRef :: proc "std" (this: rawptr) -> u32 {
+			pf_addRef :: proc "system" (this: rawptr) -> u32 {
 				return 1
 			}
 
-			pf_release :: proc "std" (this: rawptr) -> u32 {
+			pf_release :: proc "system" (this: rawptr) -> u32 {
 				return 0
 			}
 
@@ -42,7 +42,7 @@ pluginFactory: LindalePluginFactory
 			pluginFactory.vtable.release = pf_release
 
 
-			pf_getFactoryInfo :: proc "std" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
+			pf_getFactoryInfo :: proc "system" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
 				copy(info.vendor[:], "Jagi")
 				copy(info.url[:], "jagi.quest")
 				copy(info.email[:], "jagi@jagi.quest")
@@ -50,11 +50,11 @@ pluginFactory: LindalePluginFactory
 				return vst3.kResultOk
 			}
 
-			pf_countClasses :: proc "std" (this: rawptr) -> i32 {
+			pf_countClasses :: proc "system" (this: rawptr) -> i32 {
 				return 1
 			}
 
-			pf_getClassInfo :: proc "std" (this: rawptr, index: i32, info: ^vst3.PClassInfo) -> vst3.TResult {
+			pf_getClassInfo :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo) -> vst3.TResult {
 				if index != 0 {
 					return vst3.kInvalidArgument
 				}
