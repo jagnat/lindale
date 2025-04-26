@@ -284,6 +284,7 @@ PFactoryInfo :: struct {
 	flags: i32,
 }
 
+kManyInstances :: 0x7FFFFFFF // Cardinality
 PClassInfo :: struct {
 	cid: TUID,
 	cardinality: i32,
@@ -380,6 +381,10 @@ IComponentVtbl :: struct {
 	getState             : proc "system" (this: rawptr, state: ^IBStream) -> TResult,
 }
 
+IComponent :: struct {
+	lpVtbl: ^IComponentVtbl
+}
+
 IAudioProcessorVtbl :: struct {
 	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
 	addRef         : proc "system" (this: rawptr) -> u32,
@@ -393,6 +398,10 @@ IAudioProcessorVtbl :: struct {
 	setProcessing        : proc "system" (this: rawptr, state: TBool) -> TResult,
 	process              : proc "system" (this: rawptr, data: ^ProcessData) -> TResult,
 	getTailSamples       : proc "system" (this: rawptr) -> u32,
+}
+
+IAudioProcessor :: struct {
+	lpVtbl: ^IAudioProcessorVtbl
 }
 
 IPluginFactoryVtbl :: struct {
