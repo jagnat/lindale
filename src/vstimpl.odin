@@ -2,6 +2,7 @@ package lindale
 
 import "thirdparty/vst3"
 import "core:c"
+import "base:runtime"
 
 lindaleCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 
@@ -12,7 +13,7 @@ LindalePluginFactory :: struct {
 }
 
 LindaleInstance :: struct {
-	component: IComponent,
+	component: vst3.IComponent,
 	componentVtable: vst3.IComponentVtbl,
 	audioProcessor: vst3.IAudioProcessor,
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
@@ -29,7 +30,13 @@ pluginFactory: LindalePluginFactory
 	return true
 }
 
+createLindaleInstance :: proc() {
+	instance := new(LindaleInstance)
+}
+
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory {
+	context = runtime.default_context()
+
 	if !pluginFactory.initialized {
 
 			pf_queryInterface :: proc "system" (this: rawptr, iid: vst3.TUID, obj: ^rawptr) -> vst3.TResult {
@@ -72,32 +79,38 @@ pluginFactory: LindalePluginFactory
 				info^ = vst3.PClassInfo {
 					cid = lindaleCid,
 					cardinality = vst3.kManyInstances,
-					{0},
-					{0},
+					category = {},
+					name = {},
 				}
 
-				copy(info.category, "Instrument")
-				copy(info.name, "Lindale")
+				copy(info.category[:], "Instrument")
+				copy(info.name[:], "Lindale")
 
 				return vst3.kResultOk
 			}
 
 			pf_createInstance :: proc "system" (this: rawptr, cid, iid: vst3.FIDString, obj: ^rawptr) -> vst3.TResult {
+				context = runtime.default_context()
+
 				if cid == lindaleCid {
-					instance := alloc(LindaleInstance); // however you allocate
+					instance := new(LindaleInstance); // however you allocate
 
 					if iid == vst3.iid_IComponent {
-						^obj = &instance.component;
+						obj^ = &instance.component;
 						return vst3.kResultOk;
 					} else if iid == vst3.iid_IAudioProcessor {
-						^obj = &instance.audioProcessor;
+						obj^ = &instance.audioProcessor;
 						return vst3.kResultOk;
 					}
 
+					free(instance)
+
 					// No interface found
-					^obj = nil;
+					obj^ = nil;
 					return vst3.kNoInterface;
 				}
+
+				return vst3.kNoInterface
 			}
 
 			pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo

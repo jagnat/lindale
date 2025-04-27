@@ -1,7 +1,9 @@
 package vst3
 
 import "core:c"
+import "base:runtime"
 import "core:unicode/utf16"
+import "core:mem"
 
 // TODO: Needs a different endianness on other platforms besides win
 SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
@@ -15,6 +17,13 @@ SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
 		(byte)((l4 & 0xFF000000) >> 24), (byte)((l4 & 0x00FF0000) >> 16),
 		(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      )
 	}
+}
+
+is_same_tuid :: proc(tuid: TUID, fid: FIDString) -> bool {
+	if runtime.cstring_len(fid) != 16 {
+		return false;
+	}
+	return mem.compare(tuid[:], fid[:16]) == 0;
 }
 
 TResult :: i32

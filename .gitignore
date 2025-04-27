@@ -5,3 +5,5 @@
 *.sublime-workspace
 *.DS_Store
 *.dSYM
+lindale.dylib
+lindale.dll
