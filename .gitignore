@@ -7,3 +7,5 @@
 *.dSYM
 lindale.dylib
 lindale.dll
+lindale.lib
+lindale.exp

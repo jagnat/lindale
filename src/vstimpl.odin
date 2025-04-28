@@ -30,8 +30,13 @@ pluginFactory: LindalePluginFactory
 	return true
 }
 
-createLindaleInstance :: proc() {
+createLindaleInstance :: proc() -> ^LindaleInstance {
 	instance := new(LindaleInstance)
+	instance.refCount = 1
+	instance.component.lpVtbl = &instance.componentVtable
+	instance.audioProcessor.lpVtbl = &instance.audioProcessorVtable
+
+	return instance
 }
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory {
@@ -92,13 +97,13 @@ createLindaleInstance :: proc() {
 			pf_createInstance :: proc "system" (this: rawptr, cid, iid: vst3.FIDString, obj: ^rawptr) -> vst3.TResult {
 				context = runtime.default_context()
 
-				if cid == lindaleCid {
-					instance := new(LindaleInstance); // however you allocate
+				if vst3.is_same_tuid(lindaleCid, cid) {
+					instance := createLindaleInstance()
 
-					if iid == vst3.iid_IComponent {
+					if vst3.is_same_tuid(vst3.iid_IComponent, iid) {
 						obj^ = &instance.component;
 						return vst3.kResultOk;
-					} else if iid == vst3.iid_IAudioProcessor {
+					} else if vst3.is_same_tuid(vst3.iid_IAudioProcessor, iid) {
 						obj^ = &instance.audioProcessor;
 						return vst3.kResultOk;
 					}

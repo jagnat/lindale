@@ -20,10 +20,14 @@ SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
 }
 
 is_same_tuid :: proc(tuid: TUID, fid: FIDString) -> bool {
+	tuid := tuid
 	if runtime.cstring_len(fid) != 16 {
 		return false;
 	}
-	return mem.compare(tuid[:], fid[:16]) == 0;
+	tuid_slice := tuid[:]
+	fid_slice  := mem.slice_ptr(cast(^u8)fid, 16)
+
+	return mem.compare(tuid_slice, fid_slice) == 0;
 }
 
 TResult :: i32
