@@ -67,6 +67,10 @@
 			"odin":
 			{
 				"enabled": true
+			},
+			"zig":
+			{
+				"enabled": true
 			}
 		}
 	},
