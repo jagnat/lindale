@@ -57,6 +57,18 @@
 			{
 				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/lindale.dylib"
 			}
+		},
+		{
+			"name": "Zig compile dll",
+			"working_dir": "${project_path}/zig/",
+			"windows":
+			{
+				"shell_cmd": "zig build"
+			},
+			"osx":
+			{
+				"shell_cmd": "zig build"
+			}
 		}
 	],
 	"settings":

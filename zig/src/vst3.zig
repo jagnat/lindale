@@ -1,4 +1,11 @@
+// From VST3 C API 
+// https://github.com/steinbergmedia/vst3_c_api/blob/master/vst3_c_api.h
+
 const std = @import("std");
+
+// ====================================
+//               Data
+// ====================================
 
 const TResult = enum(i32) {
 	kNoInterface     = @intCast(0x80004002),
@@ -44,6 +51,14 @@ pub fn SMTG_INLINE_UID(comptime l1: u32, comptime l2: u32, comptime l3: u32, com
 		(l4 & 0xFF000000) >> 24, (l4 & 0x00FF0000) >> 16,
 		(l4 & 0x0000FF00) >>  8, (l4 & 0x000000FF)
 	};
+}
+
+pub fn isSameTUID(tuid: TUID, fid: FIDString) bool {
+	const len = std.cstrlen(fid);
+	if (len != 16) return false;
+
+	const fidSlice = fid[0..16];
+	return std.mem.eql(u8, &tuid, fidSlice);
 }
 
 pub const IID = struct {
@@ -286,7 +301,9 @@ const PClassInfo = struct {
 	name: [64]u8,
 };
 
-// VTables
+// ====================================
+//               VTables
+// ====================================
 
 const FUnknownVtbl = struct {
 	queryInterface: fn (this: *anyopaque, iid: TUID, obj: **anyopaque) callconv(.C) TResult,
