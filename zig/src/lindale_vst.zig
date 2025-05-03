@@ -1,50 +1,110 @@
 const std = @import("std");
-const vst3 = @import("vst3");
+const vst3 = @import("vst3.zig");
 
 const zeroInit = std.mem.zeroInit;
 
-const LindaleInstance = struct {
+const LindaleProcessor = struct {
 	component: vst3.IComponent,
 	componentVtable: vst3.IComponentVtbl,
 	audioProcessor: vst3.IAudioProcessor,
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
 	refCount: u32,
 
-	pub fn create() *LindaleInstance {
+	pub fn create() *LindaleProcessor {
 		const allocator = std.heap.c_allocator;
-		const instance = allocator.create(LindaleInstance) catch return null;
+		const instance = allocator.create(LindaleProcessor) catch return null;
 
-		instance.* = zeroInit(LindaleInstance, .{});
+		instance.* = zeroInit(LindaleProcessor, .{});
 		instance.component.lpVtbl = &instance.componentVtable;
 		instance.audioProcessor.lpVtbl = &instance.audioProcessorVtable;
 
 		instance.componentVtable = .{
-
+			.funknown = createFUnknown(
+				LindaleProcessor,
+				"component",
+				&.{.{
+					.iid = vst3.IID.IComponent,
+					.field = "component",
+				},
+				.{
+					.iid = vst3.IID.IAudioProcessor,
+					.field = "audioProcessor",
+				}}),
 		};
 
 		instance.audioProcessorVtable = .{
-
+			.funknown = createFUnknown(
+				LindaleProcessor,
+				"audioProcessor",
+				&.{.{
+					.iid = vst3.IID.IComponent,
+					.field = "component",
+				},
+				.{
+					.iid = vst3.IID.IAudioProcessor,
+					.field = "audioProcessor",
+				}}),
 		};
 
 		instance.refCount = 1;
 
 		return instance;
 	}
+
+	// FUnknown VTable functions
+	pub fn queryInterface(this: *LindaleProcessor, iid: vst3.TUID, obj: **anyopaque) vst3.TResult {
+		if (iid == vst3.IID.FUnknown or iid == vst3.IID.IComponent or iid == vst3.IID.IAudioProcessor) {
+			obj.* = this;
+			return vst3.TResult.kResultOk;
+		}
+		return vst3.TResult.kNoInterface;
+	}
+
+	pub fn addRef(this: *LindaleProcessor) vst3.TResult {
+		this.refCount += 1;
+		return this.refCount;
+	}
+
+	pub fn release(this: *LindaleProcessor) vst3.TResult {
+		this.refCount -= 1;
+		if (this.refCount == 0) {
+			const allocator = std.heap.c_allocator;
+			allocator.destroy(this);
+		}
+		return this.refCount;
+	}
 };
 
-pub fn createFUnknownVtbl(comptime T: type, comptime inters: []const struct {iid: vst3.TUID, field: fn(*T) *anyopaque}) vst3.FUnknownVtbl {
-	return vst3.FUnknownVtbl {
-		.queryInterface = struct { fn impl(this: *anyopaque, iid: vst3.TUID, obj: **anyopaque) vst3.TResult {
-			const inst = @fieldParentPtr("refCount", this);
-			inline for (inters) |interface| {
-				if (std.mem.eql(u8, &iid, &interface.iid)) {
-					out.* = interface.field(inst);
-					return vst3.TResult.kResultOk;
+const LindaleController = struct {
+
+};
+
+pub fn createFUnknown(
+	comptime VstClass: type,
+	comptime anchorVtableName: []const u8,
+	comptime supportedInterfaces: []const struct {iid: vst3.TUID, field: []const u8}) vst3.FUnknownVtbl {
+	const FUnknownFuncs = struct {
+		fn queryInterface (this: *anyopaque, iid: vst3.TUID, obj: **anyopaque) vst3.TResult {
+			const parent : *VstClass = @fieldParentPtr(anchorVtableName, this);
+
+			if (vst3.isSameTUID(vst3.IID.FUnknown, iid)) {
+				obj.* = this;
+				return vst3.kResultOk;
+			}
+
+			inline for (supportedInterfaces) |interface| {
+				if (vst3.isSameTUID(interface.iid, iid)) {
+					obj.* = @field(parent.*, interface.field);
+					return vst3.kResultOk;
 				}
 			}
-			out.* = null;
-			return TResult.kNoInterface;
-		}}.impl,
+			return vst3.kNoInterface;
+		}
+	};
+	return vst3.FUnknownVtbl {
+		.queryInterface = FUnknownFuncs.queryInterface,
+		.addRef = FUnknownFuncs.addRef,
+		.release = FUnknownFuncs.release,
 	};
 }
 
@@ -105,7 +165,7 @@ const LindalePluginFactory = struct {
 	pub fn createInstance(this: *anyopaque, cid: vst3.FIDString, iid: vst3.FIDString, obj: **anyopaque) vst3.TResult {
 		_ = this;
 		if (vst3.isSameTUID(lindaleCid, cid)) {
-			var instance = LindaleInstance.create();
+			var instance = LindaleProcessor.create2();
 
 			if (vst3.isSameTUID(vst3.IID.IComponent, iid)) {
 				obj.* = &instance.component;
@@ -117,7 +177,6 @@ const LindalePluginFactory = struct {
 		}
 	}
 };
-
 
 const lindaleCid = vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4);
 
@@ -136,6 +195,7 @@ fn initPluginFactory() LindalePluginFactory {
 		.getFactoryInfo = LindalePluginFactory.getFactoryInfo,
 		.countClasses = LindalePluginFactory.countClasses,
 		.getClassInfo = LindalePluginFactory.getClassInfo,
+		.createInstance = LindalePluginFactory.createInstance2,
 	};
 	comptime var plugfact = LindalePluginFactory{
 		.vtable = vtable,

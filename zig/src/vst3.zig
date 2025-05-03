@@ -126,7 +126,7 @@ pub const IID = struct {
 	pub const IParameterChanges                    = SMTG_INLINE_UID (0xA4779663, 0x0BB64A56, 0xB44384A8, 0x466FEB9D);
 };
 
-const BusInfo = struct {
+pub const BusInfo = struct {
 	mediaType : MediaType,
 	direction: BusDirection,
 	channelCount: i32,
@@ -135,20 +135,20 @@ const BusInfo = struct {
 	flags: u32,
 };
 
-const RoutingInfo = struct {
+pub const RoutingInfo = struct {
 	mediaType: MediaType,
 	busIndex: i32,
 	channel: i32,
 };
 
-const ProcessSetup = struct {
+pub const ProcessSetup = struct {
 	processMode        : i32,
 	symbolicSampleSize : i32,
 	maxSamplesPerBlock : i32,
 	sampleRate         : SampleRate,
 };
 
-const AudioBusBuffers = struct {
+pub const AudioBusBuffers = struct {
 	numChannels: i32,
 	silenceFlags: u64,
 	buffers: union(enum) {
@@ -157,7 +157,7 @@ const AudioBusBuffers = struct {
 	},
 };
 
-const NoteOnEvent = struct {
+pub const NoteOnEvent = struct {
 	channel: i16,
 	pitch: i16,
 	tuning: f32,
@@ -166,7 +166,7 @@ const NoteOnEvent = struct {
 	noteId: i32,
 };
 
-const NoteOffEvent = struct {
+pub const NoteOffEvent = struct {
 	channel: i16,
 	pitch: i16,
 	velocity: f32,
@@ -174,33 +174,33 @@ const NoteOffEvent = struct {
 	tuning: f32,
 };
 
-const DataEvent = struct {
+pub const DataEvent = struct {
 	size: u32,
 	type: u32,
 	bytes: *u8,
 };
 
-const PolyPressureEvent = struct {
+pub const PolyPressureEvent = struct {
 	channel: i16,
 	pitch: i16,
 	pressure: f32,
 	noteId: i32,
 };
 
-const NoteExpressionValueEvent = struct {
+pub const NoteExpressionValueEvent = struct {
 	typId: NoteExpressionTypeID,
 	noteId: i32,
 	value: NoteExpressionValue,
 };
 
-const NoteExpressionTextEvent = struct {
+pub const NoteExpressionTextEvent = struct {
 	typeId: NoteExpressionTypeID,
 	noteId: i32,
 	textLen: u32,
 	text: *u8,
 };
 
-const ChordEvent = struct {
+pub const ChordEvent = struct {
 	root: i16,
 	bassNote: i16,
 	mask: i16,
@@ -208,21 +208,21 @@ const ChordEvent = struct {
 	text: *u8,
 };
 
-const ScaleEvent = struct {
+pub const ScaleEvent = struct {
 	root: i16,
 	mask: i16,
 	textLen: u16,
 	text: *u8,
 };
 
-const LegacyMIDICCOutEvent = struct {
+pub const LegacyMIDICCOutEvent = struct {
 	controlNumber: u8,
 	channel: i8,
 	value: i8,
 	value2: i8,
 };
 
-const Event = struct {
+pub const Event = struct {
 	busIndex: i32,
 	sampleOffset: i32,
 	ppqPosition: TQuarterNotes,
@@ -241,18 +241,18 @@ const Event = struct {
 	}
 };
 
-const FrameRate = struct {
+pub const FrameRate = struct {
 	framesPerSecond: u32,
 	flags: u32,
 };
 
-const Chord = struct {
+pub const Chord = struct {
 	keyNote: u8,
 	rootNote: u8,
 	chordMask: i16,
 };
 
-const ProcessContext = struct {
+pub const ProcessContext = struct {
 	state: u32,
 	sampleRate: f64,
 	projectTimeSamples: TSamples,
@@ -271,7 +271,7 @@ const ProcessContext = struct {
 	samplesToNextClock: i32,
 };
 
-const ProcessData = struct {
+pub const ProcessData = struct {
 	processMode: i32,
 	symbolicSampleSize: i32,
 	numSamples: i32,
@@ -286,15 +286,15 @@ const ProcessData = struct {
 	processContext: *ProcessContext,
 };
 
-const PFactoryInfo = struct {
+pub const PFactoryInfo = struct {
 	vendor: [64]u8,
 	url: [256]u8,
 	email: [128]u8,
 	flags: i32,
 };
 
-const kManyInstances = 0x7FFFFFFF; // Cardinality
-const PClassInfo = struct {
+pub const kManyInstances = 0x7FFFFFFF; // Cardinality
+pub const PClassInfo = struct {
 	cid: TUID,
 	cardinality: i32,
 	category: [32]u8,
@@ -305,17 +305,17 @@ const PClassInfo = struct {
 //               VTables
 // ====================================
 
-const FUnknownVtbl = struct {
+pub const FUnknownVtbl = struct {
 	queryInterface: fn (this: *anyopaque, iid: TUID, obj: **anyopaque) callconv(.C) TResult,
 	addRef:         fn (this: *anyopaque) callconv(.C) TResult,
 	release:        fn (this: *anyopaque) callconv(.C) TResult, 
 };
 
-const FUnknown = struct {
+pub const FUnknown = struct {
 	lpVtbl: *FUnknownVtbl,
 };
 
-const IBStreamVtbl = struct {
+pub const IBStreamVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	read:  fn (this: *anyopaque, buffer: *anyopaque, numBytes: i32, numBytesRead: *i32) callconv(.C) TResult,
@@ -324,11 +324,11 @@ const IBStreamVtbl = struct {
 	tell:  fn (this: *anyopaque, pos: *i64) callconv(.C) TResult,
 };
 
-const IBStream = struct {
+pub const IBStream = struct {
 	lpVtbl: *IBStreamVtbl,
 };
 
-const IParamValueQueueVtbl = struct {
+pub const IParamValueQueueVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	getParameterId: fn (this: *anyopaque) callconv(.C) ParamID,
@@ -337,11 +337,11 @@ const IParamValueQueueVtbl = struct {
 	addPoint:       fn (this: *anyopaque, sampleOffset: i32, value: ParamValue, index: *i32) callconv(.C) TResult,
 };
 
-const IParamValueQueue = struct {
+pub const IParamValueQueue = struct {
 	lpVtbl : *IParamValueQueueVtbl
 };
 
-const IParameterChangesVtbl = struct {
+pub const IParameterChangesVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	getParameterCount: fn (this: *anyopaque) callconv(.C) i32,
@@ -349,11 +349,11 @@ const IParameterChangesVtbl = struct {
 	addParameterData:  fn (this: *anyopaque, id: *ParamID, index: *i32) callconv(.C) *IParamValueQueue,
 };
 
-const IParameterChanges = struct {
+pub const IParameterChanges = struct {
 	lpVtbl: *IParameterChangesVtbl
 };
 
-const IEventListVtbl = struct {
+pub const IEventListVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	getEventCount: fn (this: *anyopaque) i32,
@@ -361,11 +361,11 @@ const IEventListVtbl = struct {
 	addEvent:      fn (this: *anyopaque, e: *Event) callconv(.C) TResult,
 };
 
-const IEventList = struct {
+pub const IEventList = struct {
 	lpVtbl: *IEventListVtbl
 };
 
-const IComponentVtbl = struct {
+pub const IComponentVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	initialize: fn (this: *anyopaque, ctx: *FUnknown) callconv(.C) TResult,
@@ -382,11 +382,11 @@ const IComponentVtbl = struct {
 	getState:             fn (this: *anyopaque, state: *IBStream) callconv(.C) TResult,
 };
 
-const IComponent = struct {
+pub const IComponent = struct {
 	lpVtbl: *IComponentVtbl
 };
 
-const IAudioProcessorVtbl = struct {
+pub const IAudioProcessorVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	setBusArrangements:   fn (this: *anyopaque, inputs: *SpeakerArrangement, numIns: i32, outputs: *SpeakerArrangement, numOuts: i32) callconv(.C) TResult,
@@ -399,11 +399,11 @@ const IAudioProcessorVtbl = struct {
 	getTailSamples:       fn (this: *anyopaque) callconv(.C) u32,
 };
 
-const IAudioProcessor = struct {
+pub const IAudioProcessor = struct {
 	lpVtbl: *IAudioProcessorVtbl
 };
 
-const IPluginFactoryVtbl = struct {
+pub const IPluginFactoryVtbl = struct {
 	funknown: FUnknownVtbl,
 
 	getFactoryInfo: fn (this: *anyopaque, info: *PFactoryInfo) callconv(.C) TResult,
@@ -412,6 +412,6 @@ const IPluginFactoryVtbl = struct {
 	createInstance: fn (this: *anyopaque, cid: FIDString, iid: FIDString, obj: **anyopaque) callconv(.C) TResult,
 };
 
-const IPluginFactory = struct {
+pub const IPluginFactory = struct {
 	lpVtbl: *IPluginFactoryVtbl
 };

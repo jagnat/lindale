@@ -18,4 +18,11 @@ pub fn main() !void {
 	try stdout.print("well La    Di   Da..\n", .{});
 
 	try bw.flush(); // Don't forget to flush!
+
+	// _ = lindaleVst.GetPluginFactory();
+}
+
+
+comptime {
+    std.testing.refAllDeclsRecursive(@import("vst3.zig"));
 }
