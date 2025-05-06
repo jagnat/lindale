@@ -7,37 +7,38 @@ const std = @import("std");
 //               Data
 // ====================================
 
-const TResult = enum(i32) {
-    kNoInterface = @intCast(0x80004002),
-    kResultOk = @intCast(0x00000000),
-    kResultTrue = @intCast(0x00000000),
-    kResultFalse = @intCast(0x00000001),
-    kInvalidArgument = @intCast(0x80070057),
-    kNotImplemented = @intCast(0x80004001),
-    kInternalError = @intCast(0x80004005),
-    kNotInitialized = @intCast(0x8000FFFF),
-    kOutOfMemory = @intCast(0x8007000E),
+pub const TResult = enum(i32) {
+    kNoInterface     = @bitCast(@as(u32, 0x80004002)),
+    kResultOk        = @bitCast(@as(u32, 0x00000000)),
+    // kResultTrue      = @bitCast(@as(u32, 0x00000000)),
+    kResultFalse     = @bitCast(@as(u32, 0x00000001)),
+    kInvalidArgument = @bitCast(@as(u32, 0x80070057)),
+    kNotImplemented  = @bitCast(@as(u32, 0x80004001)),
+    kInternalError   = @bitCast(@as(u32, 0x80004005)),
+    kNotInitialized  = @bitCast(@as(u32, 0x8000FFFF)),
+    kOutOfMemory     = @bitCast(@as(u32, 0x8007000E)),
 };
 
-const TSize = i64;
-const TUID = [16]u8;
-const MediaType = i32;
-const BusDirection = i32;
-const IoMode = i32;
-const String128 = [128:0]u16;
-const BusType = i32;
-const TBool = u8;
-const SpeakerArrangement = u64;
-const SampleRate = f64;
-const Sample32 = f32;
-const Sample64 = f64;
-const ParamID = u32;
-const ParamValue = f64;
-const TQuarterNotes = f64;
-const NoteExpressionTypeID = u32;
-const NoteExpressionValue = f64;
-const TSamples = i64;
-const FIDString = [*:0]u8;
+pub const TSize = i64;
+pub const TUID = [16]u8;
+pub const TUIDParam = *[16]u8;
+pub const MediaType = i32;
+pub const BusDirection = i32;
+pub const IoMode = i32;
+pub const String128 = [128:0]u16;
+pub const BusType = i32;
+pub const TBool = u8;
+pub const SpeakerArrangement = u64;
+pub const SampleRate = f64;
+pub const Sample32 = f32;
+pub const Sample64 = f64;
+pub const ParamID = u32;
+pub const ParamValue = f64;
+pub const TQuarterNotes = f64;
+pub const NoteExpressionTypeID = u32;
+pub const NoteExpressionValue = f64;
+pub const TSamples = i64;
+pub const FIDString = [*:0]u8;
 
 /// Constructs a 16-byte VST3-style UID with Microsoft GUID byte order
 pub fn SMTG_INLINE_UID(comptime l1: u32, comptime l2: u32, comptime l3: u32, comptime l4: u32) TUID {
@@ -45,7 +46,7 @@ pub fn SMTG_INLINE_UID(comptime l1: u32, comptime l2: u32, comptime l3: u32, com
 }
 
 pub fn isSameTUID(tuid: TUID, fid: FIDString) bool {
-    const len = std.cstrlen(fid);
+    const len = std.mem.len(fid);
     if (len != 16) return false;
 
     const fidSlice = fid[0..16];
@@ -290,9 +291,9 @@ pub const PClassInfo = struct {
 // ====================================
 
 pub const FUnknownVtbl = struct {
-    queryInterface: fn (this: *anyopaque, iid: TUID, obj: **anyopaque) callconv(.C) TResult,
-    addRef: fn (this: *anyopaque) callconv(.C) TResult,
-    release: fn (this: *anyopaque) callconv(.C) TResult,
+    queryInterface: *const fn (this: *anyopaque, iid: TUIDParam, obj: **anyopaque) callconv(.C) TResult,
+    addRef: *const fn (this: *anyopaque) callconv(.C) u32,
+    release: *const fn (this: *anyopaque) callconv(.C) u32,
 };
 
 pub const FUnknown = struct {
@@ -302,10 +303,10 @@ pub const FUnknown = struct {
 pub const IBStreamVtbl = struct {
     funknown: FUnknownVtbl,
 
-    read: fn (this: *anyopaque, buffer: *anyopaque, numBytes: i32, numBytesRead: *i32) callconv(.C) TResult,
-    write: fn (this: *anyopaque, buffer: *anyopaque, numBytes: i32, numBytesWritten: *i32) callconv(.C) TResult,
-    seek: fn (this: *anyopaque, pos: i64, mode: i32, result: *i64) callconv(.C) TResult,
-    tell: fn (this: *anyopaque, pos: *i64) callconv(.C) TResult,
+    read: *const fn (this: *anyopaque, buffer: *anyopaque, numBytes: i32, numBytesRead: *i32) callconv(.C) TResult,
+    write: *const fn (this: *anyopaque, buffer: *anyopaque, numBytes: i32, numBytesWritten: *i32) callconv(.C) TResult,
+    seek: *const fn (this: *anyopaque, pos: i64, mode: i32, result: *i64) callconv(.C) TResult,
+    tell: *const fn (this: *anyopaque, pos: *i64) callconv(.C) TResult,
 };
 
 pub const IBStream = struct {
@@ -315,10 +316,10 @@ pub const IBStream = struct {
 pub const IParamValueQueueVtbl = struct {
     funknown: FUnknownVtbl,
 
-    getParameterId: fn (this: *anyopaque) callconv(.C) ParamID,
-    getPointCount: fn (this: *anyopaque) callconv(.C) i32,
-    getPoint: fn (this: *anyopaque, index: i32, sampleoffset: *i32, value: *ParamValue) callconv(.C) TResult,
-    addPoint: fn (this: *anyopaque, sampleOffset: i32, value: ParamValue, index: *i32) callconv(.C) TResult,
+    getParameterId: *const fn (this: *anyopaque) callconv(.C) ParamID,
+    getPointCount: *const fn (this: *anyopaque) callconv(.C) i32,
+    getPoint: *const fn (this: *anyopaque, index: i32, sampleoffset: *i32, value: *ParamValue) callconv(.C) TResult,
+    addPoint: *const fn (this: *anyopaque, sampleOffset: i32, value: ParamValue, index: *i32) callconv(.C) TResult,
 };
 
 pub const IParamValueQueue = struct { lpVtbl: *IParamValueQueueVtbl };
@@ -326,9 +327,9 @@ pub const IParamValueQueue = struct { lpVtbl: *IParamValueQueueVtbl };
 pub const IParameterChangesVtbl = struct {
     funknown: FUnknownVtbl,
 
-    getParameterCount: fn (this: *anyopaque) callconv(.C) i32,
-    getParameterData: fn (this: *anyopaque, index: i32) callconv(.C) *IParamValueQueue,
-    addParameterData: fn (this: *anyopaque, id: *ParamID, index: *i32) callconv(.C) *IParamValueQueue,
+    getParameterCount: *const fn (this: *anyopaque) callconv(.C) i32,
+    getParameterData: *const fn (this: *anyopaque, index: i32) callconv(.C) *IParamValueQueue,
+    addParameterData: *const fn (this: *anyopaque, id: *ParamID, index: *i32) callconv(.C) *IParamValueQueue,
 };
 
 pub const IParameterChanges = struct { lpVtbl: *IParameterChangesVtbl };
@@ -336,9 +337,9 @@ pub const IParameterChanges = struct { lpVtbl: *IParameterChangesVtbl };
 pub const IEventListVtbl = struct {
     funknown: FUnknownVtbl,
 
-    getEventCount: fn (this: *anyopaque) i32,
-    getEvent: fn (this: *anyopaque, index: i32, e: *Event) callconv(.C) TResult,
-    addEvent: fn (this: *anyopaque, e: *Event) callconv(.C) TResult,
+    getEventCount: *const fn (this: *anyopaque) i32,
+    getEvent: *const fn (this: *anyopaque, index: i32, e: *Event) callconv(.C) TResult,
+    addEvent: *const fn (this: *anyopaque, e: *Event) callconv(.C) TResult,
 };
 
 pub const IEventList = struct { lpVtbl: *IEventListVtbl };
@@ -346,18 +347,18 @@ pub const IEventList = struct { lpVtbl: *IEventListVtbl };
 pub const IComponentVtbl = struct {
     funknown: FUnknownVtbl,
 
-    initialize: fn (this: *anyopaque, ctx: *FUnknown) callconv(.C) TResult,
-    terminate: fn (this: *anyopaque) TResult,
+    initialize: *const fn (this: *anyopaque, ctx: *FUnknown) callconv(.C) TResult,
+    terminate: *const fn (this: *anyopaque) callconv(.C) TResult,
 
-    getControllerClassId: fn (this: *anyopaque, classId: TUID) callconv(.C) TResult,
-    setIoMode: fn (this: *anyopaque, mode: IoMode) callconv(.C) TResult,
-    getBusCount: fn (this: *anyopaque, type: MediaType, dir: BusDirection) callconv(.C) i32,
-    getBusInfo: fn (this: *anyopaque, type: MediaType, dir: BusDirection, index: i32, bus: *BusInfo) callconv(.C) TResult,
-    getRoutingInfo: fn (this: *anyopaque, inInfo: *RoutingInfo, outInfo: *RoutingInfo) callconv(.C) TResult,
-    activateBus: fn (this: *anyopaque, type: MediaType, dir: BusDirection, index: i32, state: TBool) callconv(.C) TResult,
-    setActive: fn (this: *anyopaque, state: TBool) callconv(.C) TResult,
-    setState: fn (this: *anyopaque, state: *IBStream) callconv(.C) TResult,
-    getState: fn (this: *anyopaque, state: *IBStream) callconv(.C) TResult,
+    getControllerClassId: *const fn (this: *anyopaque, classId: TUIDParam) callconv(.C) TResult,
+    setIoMode: *const fn (this: *anyopaque, mode: IoMode) callconv(.C) TResult,
+    getBusCount: *const fn (this: *anyopaque, mediaType: MediaType, dir: BusDirection) callconv(.C) i32,
+    getBusInfo: *const fn (this: *anyopaque, mediaType: MediaType, dir: BusDirection, index: i32, bus: *BusInfo) callconv(.C) TResult,
+    getRoutingInfo: *const fn (this: *anyopaque, inInfo: *RoutingInfo, outInfo: *RoutingInfo) callconv(.C) TResult,
+    activateBus: *const fn (this: *anyopaque, mediaType: MediaType, dir: BusDirection, index: i32, state: TBool) callconv(.C) TResult,
+    setActive: *const fn (this: *anyopaque, state: TBool) callconv(.C) TResult,
+    setState: *const fn (this: *anyopaque, state: *IBStream) callconv(.C) TResult,
+    getState: *const fn (this: *anyopaque, state: *IBStream) callconv(.C) TResult,
 };
 
 pub const IComponent = struct { lpVtbl: *IComponentVtbl };
@@ -365,14 +366,14 @@ pub const IComponent = struct { lpVtbl: *IComponentVtbl };
 pub const IAudioProcessorVtbl = struct {
     funknown: FUnknownVtbl,
 
-    setBusArrangements: fn (this: *anyopaque, inputs: *SpeakerArrangement, numIns: i32, outputs: *SpeakerArrangement, numOuts: i32) callconv(.C) TResult,
-    getBusArrangement: fn (this: *anyopaque, dir: BusDirection, index: i32, arr: *SpeakerArrangement) callconv(.C) TResult,
-    canProcessSampleSize: fn (this: *anyopaque, symbolicSampleSize: i32) callconv(.C) TResult,
-    getLatencySamples: fn (this: *anyopaque) u32,
-    setupProcessing: fn (this: *anyopaque, setup: *ProcessSetup) callconv(.C) TResult,
-    setProcessing: fn (this: *anyopaque, state: TBool) callconv(.C) TResult,
-    process: fn (this: *anyopaque, data: *ProcessData) callconv(.C) TResult,
-    getTailSamples: fn (this: *anyopaque) callconv(.C) u32,
+    setBusArrangements: *const fn (this: *anyopaque, inputs: *SpeakerArrangement, numIns: i32, outputs: *SpeakerArrangement, numOuts: i32) callconv(.C) TResult,
+    getBusArrangement: *const fn (this: *anyopaque, dir: BusDirection, index: i32, arr: *SpeakerArrangement) callconv(.C) TResult,
+    canProcessSampleSize: *const fn (this: *anyopaque, symbolicSampleSize: i32) callconv(.C) TResult,
+    getLatencySamples: *const fn (this: *anyopaque) u32,
+    setupProcessing: *const fn (this: *anyopaque, setup: *ProcessSetup) callconv(.C) TResult,
+    setProcessing: *const fn (this: *anyopaque, state: TBool) callconv(.C) TResult,
+    process: *const fn (this: *anyopaque, data: *ProcessData) callconv(.C) TResult,
+    getTailSamples: *const fn (this: *anyopaque) callconv(.C) u32,
 };
 
 pub const IAudioProcessor = struct { lpVtbl: *IAudioProcessorVtbl };
@@ -380,10 +381,10 @@ pub const IAudioProcessor = struct { lpVtbl: *IAudioProcessorVtbl };
 pub const IPluginFactoryVtbl = struct {
     funknown: FUnknownVtbl,
 
-    getFactoryInfo: fn (this: *anyopaque, info: *PFactoryInfo) callconv(.C) TResult,
-    countClasses: fn (this: *anyopaque) callconv(.C) i32,
-    getClassInfo: fn (this: *anyopaque, index: i32, info: *PClassInfo) callconv(.C) TResult,
-    createInstance: fn (this: *anyopaque, cid: FIDString, iid: FIDString, obj: **anyopaque) callconv(.C) TResult,
+    getFactoryInfo: *const fn (this: *anyopaque, info: *PFactoryInfo) callconv(.C) TResult,
+    countClasses: *const fn (this: *anyopaque) callconv(.C) i32,
+    getClassInfo: *const fn (this: *anyopaque, index: i32, info: *PClassInfo) callconv(.C) TResult,
+    createInstance: *const fn (this: *anyopaque, cid: FIDString, iid: FIDString, obj: **anyopaque) callconv(.C) TResult,
 };
 
-pub const IPluginFactory = struct { lpVtbl: *IPluginFactoryVtbl };
+pub const IPluginFactory = struct { lpVtbl: ?*IPluginFactoryVtbl };
