@@ -308,7 +308,7 @@ PClassInfo :: struct {
 // Vtable structs
 
 FUnknownVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
+	queryInterface : proc "system" (this: rawptr, iid: ^TUID, obj: ^rawptr) -> TResult,
 	addRef : proc "system" (this: rawptr) -> u32,
 	release : proc "system" (this: rawptr) -> u32,
 }
@@ -318,9 +318,7 @@ FUnknown :: struct {
 }
 
 IBStreamVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	read  : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesRead: ^i32) -> TResult,
 	write : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesWritten: ^i32) -> TResult,
@@ -333,9 +331,7 @@ IBStream :: struct {
 }
 
 IParamValueQueueVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	getParameterId : proc "system" (this: rawptr) -> ParamID,
 	getPointCount : proc "system" (this: rawptr) -> i32,
@@ -348,9 +344,7 @@ IParamValueQueue :: struct {
 }
 
 IParameterChangesVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	getParameterCount : proc "system" (this: rawptr) -> i32,
 	getParameterData  : proc "system" (this: rawptr, index: i32) -> ^IParamValueQueue,
@@ -362,9 +356,7 @@ IParameterChanges :: struct {
 }
 
 IEventListVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	getEventCount : proc "system" (this: rawptr) -> i32,
 	getEvent      : proc "system" (this: rawptr, index: i32, e: ^Event) -> TResult,
@@ -376,14 +368,12 @@ IEventList :: struct {
 }
 
 IComponentVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
 	terminate  : proc "system" (this: rawptr) -> TResult,
 
-	getControllerClassId : proc "system" (this: rawptr, classId: TUID) -> TResult,
+	getControllerClassId : proc "system" (this: rawptr, classId: ^TUID) -> TResult,
 	setIoMode            : proc "system" (this: rawptr, mode: IoMode) -> TResult,
 	getBusCount          : proc "system" (this: rawptr, type: MediaType, dir: BusDirection) -> i32,
 	getBusInfo           : proc "system" (this: rawptr, type: MediaType, dir: BusDirection, index: i32, bus: ^BusInfo) -> TResult,
@@ -399,9 +389,7 @@ IComponent :: struct {
 }
 
 IAudioProcessorVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	setBusArrangements   : proc "system" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
 	getBusArrangement    : proc "system" (this: rawptr, dir: BusDirection, index: i32, arr: ^SpeakerArrangement) -> TResult,
@@ -418,9 +406,7 @@ IAudioProcessor :: struct {
 }
 
 IPluginFactoryVtbl :: struct {
-	queryInterface : proc "system" (this: rawptr, iid: TUID, obj: ^rawptr) -> TResult,
-	addRef         : proc "system" (this: rawptr) -> u32,
-	release        : proc "system" (this: rawptr) -> u32,
+	funknown: FUnknownVtbl,
 
 	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
 	countClasses : proc "system" (this: rawptr) -> i32,
