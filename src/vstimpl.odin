@@ -13,8 +13,8 @@ lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
 
 LindalePluginFactory :: struct {
-	vtablePtr: vst3.IPluginFactory,
-	vtable: vst3.IPluginFactoryVtbl,
+	vtablePtr: vst3.IPluginFactory3,
+	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
 }
 
@@ -244,12 +244,15 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	return instance
 }
 
-@export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory {
+@export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
 
 	if !pluginFactory.initialized {
 		pf_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-			if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IPluginFactory {
+			if iid^ == vst3.iid_FUnknown ||
+			iid^ == vst3.iid_IPluginFactory ||
+			iid^ == vst3.iid_IPluginFactory2 ||
+			iid^ == vst3.iid_IPluginFactory3 {
 				obj^ = this
 				return vst3.kResultOk
 			}
@@ -327,10 +330,73 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			return vst3.kNoInterface
 		}
 
+		pf_getClassInfo2 :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo2) -> vst3.TResult {
+			if index != 0 {
+				return vst3.kInvalidArgument
+			}
+			info^ = vst3.PClassInfo2 {
+				cid = lindaleProcessorCid,
+				cardinality = vst3.kManyInstances,
+				category = {},
+				name = {},
+				classFlags = 0,
+				subCategories = {},
+				vendor = {},
+				version = {},
+				sdkVersion = {}
+			}
+
+			copy(info.category[:], "Instrument")
+			copy(info.name[:], "Lindale")
+			copy(info.subCategories[:], "Instrument")
+			copy(info.vendor[:], "JagI")
+			copy(info.version[:], "0.0.1")
+			copy(info.sdkVersion[:], "VST 3.7.7")
+
+			return vst3.kResultOk
+		}
+
+		pf_getClassInfoUnicode :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfoW) -> vst3.TResult {
+			context = runtime.default_context()
+			if index != 0 {
+				return vst3.kInvalidArgument
+			}
+			info^ = vst3.PClassInfoW {
+				cid = lindaleProcessorCid,
+				cardinality = vst3.kManyInstances,
+				category = {},
+				name = {},
+				classFlags = 0,
+				subCategories = {},
+				vendor = {},
+				version = {},
+				sdkVersion = {}
+			}
+
+			copy(info.category[:], "Instrument")
+			utf16.encode_string(info.name[:], "Lindale")
+			copy(info.subCategories[:], "Instrument")
+			utf16.encode_string(info.vendor[:], "JagI")
+			utf16.encode_string(info.version[:], "0.0.1")
+			utf16.encode_string(info.sdkVersion[:], "VST 3.7.7")
+
+			return vst3.kResultOk
+		}
+
+		pf_setHostContext :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+			return vst3.kResultOk
+		}
+
+
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses
 		pluginFactory.vtable.getClassInfo = pf_getClassInfo
 		pluginFactory.vtable.createInstance = pf_createInstance
+
+		pluginFactory.vtable.getClassInfo2 = pf_getClassInfo2
+
+		pluginFactory.vtable.getClassInfoUnicode = pf_getClassInfoUnicode
+		pluginFactory.vtable.setHostContext = pf_setHostContext
 
 		pluginFactory.vtablePtr.lpVtbl = &pluginFactory.vtable
 		pluginFactory.initialized = true

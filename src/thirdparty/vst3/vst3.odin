@@ -318,6 +318,30 @@ PClassInfo :: struct {
 	name: [64]u8,
 }
 
+PClassInfo2 :: struct {
+	cid: TUID,
+	cardinality: i32,
+	category: [32]u8,
+	name: [64]u8,
+	classFlags: u32,
+	subCategories: [128]u8,
+	vendor: [64]u8,
+	version: [64]u8,
+	sdkVersion: [64]u8,
+}
+
+PClassInfoW :: struct {
+	cid: TUID,
+	cardinality: i32,
+	category: [32]u8,
+	name: [64]u16,
+	classFlags: u32,
+	subCategories: [128]u8,
+	vendor: [64]u16,
+	version: [64]u16,
+	sdkVersion: [64]u16,
+}
+
 // Vtable structs
 
 FUnknownVtbl :: struct {
@@ -418,15 +442,20 @@ IAudioProcessor :: struct {
 	lpVtbl: ^IAudioProcessorVtbl
 }
 
-IPluginFactoryVtbl :: struct {
+IPluginFactory3Vtbl :: struct {
 	funknown: FUnknownVtbl,
 
 	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
 	countClasses : proc "system" (this: rawptr) -> i32,
 	getClassInfo : proc "system" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
 	createInstance : proc "system" (this: rawptr, cid, iid: FIDString, obj: ^rawptr) -> TResult,
+
+	getClassInfo2 : proc "system" (this: rawptr, index: i32, info: ^PClassInfo2) -> TResult,
+
+	getClassInfoUnicode : proc "system" (this: rawptr, index: i32, info: ^PClassInfoW) -> TResult,
+	setHostContext : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
 }
 
-IPluginFactory :: struct {
-	lpVtbl: ^IPluginFactoryVtbl
+IPluginFactory3 :: struct {
+	lpVtbl: ^IPluginFactory3Vtbl
 }
