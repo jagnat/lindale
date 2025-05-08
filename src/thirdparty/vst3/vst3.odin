@@ -33,13 +33,26 @@ is_same_tuid :: proc(tuid: TUID, fid: FIDString) -> bool {
 TResult :: i32
 TSize :: i64
 TUID :: [16]byte
-MediaType :: i32
-BusDirection :: i32
+MediaType :: enum i32 {
+	Audio = 0,
+	Event  = 1,
+}
+BusDirection :: enum i32 {
+	Input  = 0,
+	Output = 1,
+}
 IoMode :: i32
 String128 :: [128]u16
-BusType :: i32
+BusType :: enum i32 {
+	Main = 0,
+	Aux  = 1,
+}
 TBool :: u8
 SpeakerArrangement :: u64
+SymbolicSampleSize :: enum i32 {
+	Sample32 = 0,
+	Sample64 = 1,
+}
 SampleRate :: f64
 Sample32 :: f32
 Sample64 :: f64
@@ -145,7 +158,7 @@ RoutingInfo :: struct {
 
 ProcessSetup :: struct {
 	processMode        : i32,
-	symbolicSampleSize : i32,
+	symbolicSampleSize : SymbolicSampleSize,
 	maxSamplesPerBlock : i32,
 	sampleRate         : SampleRate,
 }
@@ -154,8 +167,8 @@ AudioBusBuffers :: struct {
 	numChannels: i32,
 	silenceFlags: u64,
 	using _: struct #raw_union {
-		channelBuffers32 : ^^Sample32,
-		channelBuffers64 : ^^Sample64,
+		channelBuffers32 : [^][^]Sample32,
+		channelBuffers64 : [^][^]Sample64,
 	},
 }
 
@@ -277,12 +290,12 @@ ProcessContext :: struct {
 
 ProcessData :: struct {
 	processMode: i32,
-	symbolicSampleSize: i32,
+	symbolicSampleSize: SymbolicSampleSize,
 	numSamples: i32,
 	numInputs: i32,
 	numOutputs: i32,
-	inputs: ^AudioBusBuffers,
-	outputs: ^AudioBusBuffers,
+	inputs: [^]AudioBusBuffers,
+	outputs: [^]AudioBusBuffers,
 	inputParameterChanges: ^IParameterChanges,
 	outputParameterChanges: ^IParameterChanges,
 	inputEvents: ^IEventList,
@@ -393,7 +406,7 @@ IAudioProcessorVtbl :: struct {
 
 	setBusArrangements   : proc "system" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
 	getBusArrangement    : proc "system" (this: rawptr, dir: BusDirection, index: i32, arr: ^SpeakerArrangement) -> TResult,
-	canProcessSampleSize : proc "system" (this: rawptr, symbolicSampleSize: i32) -> TResult,
+	canProcessSampleSize : proc "system" (this: rawptr, sss: SymbolicSampleSize) -> TResult,
 	getLatencySamples    : proc "system" (this: rawptr) -> u32,
 	setupProcessing      : proc "system" (this: rawptr, setup: ^ProcessSetup) -> TResult,
 	setProcessing        : proc "system" (this: rawptr, state: TBool) -> TResult,
