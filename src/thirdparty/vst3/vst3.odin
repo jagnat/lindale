@@ -63,6 +63,8 @@ NoteExpressionTypeID :: u32
 NoteExpressionValue :: f64
 TSamples :: i64
 FIDString :: cstring
+UnitID :: i32
+TChar :: u16
 
 // Interface identifiers
 // TODO: Make actual compile time constants???
@@ -140,6 +142,9 @@ kInternalError   : TResult : transmute(i32)u32(0x80004005)
 kNotInitialized  : TResult : transmute(i32)u32(0x8000FFFF)
 kOutOfMemory     : TResult : transmute(i32)u32(0x8007000E)
 
+ViewRect :: struct {
+	left, top, right, bottom: i32
+}
 
 BusInfo :: struct {
 	mediaType : MediaType,
@@ -214,7 +219,7 @@ NoteExpressionTextEvent :: struct {
 	typeId: NoteExpressionTypeID,
 	noteId: i32,
 	textLen: u32,
-	text: cstring,
+	text: ^TChar,
 }
 
 ChordEvent :: struct {
@@ -222,14 +227,14 @@ ChordEvent :: struct {
 	bassNote: i16,
 	mask: i16,
 	textLen: u16,
-	text: cstring,
+	text: ^TChar,
 }
 
 ScaleEvent :: struct {
 	root: i16,
 	mask: i16,
 	textLen: u16,
-	text: cstring,
+	text: ^TChar,
 }
 
 LegacyMIDICCOutEvent :: struct {
@@ -342,12 +347,24 @@ PClassInfoW :: struct {
 	sdkVersion: [64]u16,
 }
 
+ParameterInfo :: struct {
+	id: ParamID,
+	title: String128,
+	shortTitle: String128,
+	units: String128,
+	stepCount: i32,
+	defaultNormalizedValue: ParamValue,
+	unitId: UnitID,
+	flags: i32,
+}
+
 // Vtable structs
 
 FUnknownVtbl :: struct {
+	/* methods defined in "Steinberg_FUnknown": */
 	queryInterface : proc "system" (this: rawptr, iid: ^TUID, obj: ^rawptr) -> TResult,
-	addRef : proc "system" (this: rawptr) -> u32,
-	release : proc "system" (this: rawptr) -> u32,
+	addRef         : proc "system" (this: rawptr) -> u32,
+	release        : proc "system" (this: rawptr) -> u32,
 }
 
 FUnknown :: struct {
@@ -357,6 +374,7 @@ FUnknown :: struct {
 IBStreamVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods defined in "Steinberg_IBStream": */
 	read  : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesRead: ^i32) -> TResult,
 	write : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesWritten: ^i32) -> TResult,
 	seek  : proc "system" (this: rawptr, pos: i64, mode: i32, result: ^i64) -> TResult,
@@ -370,10 +388,11 @@ IBStream :: struct {
 IParamValueQueueVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods defined in "Steinberg_Vst_IParamValueQueue": */
 	getParameterId : proc "system" (this: rawptr) -> ParamID,
-	getPointCount : proc "system" (this: rawptr) -> i32,
-	getPoint: proc "system" (this: rawptr, index: i32, sampleoffset: ^i32, value: ^ParamValue) -> TResult,
-	addPoint: proc "system" (this: rawptr, sampleOffset: i32, value: ParamValue, index: ^i32) -> TResult,
+	getPointCount  : proc "system" (this: rawptr) -> i32,
+	getPoint       : proc "system" (this: rawptr, index: i32, sampleoffset: ^i32, value: ^ParamValue) -> TResult,
+	addPoint       : proc "system" (this: rawptr, sampleOffset: i32, value: ParamValue, index: ^i32) -> TResult,
 }
 
 IParamValueQueue :: struct {
@@ -383,6 +402,7 @@ IParamValueQueue :: struct {
 IParameterChangesVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods defined in "Steinberg_Vst_IParameterChanges": */
 	getParameterCount : proc "system" (this: rawptr) -> i32,
 	getParameterData  : proc "system" (this: rawptr, index: i32) -> ^IParamValueQueue,
 	addParameterData  : proc "system" (this: rawptr, id: ^ParamID, index: ^i32) -> ^IParamValueQueue,
@@ -395,6 +415,7 @@ IParameterChanges :: struct {
 IEventListVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods defined in "Steinberg_Vst_IEventList": */
 	getEventCount : proc "system" (this: rawptr) -> i32,
 	getEvent      : proc "system" (this: rawptr, index: i32, e: ^Event) -> TResult,
 	addEvent      : proc "system" (this: rawptr, e: ^Event) -> TResult,
@@ -407,9 +428,11 @@ IEventList :: struct {
 IComponentVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods derived from "Steinberg_IPluginBase": */
 	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
 	terminate  : proc "system" (this: rawptr) -> TResult,
 
+	/* methods defined in "Steinberg_Vst_IComponent": */
 	getControllerClassId : proc "system" (this: rawptr, classId: ^TUID) -> TResult,
 	setIoMode            : proc "system" (this: rawptr, mode: IoMode) -> TResult,
 	getBusCount          : proc "system" (this: rawptr, type: MediaType, dir: BusDirection) -> i32,
@@ -428,6 +451,7 @@ IComponent :: struct {
 IAudioProcessorVtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods defined in "Steinberg_Vst_IAudioProcessor": */
 	setBusArrangements   : proc "system" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
 	getBusArrangement    : proc "system" (this: rawptr, dir: BusDirection, index: i32, arr: ^SpeakerArrangement) -> TResult,
 	canProcessSampleSize : proc "system" (this: rawptr, sss: SymbolicSampleSize) -> TResult,
@@ -442,18 +466,95 @@ IAudioProcessor :: struct {
 	lpVtbl: ^IAudioProcessorVtbl
 }
 
+IComponentHandlerVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IComponentHandler": */
+	beginEdit        : proc "system" (this: rawptr, id: ParamID) -> TResult,
+	performEdit      : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue) -> TResult,
+	endEdit          : proc "system" (this: rawptr, id: ParamID) -> TResult,
+	restartComponent : proc "system" (this: rawptr, flags: i32) -> TResult,
+}
+
+IComponentHandler :: struct {
+	lpVtbl: ^IComponentHandlerVtbl
+}
+
+IPlugFrameVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_IPlugFrame": */
+	resizeView : proc "system" (this: rawptr, view: ^IPlugView, newSize: ^ViewRect) -> TResult,
+}
+
+IPlugFrame :: struct {
+	lpVtbl: ^IPlugFrameVtbl
+}
+
+IPlugViewVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_IPlugView": */
+	isPlatformTypeSupported : proc "system" (this: rawptr, type: FIDString) -> TResult,
+	attached                : proc "system" (this: rawptr, parent: rawptr, type: FIDString) -> TResult,
+	removed                 : proc "system" (this: rawptr) -> TResult,
+	onWheel                 : proc "system" (this: rawptr, distance: f32) -> TResult,
+	onKeyDown               : proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> TResult,
+	onKeyUp                 : proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> TResult,
+	getSize                 : proc "system" (this: rawptr, size: ^ViewRect) -> TResult,
+	onSize                  : proc "system" (this: rawptr, newSize: ^ViewRect) -> TResult,
+	onFocus                 : proc "system" (this: rawptr, state: TBool) -> TResult,
+	setFrame                : proc "system" (this: rawptr, frame: ^IPlugFrame) -> TResult,
+	canResize               : proc "system" (this: rawptr) -> TResult,
+	checkSizeConstraint     : proc "system" (this: rawptr, rect: ^ViewRect) -> TResult,
+}
+
+IPlugView :: struct {
+	lpVtbl: ^IPlugViewVtbl
+}
+
+IEditControllerVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods derived from "Steinberg_IPluginBase": */
+	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
+	terminate  : proc "system" (this: rawptr) -> TResult,
+
+	/* methods defined in "Steinberg_Vst_IEditController": */
+	setComponentState      : proc "system" (this: rawptr, state: ^ IBStream) -> TResult,
+	setState               : proc "system" (this: rawptr, state: ^ IBStream) -> TResult,
+	getState               : proc "system" (this: rawptr, state: ^ IBStream) -> TResult,
+	getParameterCount      : proc "system" (this: rawptr) -> i32,
+	getParameterInfo       : proc "system" (this: rawptr, paramIndex: i32, info: ^ParameterInfo) -> TResult,
+	getParamStringByValue  : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue, str: String128) -> TResult,
+	getParamValueByString  : proc "system" (this: rawptr, id: ParamID, str: ^TChar, valueNormalized: ^ParamValue) -> TResult,
+	normalizedParamToPlain : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue) -> ParamValue,
+	plainParamToNormalized : proc "system" (this: rawptr, id: ParamID, plainValue: ParamValue) -> ParamValue,
+	getParamNormalized     : proc "system" (this: rawptr, id: ParamID) -> ParamValue,
+	setParamNormalized     : proc "system" (this: rawptr, id: ParamID, value: ParamValue) -> TResult,
+	setComponentHandler    : proc "system" (this: rawptr, handler: ^IComponentHandler) -> TResult,
+	createView             : proc "system" (this: rawptr, name: FIDString) -> ^IPlugView,
+}
+
+IEditController :: struct {
+	lpVtbl: ^IEditControllerVtbl
+}
+
 IPluginFactory3Vtbl :: struct {
 	funknown: FUnknownVtbl,
 
+	/* methods derived from "Steinberg_IPluginFactory": */
 	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
-	countClasses : proc "system" (this: rawptr) -> i32,
-	getClassInfo : proc "system" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
+	countClasses   : proc "system" (this: rawptr) -> i32,
+	getClassInfo   : proc "system" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
 	createInstance : proc "system" (this: rawptr, cid, iid: FIDString, obj: ^rawptr) -> TResult,
 
+	/* methods derived from "Steinberg_IPluginFactory2": */
 	getClassInfo2 : proc "system" (this: rawptr, index: i32, info: ^PClassInfo2) -> TResult,
 
+	/* methods defined in "Steinberg_IPluginFactory3": */
 	getClassInfoUnicode : proc "system" (this: rawptr, index: i32, info: ^PClassInfoW) -> TResult,
-	setHostContext : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
+	setHostContext      : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
 }
 
 IPluginFactory3 :: struct {

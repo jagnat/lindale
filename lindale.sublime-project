@@ -51,11 +51,11 @@
 			"name": "Odin compile dll",
 			"windows":
 			{
-				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/Lindale.dll"
+				"shell_cmd": "odin build $project_path/src -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.dll"
 			},
 			"osx":
 			{
-				"shell_cmd": "odin build $project_path/src -no-entry-point -build-mode:dll -out:$project_path/Lindale.dylib"
+				"shell_cmd": "odin build $project_path/src -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.dylib"
 			}
 		},
 		{

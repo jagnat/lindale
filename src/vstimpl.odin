@@ -8,6 +8,7 @@ import "core:testing"
 import "core:unicode/utf16"
 import "base:runtime"
 import "base:builtin"
+import "core:sys/windows"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -24,6 +25,12 @@ LindaleProcessor :: struct {
 	audioProcessor: vst3.IAudioProcessor,
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
 	refCount: u32,
+}
+
+LindaleController :: struct {
+	editController: vst3.IEditController,
+	editControllerVtable: vst3.IEditControllerVtbl,
+	refCount: u32
 }
 
 pluginFactory: LindalePluginFactory
@@ -244,11 +251,120 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	return instance
 }
 
+createLindaleController :: proc () -> ^LindaleController {
+	instance := new(LindaleController)
+	instance.refCount = 0
+	instance.editController.lpVtbl = &instance.editControllerVtable
+
+	instance.editControllerVtable = {
+		funknown = vst3.FUnknownVtbl {
+			queryInterface = lc_queryInterface,
+			addRef = lc_addRef,
+			release = lc_release,
+		},
+
+		initialize = lc_initialize,
+		terminate = lc_terminate,
+
+		setComponentState = lc_setComponentState,
+		setState = lc_setState,
+		getState = lc_getState,
+		getParameterCount = lc_getParameterCount,
+		getParameterInfo = lc_getParameterInfo,
+		getParamStringByValue = lc_getParamStringByValue,
+		getParamValueByString = lc_getParamValueByString,
+		normalizedParamToPlain = lc_normalizedParamToPlain,
+		plainParamToNormalized = lc_plainParamToNormalized,
+		getParamNormalized = lc_getParamNormalized,
+		setParamNormalized = lc_setParamNormalized,
+		setComponentHandler = lc_setComponentHandler,
+		createView = lc_createView,
+	}
+
+	lc_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IEditController {
+			obj^ = &instance.editController
+		} else {
+			obj^ = nil
+			return vst3.kNoInterface
+		}
+
+		lc_addRef(this)
+
+		return vst3.kResultOk
+	}
+	lc_addRef :: proc "system" (this: rawptr) -> u32 {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		instance.refCount += 1
+		return instance.refCount
+	}
+	lc_release :: proc "system" (this: rawptr) -> u32 {
+		context = runtime.default_context()
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		instance.refCount -= 1
+		if instance.refCount == 0 {
+			free(instance)
+		}
+		return instance.refCount
+	}
+	lc_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_setComponentState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_getState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_getParameterCount :: proc "system" (this: rawptr) -> i32 {
+		return 0
+	}
+	lc_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: vst3.String128) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: ^vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
+		return 0
+	}
+	lc_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
+		return 0
+	}
+	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
+		return 0
+	}
+	lc_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_createView :: proc "system" (this: rawptr, name: vst3.FIDString) -> ^vst3.IPlugView {
+		return nil
+	}
+
+	return instance
+}
+
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
 
+	windows.OutputDebugStringA("Lindale: GetPluginFactory")
+
 	if !pluginFactory.initialized {
 		pf_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+			windows.OutputDebugStringA("Lindale: pf_queryInterface")
 			if iid^ == vst3.iid_FUnknown ||
 			iid^ == vst3.iid_IPluginFactory ||
 			iid^ == vst3.iid_IPluginFactory2 ||
@@ -261,10 +377,12 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 
 		pf_addRef :: proc "system" (this: rawptr) -> u32 {
+			windows.OutputDebugStringA("Lindale: pf_addRef")
 			return 1
 		}
 
 		pf_release :: proc "system" (this: rawptr) -> u32 {
+			windows.OutputDebugStringA("Lindale: pf_release")
 			return 0
 		}
 
@@ -277,7 +395,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		pluginFactory.vtable.funknown = funknown
 
 		pf_getFactoryInfo :: proc "system" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
-			copy(info.vendor[:], "Jagi")
+			windows.OutputDebugStringA("Lindale: getFactoryInfo")
+			copy(info.vendor[:], "JagI")
 			copy(info.url[:], "jagi.quest")
 			copy(info.email[:], "jagi@jagi.quest")
 			info.flags = 0
@@ -285,55 +404,79 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 
 		pf_countClasses :: proc "system" (this: rawptr) -> i32 {
-			return 1
+			windows.OutputDebugStringA("Lindale: countClasses")
+			return 2 // LindaleProcessor and LindaleController
 		}
 
 		pf_getClassInfo :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo) -> vst3.TResult {
-			if index != 0 {
+			windows.OutputDebugStringA("Lindale: getClassInfo")
+			if index >= 2 {
 				return vst3.kInvalidArgument
 			}
 
 			info^ = vst3.PClassInfo {
-				cid = lindaleProcessorCid,
+				cid = index == 0 ? lindaleProcessorCid : lindaleControllerCid,
 				cardinality = vst3.kManyInstances,
 				category = {},
 				name = {},
 			}
 
-			copy(info.category[:], "Instrument")
+			copy(info.category[:], "Fx")
 			copy(info.name[:], "Lindale")
 
 			return vst3.kResultOk
 		}
 
 		pf_createInstance :: proc "system" (this: rawptr, cid, iid: vst3.FIDString, obj: ^rawptr) -> vst3.TResult {
+			windows.OutputDebugStringA("Lindale: createInstance")
 			context = runtime.default_context()
+			windows.OutputDebugStringA("Lindale: createInstance after runtime init")
 
 			if vst3.is_same_tuid(lindaleProcessorCid, cid) {
 				processor := createLindaleProcessor()
 
 				if vst3.is_same_tuid(vst3.iid_IComponent, iid) {
+					windows.OutputDebugStringA("Lindale: CreateInstance iComponent")
 					obj^ = &processor.component;
 					return vst3.kResultOk;
 				} else if vst3.is_same_tuid(vst3.iid_IAudioProcessor, iid) {
+					windows.OutputDebugStringA("Lindale: CreateInstance audioProcessor")
 					obj^ = &processor.audioProcessor;
 					return vst3.kResultOk;
 				}
 
 				free(processor)
 
+				windows.OutputDebugStringA("Lindale: CreateInstance noiid")
+
 				// No interface found
 				obj^ = nil;
 				return vst3.kNoInterface;
+
+			} else if vst3.is_same_tuid(lindaleControllerCid, cid) {
+				controller := createLindaleController()
+
+				if vst3.is_same_tuid(vst3.iid_IEditController, iid) {
+					obj^ = &controller.editController
+					return vst3.kResultOk
+				}
+
+				free(controller)
+				obj^ = nil
+				return vst3.kNoInterface
 			}
+
+			windows.OutputDebugStringA("Lindale: CreateInstance nocid")
 
 			return vst3.kNoInterface
 		}
 
 		pf_getClassInfo2 :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo2) -> vst3.TResult {
+			windows.OutputDebugStringA("Lindale: getClassInfo2")
 			if index != 0 {
 				return vst3.kInvalidArgument
 			}
+			///////////// TODO
 			info^ = vst3.PClassInfo2 {
 				cid = lindaleProcessorCid,
 				cardinality = vst3.kManyInstances,
@@ -346,17 +489,18 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				sdkVersion = {}
 			}
 
-			copy(info.category[:], "Instrument")
+			copy(info.category[:], "Fx")
 			copy(info.name[:], "Lindale")
-			copy(info.subCategories[:], "Instrument")
+			copy(info.subCategories[:], "Fx")
 			copy(info.vendor[:], "JagI")
 			copy(info.version[:], "0.0.1")
-			copy(info.sdkVersion[:], "VST 3.7.7")
+			copy(info.sdkVersion[:], "VST 3.7.13")
 
 			return vst3.kResultOk
 		}
 
 		pf_getClassInfoUnicode :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfoW) -> vst3.TResult {
+			windows.OutputDebugStringA("Lindale: getClassInfoUnicode")
 			context = runtime.default_context()
 			if index != 0 {
 				return vst3.kInvalidArgument
@@ -373,17 +517,18 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				sdkVersion = {}
 			}
 
-			copy(info.category[:], "Instrument")
+			copy(info.category[:], "Fx")
 			utf16.encode_string(info.name[:], "Lindale")
-			copy(info.subCategories[:], "Instrument")
+			copy(info.subCategories[:], "Fx")
 			utf16.encode_string(info.vendor[:], "JagI")
 			utf16.encode_string(info.version[:], "0.0.1")
-			utf16.encode_string(info.sdkVersion[:], "VST 3.7.7")
+			utf16.encode_string(info.sdkVersion[:], "VST 3.7.13")
 
 			return vst3.kResultOk
 		}
 
 		pf_setHostContext :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+			windows.OutputDebugStringA("Lindale: setHostContext")
 			return vst3.kResultOk
 		}
 
@@ -402,6 +547,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		pluginFactory.initialized = true
 	}
 
+	windows.OutputDebugStringA("Lindale: GetPluginFactory returnin vtablePtr")
 	return &pluginFactory.vtablePtr
 }
 
