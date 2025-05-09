@@ -17,6 +17,7 @@ LindalePluginFactory :: struct {
 	vtablePtr: vst3.IPluginFactory3,
 	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
+	ctx: runtime.Context,
 }
 
 LindaleProcessor :: struct {
@@ -44,6 +45,7 @@ pluginFactory: LindalePluginFactory
 }
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
+	windows.OutputDebugStringA("Lindale: createLindaleProcessor")
 	instance := new(LindaleProcessor)
 	instance.refCount = 0
 	instance.component.lpVtbl = &instance.componentVtable
@@ -109,7 +111,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return instance.refCount
 	}
 	lp_comp_release :: proc "system" (this: rawptr) -> u32 {
-		context = runtime.default_context()
+		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
@@ -145,7 +147,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		index: i32,
 		bus: ^vst3.BusInfo
 	) -> vst3.TResult {
-		context = runtime.default_context()
+		context = pluginFactory.ctx
 
 		if type != .Audio || index != 0 {
 			return vst3.kInvalidArgument
@@ -198,7 +200,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return instance.refCount
 	}
 	lp_ap_release :: proc "system" (this: rawptr) -> u32 {
-		context = runtime.default_context()
+		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
@@ -228,7 +230,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return vst3.kResultOk
 	}
 	lp_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
-		context = runtime.default_context()
+		context = pluginFactory.ctx
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
@@ -252,6 +254,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 }
 
 createLindaleController :: proc () -> ^LindaleController {
+	windows.OutputDebugStringA("Lindale: createLindaleController")
 	instance := new(LindaleController)
 	instance.refCount = 0
 	instance.editController.lpVtbl = &instance.editControllerVtable
@@ -383,7 +386,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_release :: proc "system" (this: rawptr) -> u32 {
 			windows.OutputDebugStringA("Lindale: pf_release")
-			return 0
+			return 1
 		}
 
 		funknown := vst3.FUnknownVtbl {
@@ -421,15 +424,15 @@ createLindaleController :: proc () -> ^LindaleController {
 				name = {},
 			}
 
-			copy(info.category[:], "Fx")
+			copy(info.category[:], "Audio Module Class")
 			copy(info.name[:], "Lindale")
 
 			return vst3.kResultOk
 		}
 
-		pf_createInstance :: proc "system" (this: rawptr, cid, iid: vst3.FIDString, obj: ^rawptr) -> vst3.TResult {
+		pf_createInstance :: proc "system" (this: rawptr, cid: vst3.FIDString, iid: vst3.FIDString, obj: ^rawptr) -> vst3.TResult {
 			windows.OutputDebugStringA("Lindale: createInstance")
-			context = runtime.default_context()
+			context = pluginFactory.ctx
 			windows.OutputDebugStringA("Lindale: createInstance after runtime init")
 
 			if vst3.is_same_tuid(lindaleProcessorCid, cid) {
@@ -473,12 +476,12 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_getClassInfo2 :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo2) -> vst3.TResult {
 			windows.OutputDebugStringA("Lindale: getClassInfo2")
-			if index != 0 {
+			if index >= 2 {
 				return vst3.kInvalidArgument
 			}
-			///////////// TODO
+
 			info^ = vst3.PClassInfo2 {
-				cid = lindaleProcessorCid,
+				cid = index == 0? lindaleProcessorCid : lindaleControllerCid,
 				cardinality = vst3.kManyInstances,
 				category = {},
 				name = {},
@@ -489,7 +492,7 @@ createLindaleController :: proc () -> ^LindaleController {
 				sdkVersion = {}
 			}
 
-			copy(info.category[:], "Fx")
+			copy(info.category[:], "Audio Module Class")
 			copy(info.name[:], "Lindale")
 			copy(info.subCategories[:], "Fx")
 			copy(info.vendor[:], "JagI")
@@ -501,12 +504,12 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_getClassInfoUnicode :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfoW) -> vst3.TResult {
 			windows.OutputDebugStringA("Lindale: getClassInfoUnicode")
-			context = runtime.default_context()
-			if index != 0 {
+			context = pluginFactory.ctx
+			if index >= 2 {
 				return vst3.kInvalidArgument
 			}
 			info^ = vst3.PClassInfoW {
-				cid = lindaleProcessorCid,
+				cid = index == 0? lindaleProcessorCid : lindaleControllerCid,
 				cardinality = vst3.kManyInstances,
 				category = {},
 				name = {},
@@ -517,7 +520,7 @@ createLindaleController :: proc () -> ^LindaleController {
 				sdkVersion = {}
 			}
 
-			copy(info.category[:], "Fx")
+			copy(info.category[:], "Audio Module Class")
 			utf16.encode_string(info.name[:], "Lindale")
 			copy(info.subCategories[:], "Fx")
 			utf16.encode_string(info.vendor[:], "JagI")
@@ -532,7 +535,6 @@ createLindaleController :: proc () -> ^LindaleController {
 			return vst3.kResultOk
 		}
 
-
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses
 		pluginFactory.vtable.getClassInfo = pf_getClassInfo
@@ -544,6 +546,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		pluginFactory.vtable.setHostContext = pf_setHostContext
 
 		pluginFactory.vtablePtr.lpVtbl = &pluginFactory.vtable
+		pluginFactory.ctx = context
 		pluginFactory.initialized = true
 	}
 

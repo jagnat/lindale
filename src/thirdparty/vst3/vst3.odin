@@ -5,7 +5,7 @@ import "base:runtime"
 import "core:unicode/utf16"
 import "core:mem"
 
-// TODO: Needs a different endianness on other platforms besides win
+// TODO: Needs a different endianness on other platforms besides win? maybe not
 SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
 	return {
 		(byte)((l1 & 0x000000FF)      ), (byte)((l1 & 0x0000FF00) >>  8),
