@@ -19,15 +19,8 @@ SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
 	}
 }
 
-is_same_tuid :: proc(tuid: TUID, fid: FIDString) -> bool {
-	tuid := tuid
-	if runtime.cstring_len(fid) != 16 {
-		return false;
-	}
-	tuid_slice := tuid[:]
-	fid_slice  := mem.slice_ptr(cast(^u8)fid, 16)
-
-	return mem.compare(tuid_slice, fid_slice) == 0;
+is_same_tuid :: proc(tuid1, tuid2: ^TUID) -> bool {
+	return mem.compare(tuid1[:], tuid2[:]) == 0;
 }
 
 TResult :: i32
@@ -547,7 +540,7 @@ IPluginFactory3Vtbl :: struct {
 	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
 	countClasses   : proc "system" (this: rawptr) -> i32,
 	getClassInfo   : proc "system" (this: rawptr, index: i32, info: ^PClassInfo) -> TResult,
-	createInstance : proc "system" (this: rawptr, cid, iid: FIDString, obj: ^rawptr) -> TResult,
+	createInstance : proc "system" (this: rawptr, cid, iid: ^TUID, obj: ^rawptr) -> TResult,
 
 	/* methods derived from "Steinberg_IPluginFactory2": */
 	getClassInfo2 : proc "system" (this: rawptr, index: i32, info: ^PClassInfo2) -> TResult,
