@@ -21,6 +21,7 @@ debug_print :: proc(format: string, args: ..any) {
 		buf: [512]u8;
 		n := fmt.bprintf(buf[:], format, ..args);
 		windows.OutputDebugStringA(strings.unsafe_string_to_cstring(n));
+		windows.OutputDebugStringA("\n");
 	}
 }
 
@@ -138,6 +139,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
+			debug_print("Lindale: lp_comp_release free")
 			free(instance)
 		}
 		return instance.refCount
@@ -477,15 +479,15 @@ createLindaleController :: proc () -> ^LindaleController {
 			} else {
 				copy(info.category[:], "Component Controller Class")
 			}
-			
+
 			copy(info.name[:], "Lindale")
 
 			return vst3.kResultOk
 		}
 
 		pf_createInstance :: proc "system" (this: rawptr, cid, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-			windows.OutputDebugStringA("Lindale: createInstance")
 			context = pluginFactory.ctx
+			debug_print("Lindale: createInstance")
 
 			cidPtr: [^]u8 = cast([^]u8)cid
 			cidAry := cidPtr[0:16]
@@ -498,18 +500,20 @@ createLindaleController :: proc () -> ^LindaleController {
 				processor := createLindaleProcessor()
 
 				if vst3.is_same_tuid(&vst3.iid_IComponent, iid) {
-					windows.OutputDebugStringA("Lindale: CreateInstance iComponent")
+					debug_print("Lindale: CreateInstance iComponent")
 					obj^ = &processor.component;
+					processor.componentVtable.funknown.addRef(&processor.component);
 					return vst3.kResultOk;
 				} else if vst3.is_same_tuid(&vst3.iid_IAudioProcessor, iid) {
-					windows.OutputDebugStringA("Lindale: CreateInstance audioProcessor")
+					debug_print("Lindale: CreateInstance audioProcessor")
 					obj^ = &processor.audioProcessor;
+					processor.audioProcessorVtable.funknown.addRef(&processor.audioProcessor);
 					return vst3.kResultOk;
 				}
 
 				free(processor)
 
-				windows.OutputDebugStringA("Lindale: CreateInstance noiid")
+				debug_print("Lindale: CreateInstance noiid")
 
 				// No interface found
 				obj^ = nil;
@@ -519,7 +523,9 @@ createLindaleController :: proc () -> ^LindaleController {
 				controller := createLindaleController()
 
 				if vst3.is_same_tuid(&vst3.iid_IEditController, iid) {
+					debug_print("Lindale: CreateInstance editController")
 					obj^ = &controller.editController
+					controller.editControllerVtable.funknown.addRef(&controller.editController)
 					return vst3.kResultOk
 				}
 
