@@ -51,7 +51,7 @@
 			"name": "Odin compile dll",
 			"windows":
 			{
-				"shell_cmd": "odin build $project_path/src/vstimpl.odin -file -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.dll"
+				"shell_cmd": "odin build $project_path/src -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.dll"
 			},
 			"osx":
 			{
