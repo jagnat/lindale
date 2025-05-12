@@ -42,6 +42,7 @@ BusType :: enum i32 {
 }
 TBool :: u8
 SpeakerArrangement :: u64
+kStereo : SpeakerArrangement : 1 << 0 | 1 << 1
 SymbolicSampleSize :: enum i32 {
 	Sample32 = 0,
 	Sample64 = 1,
@@ -134,6 +135,22 @@ kNotImplemented  : TResult : transmute(i32)u32(0x80004001)
 kInternalError   : TResult : transmute(i32)u32(0x80004005)
 kNotInitialized  : TResult : transmute(i32)u32(0x8000FFFF)
 kOutOfMemory     : TResult : transmute(i32)u32(0x8007000E)
+
+IProcessContextRequirementsFlagSet :: bit_set[IProcessContextRequirementsFlags]
+IProcessContextRequirementsFlags :: enum u32 {
+	None,
+	NeedSystemTime,
+	NeedContinousTimeSamples,
+	NeedProjectTimeMusic,
+	NeedBarPositionMusic,
+	NeedCycleMusic,
+	NeedSamplesToNextClock,
+	NeedTempo,
+	NeedTimeSignature,
+	NeedChord,
+	NeedFrameRate,
+	NeedTransportState,
+}
 
 ViewRect :: struct {
 	left, top, right, bottom: i32
@@ -457,6 +474,16 @@ IAudioProcessorVtbl :: struct {
 
 IAudioProcessor :: struct {
 	lpVtbl: ^IAudioProcessorVtbl
+}
+
+IProcessContextRequirementsVtbl :: struct {
+	funknown: FUnknownVtbl,
+	/* methods defined in "Steinberg_Vst_IProcessContextRequirements": */
+	getProcessContextRequirements : proc "system" (this: rawptr) -> IProcessContextRequirementsFlagSet
+}
+
+IProcessContextRequirements :: struct {
+	lpVtbl: ^IProcessContextRequirementsVtbl
 }
 
 IComponentHandlerVtbl :: struct {
