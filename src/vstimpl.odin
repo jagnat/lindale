@@ -40,6 +40,9 @@ LindaleProcessor :: struct {
 	processContextRequirements: vst3.IProcessContextRequirements,
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
 	refCount: u32,
+
+	// Temp
+	sampleRate: f64
 }
 
 LindaleController :: struct {
@@ -56,9 +59,21 @@ pluginFactory: LindalePluginFactory
 	return true
 }
 
+@export InitDll :: proc "system" () -> c.bool {
+	context = runtime.default_context()
+	debug_print("Lindale: InitDll")
+	return true
+}
+
 @export DeinitModule :: proc "system" () -> c.bool {
 	context = runtime.default_context()
 	debug_print("Lindale: DeinitModule")
+	return true
+}
+
+@export ExitDll :: proc "system" () -> c.bool {
+	context = runtime.default_context()
+	debug_print("Lindale: ExitDll")
 	return true
 }
 
@@ -292,24 +307,41 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return 0
 	}
 	lp_setupProcessing :: proc "system" (this: rawptr, setup: ^vst3.ProcessSetup) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lp_setupProcessing")
+		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+
+		instance.sampleRate = setup.sampleRate
+
 		return vst3.kResultOk
 	}
 	lp_setProcessing :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
+
 	lp_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
 		context = pluginFactory.ctx
-		debug_print("Lindale: lp_process")
+		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		freq :: 440.0
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
+		samplesPerHalfPeriod := cast(i32)(instance.sampleRate / (2 * freq))
 
-		for i in 0 ..< numOutputs {
-			bufs := outputs[i].channelBuffers32
-			numChannels := outputs[i].numChannels
-			for c in 0..<numChannels {
-				out := bufs[c]
-				slice.zero(out[:numSamples])
+		@(static) squarePhase : i32 = 0
+
+		for s in 0..< numSamples {
+			val : f32= squarePhase < samplesPerHalfPeriod ? 0.8 : -0.8
+			squarePhase += 1
+			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
+
+			for i in 0 ..< numOutputs {
+				bufs := outputs[i].channelBuffers32
+				numChannels := outputs[i].numChannels
+				for c in 0..<numChannels {
+					out := bufs[c]
+					out[s] = val
+				}
 			}
 		}
 
