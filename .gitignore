@@ -2,6 +2,7 @@
 *.out
 *.pdb
 *.rdi
+*.vst3
 *.sublime-workspace
 *.DS_Store
 *.dSYM

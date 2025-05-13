@@ -59,6 +59,16 @@ TSamples :: i64
 FIDString :: cstring
 UnitID :: i32
 TChar :: u16
+ProcessMode :: enum i32 {
+	RealTime,
+	Prefetch,
+	Offline,
+}
+KnobMode :: enum i32 {
+	CircularMode,
+	RelativeCircularMode,
+	LinearMode,
+}
 
 // Interface identifiers
 // TODO: Make actual compile time constants???
@@ -172,7 +182,7 @@ RoutingInfo :: struct {
 }
 
 ProcessSetup :: struct {
-	processMode        : i32,
+	processMode        : ProcessMode,
 	symbolicSampleSize : SymbolicSampleSize,
 	maxSamplesPerBlock : i32,
 	sampleRate         : SampleRate,
@@ -304,7 +314,7 @@ ProcessContext :: struct {
 }
 
 ProcessData :: struct {
-	processMode: i32,
+	processMode: ProcessMode,
 	symbolicSampleSize: SymbolicSampleSize,
 	numSamples: i32,
 	numInputs: i32,
@@ -558,6 +568,19 @@ IEditControllerVtbl :: struct {
 
 IEditController :: struct {
 	lpVtbl: ^IEditControllerVtbl
+}
+
+IEditController2Vtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IEditController2": */
+	setKnobMode  : proc "system" (this: rawptr, mode: KnobMode) -> TResult,
+	openHelp     : proc "system" (this: rawptr, onlyCheck: TBool) -> TResult,
+	openAboutBox : proc "system" (this: rawptr, onlyCheck: TBool) -> TResult,
+}
+
+IEditController2 :: struct {
+	lpVtbl: ^IEditController2Vtbl
 }
 
 IPluginFactory3Vtbl :: struct {

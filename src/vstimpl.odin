@@ -47,6 +47,8 @@ LindaleProcessor :: struct {
 LindaleController :: struct {
 	editController: vst3.IEditController,
 	editControllerVtable: vst3.IEditControllerVtbl,
+	editController2: vst3.IEditController2,
+	editController2Vtable: vst3.IEditController2Vtbl,
 	refCount: u32
 }
 
@@ -330,7 +332,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		@(static) squarePhase : i32 = 0
 
 		for s in 0..< numSamples {
-			val : f32= squarePhase < samplesPerHalfPeriod ? 0.8 : -0.8
+			val : f32= squarePhase < samplesPerHalfPeriod ? 0.2 : -0.2
 			squarePhase += 1
 			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
 
@@ -393,13 +395,15 @@ createLindaleController :: proc () -> ^LindaleController {
 	debug_print("Lindale: createLindaleController")
 	instance := new(LindaleController)
 	instance.refCount = 0
+
 	instance.editController.lpVtbl = &instance.editControllerVtable
+	instance.editController2.lpVtbl = &instance.editController2Vtable
 
 	instance.editControllerVtable = {
 		funknown = vst3.FUnknownVtbl {
-			queryInterface = lc_queryInterface,
-			addRef = lc_addRef,
-			release = lc_release,
+			queryInterface = lc_ec1_queryInterface,
+			addRef = lc_ec1_addRef,
+			release = lc_ec1_release,
 		},
 
 		initialize = lc_initialize,
@@ -420,29 +424,49 @@ createLindaleController :: proc () -> ^LindaleController {
 		createView = lc_createView,
 	}
 
-	lc_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_queryInterface")
-		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+	instance.editController2Vtable = {
+		funknown = vst3.FUnknownVtbl {
+			queryInterface = lc_ec2_queryInterface,
+			addRef = lc_ec2_addRef,
+			release = lc_ec2_release,
+		},
+
+		setKnobMode = lc_setKnobMode,
+		openHelp = lc_openHelp,
+		openAboutBox = lc_openAboutBox,
+	}
+
+	// Universal queryInterface
+	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IEditController || iid^ == vst3.iid_IPluginBase {
-			obj^ = &instance.editController
+			obj^ = &this.editController
+		} else if iid^ == vst3.iid_IEditController2 {
+			obj^ = &this.editController2
 		} else {
 			obj^ = nil
 			return vst3.kNoInterface
 		}
 
-		lc_addRef(this)
-
+		this.refCount += 1
 		return vst3.kResultOk
 	}
-	lc_addRef :: proc "system" (this: rawptr) -> u32 {
+
+	// EditController
+	lc_ec1_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_queryInterface")
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+
+		return lc_queryInterface(instance, iid, obj)
+	}
+	lc_ec1_addRef :: proc "system" (this: rawptr) -> u32 {
 		context = pluginFactory.ctx
 		debug_print("Lindale: lc_addRef")
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		instance.refCount += 1
 		return instance.refCount
 	}
-	lc_release :: proc "system" (this: rawptr) -> u32 {
+	lc_ec1_release :: proc "system" (this: rawptr) -> u32 {
 		context = pluginFactory.ctx
 		debug_print("Lindale: lc_release")
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
@@ -496,6 +520,47 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 	lc_createView :: proc "system" (this: rawptr, name: vst3.FIDString) -> ^vst3.IPlugView {
 		return nil
+	}
+
+	// EditController2
+	lc_ec2_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_ec2_queryInterface")
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+
+		return lc_queryInterface(instance, iid, obj)
+	}
+	lc_ec2_addRef :: proc "system" (this: rawptr) -> u32 {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_ec2_addRef")
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		instance.refCount += 1
+		return instance.refCount
+	}
+	lc_ec2_release :: proc "system" (this: rawptr) -> u32 {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_ec2_release")
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		instance.refCount -= 1
+		if instance.refCount == 0 {
+			free(instance)
+		}
+		return instance.refCount
+	}
+	lc_setKnobMode :: proc "system" (this: rawptr, mode: vst3.KnobMode) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_setKnobMode")
+		return vst3.kResultOk
+	}
+	lc_openHelp :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_openHelp")
+		return vst3.kResultOk
+	}
+	lc_openAboutBox :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
+		context = pluginFactory.ctx
+		debug_print("Lindale: lc_openAboutBox")
+		return vst3.kResultOk
 	}
 
 	return instance
@@ -753,14 +818,21 @@ test_IsSameTuid :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_CreateLindaleProcessor :: proc(t: ^testing.T) {
+test_lindaleProcessor :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	processor := createLindaleProcessor()
 	testing.expect(t, processor != nil)
-	testing.expect(t, processor.refCount == 1)
+	testing.expect_value(t, processor.refCount, 0)
 
 	// Test QueryInterface
-	iidTestCases := []vst3.TUID{vst3.iid_FUnknown, vst3.iid_IComponent, vst3.iid_IAudioProcessor}
+	iidTestCases := []vst3.TUID {
+		vst3.iid_FUnknown,
+		vst3.iid_IComponent,
+		vst3.iid_IPluginBase,
+		vst3.iid_IAudioProcessor,
+		vst3.iid_IProcessContextRequirements
+	}
+
 	obj: rawptr
 	for testCase in iidTestCases {
 		testCase := testCase
@@ -769,29 +841,87 @@ test_CreateLindaleProcessor :: proc(t: ^testing.T) {
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 
-		result = processor.audioProcessorVtable.funknown.queryInterface(&processor.audioProcessor, &vst3.iid_FUnknown, &obj)
+		result = processor.audioProcessorVtable.funknown.queryInterface(&processor.audioProcessor, &testCase, &obj)
+		testing.expect_value(t, result, vst3.kResultOk)
+		testing.expect(t, obj != nil)
+
+		result = processor.processContextRequirementsVtable.funknown.queryInterface(&processor.processContextRequirements, &testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 	}
 
+	startingRefCount := u32(3 * len(iidTestCases))
+
 	// Test AddRef and Release
 	refCount := processor.componentVtable.funknown.addRef(&processor.component)
-	testing.expect_value(t, refCount, 7)
+	testing.expect_value(t, refCount, startingRefCount + 1)
 	refCount = processor.audioProcessorVtable.funknown.addRef(&processor.audioProcessor)
-	testing.expect_value(t, refCount, 8)
+	testing.expect_value(t, refCount, startingRefCount + 2)
 
 	refCount = processor.componentVtable.funknown.release(&processor.component)
-	testing.expect_value(t, refCount, 7)
+	testing.expect_value(t, refCount, startingRefCount + 1)
 	refCount = processor.audioProcessorVtable.funknown.release(&processor.audioProcessor)
-	testing.expect_value(t, refCount, 6)
+	testing.expect_value(t, refCount, startingRefCount)
 
 	refCount = processor.componentVtable.funknown.release(&processor.component)
-	testing.expect_value(t, refCount, 5)
+	testing.expect_value(t, refCount, startingRefCount - 1)
 	refCount = processor.audioProcessorVtable.funknown.release(&processor.audioProcessor)
-	testing.expect_value(t, refCount, 4)
+	testing.expect_value(t, refCount, startingRefCount - 2)
 
-	invalidTuid := vst3.iid_FUnknown + 1
+	invalidTuid := vst3.iid_IEditController2
 	result := processor.componentVtable.funknown.queryInterface(&processor.component, &invalidTuid, &obj)
+	testing.expect_value(t, result, vst3.kNoInterface)
+	free_all(context.allocator)
+}
+
+@(test)
+test_lindaleController :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	controller := createLindaleController()
+	testing.expect(t, controller != nil)
+	testing.expect_value(t, controller.refCount, 0)
+
+	// Test QueryInterface
+	iidTestCases := []vst3.TUID {
+		vst3.iid_FUnknown,
+		vst3.iid_IPluginBase,
+		vst3.iid_IEditController,
+		vst3.iid_IEditController2,
+	}
+
+	obj: rawptr
+	for testCase in iidTestCases {
+		testCase := testCase
+
+		result := controller.editControllerVtable.funknown.queryInterface(&controller.editController, &testCase, &obj)
+		testing.expect_value(t, result, vst3.kResultOk)
+		testing.expect(t, obj != nil)
+
+		result = controller.editController2Vtable.funknown.queryInterface(&controller.editController2, &testCase, &obj)
+		testing.expect_value(t, result, vst3.kResultOk)
+		testing.expect(t, obj != nil)
+	}
+
+	startingRefCount := u32(2 * len(iidTestCases))
+
+	// Test AddRef and Release
+	refCount := controller.editControllerVtable.funknown.addRef(&controller.editController)
+	testing.expect_value(t, refCount, startingRefCount + 1)
+	refCount = controller.editController2Vtable.funknown.addRef(&controller.editController2)
+	testing.expect_value(t, refCount, startingRefCount + 2)
+
+	refCount = controller.editControllerVtable.funknown.release(&controller.editController)
+	testing.expect_value(t, refCount, startingRefCount + 1)
+	refCount = controller.editController2Vtable.funknown.release(&controller.editController2)
+	testing.expect_value(t, refCount, startingRefCount)
+
+	refCount = controller.editControllerVtable.funknown.release(&controller.editController)
+	testing.expect_value(t, refCount, startingRefCount - 1)
+	refCount = controller.editController2Vtable.funknown.release(&controller.editController2)
+	testing.expect_value(t, refCount, startingRefCount - 2)
+
+	invalidTuid := vst3.iid_IAudioProcessor
+	result := controller.editControllerVtable.funknown.queryInterface(&controller.editController, &invalidTuid, &obj)
 	testing.expect_value(t, result, vst3.kNoInterface)
 	free_all(context.allocator)
 }
