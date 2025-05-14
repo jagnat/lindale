@@ -58,6 +58,8 @@ NoteExpressionValue :: f64
 TSamples :: i64
 FIDString :: cstring
 UnitID :: i32
+kRootUnitId : UnitID = 0
+kNoParentUnitId : UnitID = -1
 TChar :: u16
 ProcessMode :: enum i32 {
 	RealTime,
@@ -148,18 +150,28 @@ kOutOfMemory     : TResult : transmute(i32)u32(0x8007000E)
 
 IProcessContextRequirementsFlagSet :: bit_set[IProcessContextRequirementsFlags]
 IProcessContextRequirementsFlags :: enum u32 {
-	None,
-	NeedSystemTime,
-	NeedContinousTimeSamples,
-	NeedProjectTimeMusic,
-	NeedBarPositionMusic,
-	NeedCycleMusic,
-	NeedSamplesToNextClock,
-	NeedTempo,
-	NeedTimeSignature,
-	NeedChord,
-	NeedFrameRate,
-	NeedTransportState,
+	NeedSystemTime           = 0,
+	NeedContinousTimeSamples = 1,
+	NeedProjectTimeMusic     = 2,
+	NeedBarPositionMusic     = 3,
+	NeedCycleMusic           = 4,
+	NeedSamplesToNextClock   = 5,
+	NeedTempo                = 6,
+	NeedTimeSignature        = 7,
+	NeedChord                = 8,
+	NeedFrameRate            = 9,
+	NeedTransportState       = 10,
+}
+
+ParameterFlagSet :: bit_set[ParameterFlags]
+ParameterFlags :: enum i32 {
+	kCanAutomate     = 0,
+	kIsReadOnly      = 1,
+	kIsWrapAround    = 2,
+	kIsList          = 3,
+	kIsHidden        = 4,
+	kIsProgramChange = 15,
+	kIsBypass        = 16
 }
 
 ViewRect :: struct {
@@ -375,7 +387,7 @@ ParameterInfo :: struct {
 	stepCount: i32,
 	defaultNormalizedValue: ParamValue,
 	unitId: UnitID,
-	flags: i32,
+	flags: ParameterFlagSet,
 }
 
 // Vtable structs
@@ -445,6 +457,7 @@ IEventList :: struct {
 	lpVtbl: ^IEventListVtbl
 }
 
+/////////////////////////////////////////////////
 IComponentVtbl :: struct {
 	funknown: FUnknownVtbl,
 
@@ -468,6 +481,7 @@ IComponent :: struct {
 	lpVtbl: ^IComponentVtbl
 }
 
+/////////////////////////////////////////////////
 IAudioProcessorVtbl :: struct {
 	funknown: FUnknownVtbl,
 
@@ -543,6 +557,7 @@ IPlugView :: struct {
 	lpVtbl: ^IPlugViewVtbl
 }
 
+/////////////////////////////////////////////////
 IEditControllerVtbl :: struct {
 	funknown: FUnknownVtbl,
 
@@ -556,8 +571,8 @@ IEditControllerVtbl :: struct {
 	getState               : proc "system" (this: rawptr, state: ^ IBStream) -> TResult,
 	getParameterCount      : proc "system" (this: rawptr) -> i32,
 	getParameterInfo       : proc "system" (this: rawptr, paramIndex: i32, info: ^ParameterInfo) -> TResult,
-	getParamStringByValue  : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue, str: String128) -> TResult,
-	getParamValueByString  : proc "system" (this: rawptr, id: ParamID, str: ^TChar, valueNormalized: ^ParamValue) -> TResult,
+	getParamStringByValue  : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue, str: ^String128) -> TResult,
+	getParamValueByString  : proc "system" (this: rawptr, id: ParamID, str: [^]TChar, valueNormalized: ^ParamValue) -> TResult,
 	normalizedParamToPlain : proc "system" (this: rawptr, id: ParamID, valueNormalized: ParamValue) -> ParamValue,
 	plainParamToNormalized : proc "system" (this: rawptr, id: ParamID, plainValue: ParamValue) -> ParamValue,
 	getParamNormalized     : proc "system" (this: rawptr, id: ParamID) -> ParamValue,

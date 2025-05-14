@@ -4,25 +4,16 @@ import "thirdparty/vst3"
 import "core:c"
 import "core:fmt"
 import "core:strings"
+import "core:strconv"
 import "core:mem"
 import "core:slice"
 import "core:testing"
 import "core:unicode/utf16"
 import "base:runtime"
 import "base:builtin"
-import "core:sys/windows"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
-
-debug_print :: proc(format: string, args: ..any) {
-	when ODIN_OS == .Windows {
-		buf: [512]u8;
-		n := fmt.bprintf(buf[:], format, ..args);
-		windows.OutputDebugStringA(strings.unsafe_string_to_cstring(n));
-		windows.OutputDebugStringA("\n");
-	}
-}
 
 LindalePluginFactory :: struct {
 	vtablePtr: vst3.IPluginFactory3,
@@ -40,8 +31,9 @@ LindaleProcessor :: struct {
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
 	refCount: u32,
 
-	// Temp
-	sampleRate: f64
+	// Context
+	paramState: ParamState,
+	sampleRate: f64,
 }
 
 LindaleController :: struct {
@@ -49,7 +41,10 @@ LindaleController :: struct {
 	editControllerVtable: vst3.IEditControllerVtbl,
 	editController2: vst3.IEditController2,
 	editController2Vtable: vst3.IEditController2Vtbl,
-	refCount: u32
+	refCount: u32,
+
+	// Context
+	paramState: ParamState,
 }
 
 pluginFactory: LindalePluginFactory
@@ -384,7 +379,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = pluginFactory.ctx
 		debug_print("Lindale: lp_getProcessContextRequirements")
 
-		return {.None}
+		return {}
 	}
 
 
@@ -492,27 +487,75 @@ createLindaleController :: proc () -> ^LindaleController {
 		return vst3.kResultOk
 	}
 	lc_getParameterCount :: proc "system" (this: rawptr) -> i32 {
-		return 0
+		return len(paramTable)
 	}
 	lc_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
+		context = pluginFactory.ctx
+
+		if paramIndex >= len(paramTable) {
+			return vst3.kInvalidArgument
+		}
+
+		paramTable := paramTable
+		paramInfo := paramTable[paramIndex]
+
+		info^ = vst3.ParameterInfo {
+			id = paramInfo.id,
+			stepCount = paramInfo.range.stepCount,
+			defaultNormalizedValue = paramInfo.range.defaultNormalized,
+			unitId = vst3.kRootUnitId,
+			flags = {.kCanAutomate},
+		}
+
+		utf16.encode_string(info.title[:], paramInfo.name)
+		utf16.encode_string(info.shortTitle[:], paramInfo.shortName)
+		utf16.encode_string(info.units[:], paramInfo.range.unit)
+
 		return vst3.kResultOk
 	}
-	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: vst3.String128) -> vst3.TResult {
+	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: ^vst3.String128) -> vst3.TResult {
+		context = pluginFactory.ctx
+
+		paramTable := paramTable
+		param := paramTable[id]
+
+		// TODO: This is wrong. Need to have some idea of unit enumeration and conversions. E.g. db needs to be converted from linear float
+		buffer: [128]u8
+		fmt.bprintfln(buffer[:], "{:.2d} {s}", valueNormalized, param.range.unit)
+		utf16.encode_string(str[:], string(buffer[:]))
+
 		return vst3.kResultOk
 	}
-	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: ^vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
+	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: [^]vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
+		context = pluginFactory.ctx
+
+		buffer: [128]u8
+		utf16.decode_to_utf8(buffer[:], str[:128])
+
+		n, _, ok := strconv.parse_f64_prefix(string(buffer[:]))
+		if ok {
+			valueNormalized^ = n
+		} else {
+			valueNormalized^ = 0
+		}
+
 		return vst3.kResultOk
 	}
 	lc_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
-		return 0
+		return valueNormalized
 	}
 	lc_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
-		return 0
+		return plainValue
 	}
 	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
-		return 0
+		context = pluginFactory.ctx
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		return instance.paramState.values[id]
 	}
 	lc_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
+		context = pluginFactory.ctx
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		instance.paramState.values[id] = value
 		return vst3.kResultOk
 	}
 	lc_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
