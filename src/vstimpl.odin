@@ -521,7 +521,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		// TODO: This is wrong. Need to have some idea of unit enumeration and conversions. E.g. db needs to be converted from linear float
 		buffer: [128]u8
-		fmt.bprintfln(buffer[:], "{:.2d} {s}", valueNormalized, param.range.unit)
+		fmt.bprintfln(buffer[:], "{:.2f}", valueNormalized)
 		utf16.encode_string(str[:], string(buffer[:]))
 
 		return vst3.kResultOk

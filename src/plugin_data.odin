@@ -1,5 +1,12 @@
 package lindale
 
+ParamUnitType :: enum {
+	Decibel,
+	Percentage,
+	Normalized,
+	None,
+}
+
 ParamRange :: struct {
 	min, max: f64,
 	stepCount: i32,
@@ -47,4 +54,3 @@ paramTable :: [?]ParamInfo {
 ParamState :: struct {
 	values: [len(paramTable)]f64,
 }
-
