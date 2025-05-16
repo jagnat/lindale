@@ -3,6 +3,7 @@ package lindale
 import "core:math"
 import "core:fmt"
 import "core:testing"
+import "core:strconv"
 
 ParamUnitType :: enum {
 	Decibel,
@@ -91,15 +92,17 @@ print_param_to_buf :: proc(buf: ^[128]u8, paramVal: f64, info: ParamInfo) {
 	case .Decibel: fallthrough
 	case .Normalized: fallthrough
 	case .None:
-		fmt.bprintfln(buf^[:], "{:.3f}", paramVal)
+		fmt.bprintfln(buf^[:], "{:.2f}", paramVal)
 	case .Hertz: fallthrough
 	case .Percentage:
-		fmt.bprintfln(buf^[:], "{:.3f}", paramVal)
+		fmt.bprintfln(buf^[:], "{:.0f}", paramVal)
 	}
 }
 
-param_from_string :: proc() {
-
+get_param_from_buf :: proc(buf: ^[128]u8) -> f64 {
+	n, _, ok := strconv.parse_f64_prefix(string(buf^[:]))
+	if !ok do return 0
+	return n
 }
 
 param_to_norm :: proc(param: f64, range: ParamRange) -> f64 {
@@ -107,7 +110,7 @@ param_to_norm :: proc(param: f64, range: ParamRange) -> f64 {
 	case .Decibel:
 		return math.remap(param, range.min, range.max, 0, 1)
 	case .Hertz:
-		return math.remap(math.log10(param), math.log10(range.min), math.log10(range.max), 0, 1)
+		return math.remap(math.ln_f64(param), math.ln_f64(range.min), math.ln_f64(range.max), 0, 1)
 	case .Percentage:
 		return param / 100
 	case .Normalized:
@@ -124,7 +127,7 @@ norm_to_param :: proc(norm: f64, range: ParamRange) -> f64 {
 	case .Decibel:
 		return math.remap(norm, 0, 1, range.min, range.max)
 	case .Hertz:
-		return math.pow10_f64(math.remap(norm, 0, 1, math.log10_f64(range.min), math.log10_f64(range.max)))
+		return math.exp_f64(math.remap(norm, 0, 1, math.ln_f64(range.min), math.ln_f64(range.max)))
 	case .Percentage:
 		return norm * 100
 	case .Normalized:
@@ -134,10 +137,4 @@ norm_to_param :: proc(norm: f64, range: ParamRange) -> f64 {
 	}
 
 	return norm
-}
-
-@(test)
-test_mappings :: proc(t: ^testing.T) {
-	context.allocator = context.temp_allocator
-	
 }

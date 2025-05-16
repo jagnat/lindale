@@ -529,15 +529,13 @@ createLindaleController :: proc () -> ^LindaleController {
 	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: [^]vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
 		context = pluginFactory.ctx
 
+		param := ParamTable[id]
+
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
 
-		n, _, ok := strconv.parse_f64_prefix(string(buffer[:]))
-		if ok {
-			valueNormalized^ = n
-		} else {
-			valueNormalized^ = 0
-		}
+		paramVal := get_param_from_buf(&buffer)
+		valueNormalized^ = param_to_norm(paramVal, param.range)
 
 		return vst3.kResultOk
 	}
