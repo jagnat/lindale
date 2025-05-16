@@ -327,7 +327,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		@(static) squarePhase : i32 = 0
 
 		for s in 0..< numSamples {
-			val : f32= squarePhase < samplesPerHalfPeriod ? 0.2 : -0.2
+			AMPLITUDE :: 0.001
+			val : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
 			squarePhase += 1
 			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
 
@@ -487,41 +488,40 @@ createLindaleController :: proc () -> ^LindaleController {
 		return vst3.kResultOk
 	}
 	lc_getParameterCount :: proc "system" (this: rawptr) -> i32 {
-		return len(paramTable)
+		return len(ParamTable)
 	}
 	lc_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
 		context = pluginFactory.ctx
 
-		if paramIndex >= len(paramTable) {
+		if paramIndex >= len(ParamTable) {
 			return vst3.kInvalidArgument
 		}
 
-		paramTable := paramTable
-		paramInfo := paramTable[paramIndex]
+		paramInfo := ParamTable[paramIndex]
 
 		info^ = vst3.ParameterInfo {
 			id = paramInfo.id,
 			stepCount = paramInfo.range.stepCount,
-			defaultNormalizedValue = paramInfo.range.defaultNormalized,
+			defaultNormalizedValue = paramInfo.range.defaultValue,
 			unitId = vst3.kRootUnitId,
 			flags = {.kCanAutomate},
 		}
 
 		utf16.encode_string(info.title[:], paramInfo.name)
 		utf16.encode_string(info.shortTitle[:], paramInfo.shortName)
-		utf16.encode_string(info.units[:], paramInfo.range.unit)
+		utf16.encode_string(info.units[:], ParamUnitTypeStrings[paramInfo.range.unit])
 
 		return vst3.kResultOk
 	}
 	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: ^vst3.String128) -> vst3.TResult {
 		context = pluginFactory.ctx
 
-		paramTable := paramTable
-		param := paramTable[id]
+		param := ParamTable[id]
 
-		// TODO: This is wrong. Need to have some idea of unit enumeration and conversions. E.g. db needs to be converted from linear float
 		buffer: [128]u8
-		fmt.bprintfln(buffer[:], "{:.2f}", valueNormalized)
+		// fmt.bprintfln(buffer[:], "{:.2f}", valueNormalized)
+		paramVal := norm_to_param(valueNormalized, param.range)
+		print_param_to_buf(&buffer, paramVal, param)
 		utf16.encode_string(str[:], string(buffer[:]))
 
 		return vst3.kResultOk

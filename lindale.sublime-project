@@ -42,6 +42,7 @@
 		},
 		{
 			"name": "Odin Run Release",
+			"working_dir": "${project_path}",
 			"windows":
 			{
 				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindale.exe"
@@ -49,6 +50,7 @@
 		},
 		{
 			"name": "Odin compile dll",
+			"working_dir": "${project_path}",
 			"windows":
 			{
 				"shell_cmd": "build_vst3.bat"
