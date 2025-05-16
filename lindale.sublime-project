@@ -51,7 +51,7 @@
 			"name": "Odin compile dll",
 			"windows":
 			{
-				"shell_cmd": "odin build $project_path/src -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.vst3"
+				"shell_cmd": "build_vst3.bat"
 			},
 			"osx":
 			{

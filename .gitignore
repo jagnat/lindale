@@ -3,6 +3,7 @@
 *.pdb
 *.rdi
 *.vst3
+!Lindale.vst3/
 *.sublime-workspace
 *.DS_Store
 *.dSYM
