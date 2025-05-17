@@ -432,6 +432,10 @@ createLindaleController :: proc () -> ^LindaleController {
 		openAboutBox = lc_openAboutBox,
 	}
 
+	for i in 0..<len(instance.paramState.values) {
+		instance.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
+	}
+
 	// Universal queryInterface
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IEditController || iid^ == vst3.iid_IPluginBase {
@@ -502,7 +506,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		info^ = vst3.ParameterInfo {
 			id = paramInfo.id,
 			stepCount = paramInfo.range.stepCount,
-			defaultNormalizedValue = paramInfo.range.defaultValue,
+			defaultNormalizedValue = param_to_norm(paramInfo.range.defaultValue, paramInfo.range),
 			unitId = vst3.kRootUnitId,
 			flags = {.kCanAutomate},
 		}
@@ -516,44 +520,40 @@ createLindaleController :: proc () -> ^LindaleController {
 	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: ^vst3.String128) -> vst3.TResult {
 		context = pluginFactory.ctx
 
-		param := ParamTable[id]
-
 		buffer: [128]u8
-		// fmt.bprintfln(buffer[:], "{:.2f}", valueNormalized)
-		paramVal := norm_to_param(valueNormalized, param.range)
-		print_param_to_buf(&buffer, paramVal, param)
-		utf16.encode_string(str[:], string(buffer[:]))
+		paramVal := norm_to_param(valueNormalized, ParamTable[id].range)
+		print_param_to_buf(&buffer, paramVal, ParamTable[id])
+		utf16.encode_string(str[:128], string(buffer[:128]))
 
 		return vst3.kResultOk
 	}
 	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: [^]vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
 		context = pluginFactory.ctx
 
-		param := ParamTable[id]
-
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
-
 		paramVal := get_param_from_buf(&buffer)
-		valueNormalized^ = param_to_norm(paramVal, param.range)
+		valueNormalized^ = param_to_norm(paramVal, ParamTable[id].range)
 
 		return vst3.kResultOk
 	}
 	lc_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
-		return valueNormalized
+		context = pluginFactory.ctx
+		return norm_to_param(valueNormalized, ParamTable[id].range)
 	}
 	lc_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
-		return plainValue
+		context = pluginFactory.ctx
+		return param_to_norm(plainValue, ParamTable[id].range)
 	}
 	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
-		return instance.paramState.values[id]
+		return param_to_norm(instance.paramState.values[id], ParamTable[id].range)
 	}
 	lc_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
-		instance.paramState.values[id] = value
+		instance.paramState.values[id] = norm_to_param(value, ParamTable[id].range)
 		return vst3.kResultOk
 	}
 	lc_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {

@@ -79,7 +79,7 @@ ParamInfo :: struct {
 }
 
 ParamState :: struct {
-	values: [len(ParamTable)]f64,
+	values: [len(ParamTable)]f64, // Normalized
 }
 
 AudioProcessorState :: struct {
