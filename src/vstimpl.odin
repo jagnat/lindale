@@ -508,7 +508,7 @@ createLindaleController :: proc () -> ^LindaleController {
 			stepCount = paramInfo.range.stepCount,
 			defaultNormalizedValue = param_to_norm(paramInfo.range.defaultValue, paramInfo.range),
 			unitId = vst3.kRootUnitId,
-			flags = {.kCanAutomate},
+			flags = {.kCanAutomate,},
 		}
 
 		utf16.encode_string(info.title[:], paramInfo.name)
@@ -548,12 +548,12 @@ createLindaleController :: proc () -> ^LindaleController {
 	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
-		return param_to_norm(instance.paramState.values[id], ParamTable[id].range)
+		return instance.paramState.values[id]
 	}
 	lc_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
-		instance.paramState.values[id] = norm_to_param(value, ParamTable[id].range)
+		instance.paramState.values[id] = value
 		return vst3.kResultOk
 	}
 	lc_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {

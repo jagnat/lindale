@@ -138,3 +138,33 @@ norm_to_param :: proc(norm: f64, range: ParamRange) -> f64 {
 
 	return norm
 }
+
+
+@test
+test_param_to_norm_and_back_hertz :: proc(t: ^testing.T) {
+
+	range := ParamRange{
+		min = 20.0,
+		max = 20000.0,
+		unit = .Hertz,
+	}
+
+	test_values := [?]f64{20.0, 100.0, 500, 1000.0, 5000.0, 10000.0, 20000.0}
+	tolerance := 1e-9
+
+	for val in test_values {
+		norm := param_to_norm(val, range)
+		back := norm_to_param(norm, range)
+		diff := math.abs(val - back)
+		testing.expect(t, diff <= tolerance)
+	}
+
+	test_norms := [?]f64{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
+
+	for val in test_norms {
+		norm := norm_to_param(val, range)
+		back := param_to_norm(norm, range)
+		diff := math.abs(val - back)
+		testing.expect(t, diff <= tolerance)
+	}
+}
