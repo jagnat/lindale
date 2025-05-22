@@ -1,15 +1,20 @@
 package lindale
 
+import "base:runtime"
+import "base:intrinsics"
 import "core:sys/windows"
 import "core:fmt"
 import "core:strings"
-import "base:intrinsics"
 import "core:thread"
 import "core:time"
+import "core:log"
+import "core:os"
 
 // Interface
 
 MAX_LOG_LENGTH :: 256
+
+LOG_BUFFER_COUNT :: 128
 
 debug_print :: proc(format: string, args: ..any) {
 	when ODIN_OS == .Windows {
@@ -38,23 +43,31 @@ LogSources :: enum {
 	Controller,
 }
 
+// One per thread
+LoggerData :: struct {
+	ringBuffer: ^LogRingBuffer,
+	outputFilename: string,
+	outputFile: os.Handle,
+}
+
 LoggerContext :: struct {
-	readerThread: ^thread.Thread
+	readerThread: ^thread.Thread,
+	logPools: [LogSources]LoggerData,
 }
 
 ctx: LoggerContext
 
-LogRingBuffer :: struct($RingBufSize: int) {
+LogRingBuffer :: struct {
 	// prevent false sharing by aligning to cache boundaries
 	using _: struct #align(64) { writeIndex: int, }, // index of next write
 	using _: struct #align(64) { readIndex: int, }, // index of next read
-	buffers: [RingBufSize]Log,
+	buffers: [LOG_BUFFER_COUNT]Log,
 }
 
 @(private)
-log_write :: proc(ringBuffer: ^LogRingBuffer($RBS), msg: string) {
+log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 	index := ringBuffer.writeIndex
-	nextIndex := (index + 1) % RBS
+	nextIndex := (index + 1) % LOG_BUFFER_COUNT
 	if nextIndex == intrinsics.atomic_load_explicit(&ringBuffer.readIndex, .Acquire) {
 		// Buffer is full, trash log
 		return
@@ -66,25 +79,58 @@ log_write :: proc(ringBuffer: ^LogRingBuffer($RBS), msg: string) {
 }
 
 @(private)
-log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) {
+log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) -> bool {
 	if ringBuffer.readIndex != intrinsics.atomic_load_explicit(&ringBuffer.writeIndex, .Acquire) {
 		index := ringBuffer.readIndex
-		msg^ = strings.unsafe_string(ringBuffer.buffers[index][:])
+		msg^ = ringBuffer.buffers[index]
 
-		intrinsics.atomic_store_explicit(&ringBuffer.readIndex, (index + 1) % RBS, .Release)
+		intrinsics.atomic_store_explicit(&ringBuffer.readIndex, (index + 1) % LOG_BUFFER_COUNT, .Release)
+
+		return true
 	}
+
+	return false
 }
 
 @(private)
 log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	for {
 		msg: Log
-		log_try_read(ctx.ringBuffer, &msg)
 
-		if msg != nil {
-			debug_print("%s", msg[:])
+		for &logger in ctx.logPools {
+			if logger.ringBuffer != nil && log_try_read(logger.ringBuffer, &msg) {
+				// Write to file
+				if logger.outputFile != 0 {
+					newln: []u8 = {'\n'}
+					os.write(logger.outputFile, msg[:])
+					os.write(logger.outputFile, newln)
+				}
+
+				// // Print to console
+				// if logger.outputFilename == "" {
+				// 	debug_print("%s\n", msg[:])
+				// } else {
+				// 	fmt.print("%s\n", msg[:])
+				// }
+			}
 		}
 
 		time.sleep(1)
 	}
+}
+
+logger_proc :: proc(
+	logger_data: rawptr,
+	level: runtime.Logger_Level,
+	text: string,
+	options: runtime.Logger_Options,
+	location := #caller_location
+) {
+	data := cast(^LoggerData)logger_data
+
+	if data == nil {
+		return
+	}
+
+	log_write(data.ringBuffer, text)
 }
