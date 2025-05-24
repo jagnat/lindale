@@ -49,6 +49,14 @@ LindaleController :: struct {
 
 pluginFactory: LindalePluginFactory
 
+@export bundleEntry :: proc "system" (bundleRef: rawptr) -> c.bool {
+	return true
+}
+
+@export bundleExit :: proc "system" () -> c.bool {
+	return true
+}
+
 @export InitModule :: proc "system" () -> c.bool {
 	context = runtime.default_context()
 	debug_print("Lindale: InitModule")

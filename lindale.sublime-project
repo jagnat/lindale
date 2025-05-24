@@ -57,7 +57,7 @@
 			},
 			"osx":
 			{
-				"shell_cmd": "odin build $project_path/src -debug -no-entry-point -build-mode:dll -out:$project_path/Lindale.dylib"
+				"shell_cmd": "sh ./build_vst3.command"
 			}
 		},
 		{

@@ -5,17 +5,29 @@ import "base:runtime"
 import "core:unicode/utf16"
 import "core:mem"
 
-// TODO: Needs a different endianness on other platforms besides win? maybe not
 SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
-	return {
-		(byte)((l1 & 0x000000FF)      ), (byte)((l1 & 0x0000FF00) >>  8),
-		(byte)((l1 & 0x00FF0000) >> 16), (byte)((l1 & 0xFF000000) >> 24),
-		(byte)((l2 & 0x00FF0000) >> 16), (byte)((l2 & 0xFF000000) >> 24),
-		(byte)((l2 & 0x000000FF)      ), (byte)((l2 & 0x0000FF00) >>  8),
-		(byte)((l3 & 0xFF000000) >> 24), (byte)((l3 & 0x00FF0000) >> 16),
-		(byte)((l3 & 0x0000FF00) >>  8), (byte)((l3 & 0x000000FF)      ),
-		(byte)((l4 & 0xFF000000) >> 24), (byte)((l4 & 0x00FF0000) >> 16),
-		(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      )
+	when ODIN_OS == .Windows {
+		return {
+			(byte)((l1 & 0x000000FF)      ), (byte)((l1 & 0x0000FF00) >>  8),
+			(byte)((l1 & 0x00FF0000) >> 16), (byte)((l1 & 0xFF000000) >> 24),
+			(byte)((l2 & 0x00FF0000) >> 16), (byte)((l2 & 0xFF000000) >> 24),
+			(byte)((l2 & 0x000000FF)      ), (byte)((l2 & 0x0000FF00) >>  8),
+			(byte)((l3 & 0xFF000000) >> 24), (byte)((l3 & 0x00FF0000) >> 16),
+			(byte)((l3 & 0x0000FF00) >>  8), (byte)((l3 & 0x000000FF)      ),
+			(byte)((l4 & 0xFF000000) >> 24), (byte)((l4 & 0x00FF0000) >> 16),
+			(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      )
+		}
+	} else { // Linux/mac
+		return {
+			(byte)((l1 & 0xFF000000) >> 24), (byte)((l1 & 0x00FF0000) >> 16),
+			(byte)((l1 & 0x0000FF00) >>  8), (byte)((l1 & 0x000000FF)      ),
+			(byte)((l2 & 0xFF000000) >> 24), (byte)((l2 & 0x00FF0000) >> 16),
+			(byte)((l2 & 0x0000FF00) >>  8), (byte)((l2 & 0x000000FF)      ),
+			(byte)((l3 & 0xFF000000) >> 24), (byte)((l3 & 0x00FF0000) >> 16),
+			(byte)((l3 & 0x0000FF00) >>  8), (byte)((l3 & 0x000000FF)      ),
+			(byte)((l4 & 0xFF000000) >> 24), (byte)((l4 & 0x00FF0000) >> 16),
+			(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      ) 
+		}
 	}
 }
 
