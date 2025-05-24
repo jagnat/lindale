@@ -326,16 +326,38 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	lp_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
 		context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
-		freq :: 440.0
+
+		@(static) freq : f64 = 432.0
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
+
+		paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
+
+		for i in 0..<paramCount {
+			paramQueue := data.inputParameterChanges.lpVtbl.getParameterData(data.inputParameterChanges, i)
+			if paramQueue != nil && paramQueue.lpVtbl != nil {
+				paramId := paramQueue.lpVtbl.getParameterId(paramQueue)
+				if paramId == 2 {
+					pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
+					if pointCount > 0 {
+						sampleOffs: i32
+						normFreq : f64
+						result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normFreq)
+						if result == vst3.kResultOk {
+							freq = norm_to_param(normFreq, ParamTable[2].range)
+						}
+					}
+				}
+			}
+		}
+
 		samplesPerHalfPeriod := cast(i32)(instance.sampleRate / (2 * freq))
 
 		@(static) squarePhase : i32 = 0
 
 		for s in 0..< numSamples {
-			AMPLITUDE :: 0.001
+			AMPLITUDE :: 0.01
 			val : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
 			squarePhase += 1
 			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
