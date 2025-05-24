@@ -547,11 +547,11 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 	lc_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
 		context = pluginFactory.ctx
-		return norm_to_param(valueNormalized, ParamTable[id].range)
+		return valueNormalized
 	}
 	lc_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
 		context = pluginFactory.ctx
-		return param_to_norm(plainValue, ParamTable[id].range)
+		return plainValue
 	}
 	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		context = pluginFactory.ctx

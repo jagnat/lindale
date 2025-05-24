@@ -105,13 +105,6 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 					os.write(logger.outputFile, msg[:])
 					os.write(logger.outputFile, newln)
 				}
-
-				// // Print to console
-				// if logger.outputFilename == "" {
-				// 	debug_print("%s\n", msg[:])
-				// } else {
-				// 	fmt.print("%s\n", msg[:])
-				// }
 			}
 		}
 
