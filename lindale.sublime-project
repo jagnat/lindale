@@ -62,7 +62,7 @@
 		},
 		{
 			"name": "Odin test",
-			"shell_cmd": "odin test $project_path/src"
+			"shell_cmd": "odin build $project_path/src -debug -build-mode:test -out:$project_path/test.exe",
 		}
 	],
 	"settings":

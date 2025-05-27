@@ -9,12 +9,15 @@ import "core:thread"
 import "core:time"
 import "core:log"
 import "core:os"
+import "core:testing"
 
 // Interface
 
 MAX_LOG_LENGTH :: 256
 
-LOG_BUFFER_COUNT :: 128
+LOG_BUFFER_COUNT :: 10
+
+FILE_BUFFER_SIZE :: 8192
 
 debug_print :: proc(format: string, args: ..any) {
 	when ODIN_OS == .Windows {
@@ -25,12 +28,36 @@ debug_print :: proc(format: string, args: ..any) {
 }
 
 log_init :: proc() {
+	// automatically zeroed
+	ringBufs := make([]LogRingBuffer, len(LogSources))
+	ctx.loggerRunning = true
+
+	// Timestamp file prefix
+	timestampBuf: [32]u8
+	now := time.now()
+	time.to_string_yyyy_mm_dd(now, timestampBuf[:])
+	time.to_string_hms(now, timestampBuf[11:])
+	timestampBuf[10] = '_'
+	timestampBuf[13] = '-'
+	timestampBuf[16] = '-'
+	tsStr := strings.string_from_ptr(&timestampBuf[0], 19)
+
+
+	for &logData, source in ctx.logPools {
+		logData.outputFilename = log_filename_from_source(source)
+		logData.ringBuffer = &ringBufs[source]
+	}
+
 	t := thread.create(log_reader_thread_proc)
 	if t != nil {
 		t.init_context = context
 		ctx.readerThread = t
 		thread.start(t)
 	}
+}
+
+log_exit :: proc() {
+	ctx.loggerRunning = false
 }
 
 // Internal
@@ -45,13 +72,16 @@ LogSources :: enum {
 // One per thread
 LoggerData :: struct {
 	ringBuffer: ^LogRingBuffer,
+	outputFilenameBuf: [128]u8,
 	outputFilename: string,
-	outputFile: os.Handle,
+	logWriteBuffer: [FILE_BUFFER_SIZE]u8,
+	logWritePos: int,
 }
 
 LoggerContext :: struct {
 	readerThread: ^thread.Thread,
 	logPools: [LogSources]LoggerData,
+	loggerRunning : bool,
 }
 
 ctx: LoggerContext
@@ -64,6 +94,18 @@ LogRingBuffer :: struct {
 }
 
 @(private)
+log_filename_from_source :: proc(source: LogSources) -> string {
+	switch source {
+	case .Processor:
+		return "processor.log"
+	case .Controller:
+		return "controller.log"
+	case:
+		return "unknown.log"
+	}
+}
+
+@(private)
 log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 	index := ringBuffer.writeIndex
 	nextIndex := (index + 1) % LOG_BUFFER_COUNT
@@ -72,7 +114,10 @@ log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 		return
 	}
 
-	copy(ringBuffer.buffers[index][:], msg[:MAX_LOG_LENGTH])
+	loglen := len(msg)
+	if loglen > MAX_LOG_LENGTH do loglen = MAX_LOG_LENGTH
+
+	copy(ringBuffer.buffers[index][:], msg[:loglen])
 
 	intrinsics.atomic_store_explicit(&ringBuffer.writeIndex, nextIndex, .Release)
 }
@@ -93,21 +138,55 @@ log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) -> bool {
 
 @(private)
 log_reader_thread_proc :: proc(t: ^thread.Thread) {
-	for {
+	lastFlush := time.now()
+
+	for ctx.loggerRunning {
 		msg: Log
 
+		shouldFlush := time.since(lastFlush) > time.Millisecond * 100
+
 		for &logger in ctx.logPools {
-			if logger.ringBuffer != nil && log_try_read(logger.ringBuffer, &msg) {
-				// Write to file
-				if logger.outputFile != 0 {
-					newln: []u8 = {'\n'}
-					os.write(logger.outputFile, msg[:])
-					os.write(logger.outputFile, newln)
+			if logger.ringBuffer != nil {
+				msg = {}
+				hasLog := log_try_read(logger.ringBuffer, &msg)
+
+				logStr := strings.string_from_null_terminated_ptr(&msg[0], MAX_LOG_LENGTH)
+
+				if (hasLog && len(logStr) + logger.logWritePos >= FILE_BUFFER_SIZE) || (shouldFlush && logger.logWritePos > 0) {
+					// Flush buffer to file
+					handle, err := os.open(logger.outputFilename, os.O_WRONLY | os.O_CREATE, 0o664)
+					if err == nil {
+						os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
+						os.close(handle)
+						logger.logWritePos = 0
+					}
+				}
+
+				if hasLog {
+					// Write to buffer
+					copy(logger.logWriteBuffer[logger.logWritePos:], logStr)
+					logger.logWritePos += len(logStr)
 				}
 			}
 		}
 
-		time.sleep(1)
+		if shouldFlush {
+			lastFlush = time.now()
+		}
+
+		// time.sleep(1)
+	}
+
+	// Flush remaining buffer to file
+	for &logger in ctx.logPools {
+		if logger.logWritePos > 0 {
+			handle, err := os.open(logger.outputFilename, os.O_WRONLY | os.O_CREATE, 0o664)
+			if err == nil {
+				os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
+				os.close(handle)
+				logger.logWritePos = 0
+			}
+		}
 	}
 }
 
@@ -125,4 +204,64 @@ logger_proc :: proc(
 	}
 
 	log_write(data.ringBuffer, text)
+}
+
+@(private)
+test_stop_thread :: proc() {
+	ctx.loggerRunning = false
+	thread.join(ctx.readerThread)
+	thread.destroy(ctx.readerThread)
+	ctx.readerThread = thread.create(log_reader_thread_proc)
+}
+
+@(private)
+test_start_thread :: proc() {
+	ctx.loggerRunning = true
+	thread.start(ctx.readerThread)
+}
+
+@(test)
+test_logger :: proc(t: ^testing.T) {
+
+	log_init()
+	defer {
+		log_exit()
+		for &logger in ctx.logPools {
+			os.remove(logger.outputFilename)
+		}
+		free_all(context.temp_allocator)
+	}
+
+	// Test 1: Basic logging
+	{
+		test_msg := "Hello, logger"
+		log_write(ctx.logPools[.Processor].ringBuffer, test_msg)
+
+		time.sleep(time.Millisecond * 200)
+
+		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		testing.expect(t, ok, "Failed to read log file")
+		testing.expect(t, strings.contains(string(content), test_msg), "Log file does not contain expected message")
+	}
+
+	// Test 2: Buffer full handling
+	{
+		test_stop_thread()
+		// Ring buffer stores (buffer size - 1) messages - so we can write LOG_BUFFER_COUNT - 1 messages
+		for i in 0 ..< LOG_BUFFER_COUNT - 1 {
+			log_write(ctx.logPools[.Processor].ringBuffer, fmt.tprintf("Message %d", i))
+		}
+
+		droppedStr := "This should be dropped"
+
+		log_write(ctx.logPools[.Processor].ringBuffer, droppedStr)
+		test_start_thread()
+
+		time.sleep(200 * time.Millisecond)
+
+		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		testing.expect(t, ok, "Failed to read log file")
+		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
+		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
+	}
 }
