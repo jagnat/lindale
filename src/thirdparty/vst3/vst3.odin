@@ -160,6 +160,15 @@ kInternalError   : TResult : transmute(i32)u32(0x80004005)
 kNotInitialized  : TResult : transmute(i32)u32(0x8000FFFF)
 kOutOfMemory     : TResult : transmute(i32)u32(0x8007000E)
 
+// Platform Types
+kPlatformTypeHWND             :: "HWND"
+kPlatformTypeHIView           :: "HIView"
+kPlatformTypeNSView           :: "NSView"
+kPlatformTypeUIView           :: "UIView"
+kPlatformTypeX11EmbedWindowID :: "X11EmbedWindowID"
+// View type
+ViewType_kEditor :: "editor"
+
 IProcessContextRequirementsFlagSet :: bit_set[IProcessContextRequirementsFlags]
 IProcessContextRequirementsFlags :: enum u32 {
 	NeedSystemTime           = 0,

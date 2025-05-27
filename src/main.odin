@@ -85,7 +85,7 @@ init :: proc() {
 	draw_generate_random_rects()
 
 	fmt.println(sdl.GetBasePath())
-	fmt.println(cstring(sdl.GetPrefPath("jagi", "lindale")))
+	fmt.println(cstring(sdl.GetPrefPath("jagi", "Lindale")))
 	fmt.println(sdl.GetUserFolder(.DOCUMENTS))
 
 	sdl.ShowWindow(ctx.window)

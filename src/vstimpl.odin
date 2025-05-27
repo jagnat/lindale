@@ -11,6 +11,10 @@ import "core:testing"
 import "core:unicode/utf16"
 import "base:runtime"
 import "base:builtin"
+import "core:log"
+
+//
+import "vendor:sdl3"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -34,6 +38,7 @@ LindaleProcessor :: struct {
 	// Context
 	paramState: ParamState,
 	sampleRate: f64,
+	ctx: runtime.Context,
 }
 
 LindaleController :: struct {
@@ -43,8 +48,13 @@ LindaleController :: struct {
 	editController2Vtable: vst3.IEditController2Vtbl,
 	refCount: u32,
 
+	pluginView: vst3.IPlugView,
+	pluginViewVtable: vst3.IPlugViewVtbl,
+
 	// Context
 	paramState: ParamState,
+	ctx: runtime.Context,
+	window: ^sdl3.Window
 }
 
 pluginFactory: LindalePluginFactory
@@ -59,30 +69,30 @@ pluginFactory: LindalePluginFactory
 
 @export InitModule :: proc "system" () -> c.bool {
 	context = runtime.default_context()
-	debug_print("Lindale: InitModule")
+	log.info("InitModule")
 	return true
 }
 
 @export InitDll :: proc "system" () -> c.bool {
 	context = runtime.default_context()
-	debug_print("Lindale: InitDll")
+	log.info("InitDll")
 	return true
 }
 
 @export DeinitModule :: proc "system" () -> c.bool {
 	context = runtime.default_context()
-	debug_print("Lindale: DeinitModule")
+	log.info("DeinitModule")
 	return true
 }
 
 @export ExitDll :: proc "system" () -> c.bool {
 	context = runtime.default_context()
-	debug_print("Lindale: ExitDll")
+	log.info("ExitDll")
 	return true
 }
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
-	debug_print("Lindale: createLindaleProcessor")
+	log.info("createLindaleProcessor")
 	instance := new(LindaleProcessor)
 	instance.refCount = 0
 
@@ -93,18 +103,18 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			release = lp_comp_release,
 		},
 
-		initialize = lp_initialize,
-		terminate = lp_terminate,
+		initialize = lp_comp_initialize,
+		terminate = lp_comp_terminate,
 
-		getControllerClassId = lp_getControllerClassId,
-		setIoMode = lp_setIoMode,
-		getBusCount = lp_getBusCount,
-		getBusInfo = lp_getBusInfo,
-		getRoutingInfo = lp_getRoutingInfo,
-		activateBus = lp_activateBus,
-		setActive = lp_setActive,
-		setState = lp_setState,
-		getState = lp_getState,
+		getControllerClassId = lp_comp_getControllerClassId,
+		setIoMode = lp_comp_setIoMode,
+		getBusCount = lp_comp_getBusCount,
+		getBusInfo = lp_comp_getBusInfo,
+		getRoutingInfo = lp_comp_getRoutingInfo,
+		activateBus = lp_comp_activateBus,
+		setActive = lp_comp_setActive,
+		setState = lp_comp_setState,
+		getState = lp_comp_getState,
 	}
 
 	instance.audioProcessorVtable = {
@@ -114,14 +124,14 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			release = lp_ap_release,
 		},
 
-		setBusArrangements = lp_setBusArrangements,
-		getBusArrangement = lp_getBusArrangement,
-		canProcessSampleSize = lp_canProcessSampleSize,
-		getLatencySamples = lp_getLatencySamples,
-		setupProcessing = lp_setupProcessing,
-		setProcessing = lp_setProcessing,
-		process = lp_process,
-		getTailSamples = lp_getTailSamples,
+		setBusArrangements = lp_ap_setBusArrangements,
+		getBusArrangement = lp_ap_getBusArrangement,
+		canProcessSampleSize = lp_ap_canProcessSampleSize,
+		getLatencySamples = lp_ap_getLatencySamples,
+		setupProcessing = lp_ap_setupProcessing,
+		setProcessing = lp_ap_setProcessing,
+		process = lp_ap_process,
+		getTailSamples = lp_ap_getTailSamples,
 	}
 
 	instance.processContextRequirementsVtable = {
@@ -130,16 +140,19 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			addRef = lp_pcr_addRef,
 			release = lp_pcr_release,
 		},
-		getProcessContextRequirements = lp_getProcessContextRequirements,
+		getProcessContextRequirements = lp_pcr_getProcessContextRequirements,
 	}
 
 	instance.component.lpVtbl = &instance.componentVtable
 	instance.audioProcessor.lpVtbl = &instance.audioProcessorVtable
 	instance.processContextRequirements.lpVtbl = &instance.processContextRequirementsVtable
 
+	instance.ctx = context
+	instance.ctx.logger = get_logger(.Processor)
+
 	// Universal LindaleProcessor queryInterface
 	lp_queryInterfaceImplementation :: proc(this: ^LindaleProcessor, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		debug_print("iid: {:x}", iid)
+		log.debug("iid: {:x}", iid)
 		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IComponent || iid^ == vst3.iid_IPluginBase {
 			obj^ = &this.component
 		} else if  iid^ == vst3.iid_IAudioProcessor {
@@ -158,52 +171,57 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	// IComponent
 	lp_comp_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_comp_queryInterface")
+		// context = pluginFactory.ctx
 		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_queryInterface")
 
 		return lp_queryInterfaceImplementation(instance, iid, obj)
 	}
 	lp_comp_addRef :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_comp_addRef")
 		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_addRef")
 		instance.refCount += 1
 		return instance.refCount
 	}
 	lp_comp_release :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_comp_release")
 		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_release")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
-			debug_print("Lindale: lp_comp_release free")
+			log.info("lp_comp_release free")
 			free(instance)
 		}
 		return instance.refCount
 	}
-	lp_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_initialize")
+	lp_comp_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_initialize")
 		return vst3.kResultOk
 	}
-	lp_terminate :: proc "system" (this: rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_terminate")
+	lp_comp_terminate :: proc "system" (this: rawptr) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_terminate")
 		return vst3.kResultOk
 	}
-	lp_getControllerClassId :: proc "system" (this: rawptr, classId: ^vst3.TUID) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_getControllerClassId")
+	lp_comp_getControllerClassId :: proc "system" (this: rawptr, classId: ^vst3.TUID) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_getControllerClassId")
 		classId^ = lindaleControllerCid
 		return vst3.kResultOk
 	}
-	lp_setIoMode :: proc "system" (this: rawptr, mode: vst3.IoMode) -> vst3.TResult {
+	lp_comp_setIoMode :: proc "system" (this: rawptr, mode: vst3.IoMode) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lp_getBusCount :: proc "system" (this: rawptr, type: vst3.MediaType, dir: vst3.BusDirection) -> i32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_getBusCount")
+	lp_comp_getBusCount :: proc "system" (this: rawptr, type: vst3.MediaType, dir: vst3.BusDirection) -> i32 {
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_getBusCount")
 		if type == .Audio {
 			if dir == .Input || dir == .Output {
 				return 1
@@ -211,15 +229,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 		return 0
 	}
-	lp_getBusInfo :: proc "system" (
+	lp_comp_getBusInfo :: proc "system" (
 		this: rawptr,
 		type: vst3.MediaType,
 		dir: vst3.BusDirection,
 		index: i32,
 		bus: ^vst3.BusInfo
 	) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_getBusInfo")
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_getBusInfo")
 
 		if type != .Audio || index != 0 {
 			return vst3.kInvalidArgument
@@ -234,50 +253,51 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 		return vst3.kResultOk
 	}
-	lp_getRoutingInfo :: proc "system" (this: rawptr, inInfo, outInfo: ^vst3.RoutingInfo) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_getRoutingInfo")
+	lp_comp_getRoutingInfo :: proc "system" (this: rawptr, inInfo, outInfo: ^vst3.RoutingInfo) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = instance.ctx
+		log.info("lp_comp_getRoutingInfo")
 		return vst3.kResultOk
 	}
-	lp_activateBus :: proc "system" (this: rawptr, type: vst3.MediaType, dir: vst3.BusDirection, index: i32, state: vst3.TBool) -> vst3.TResult {
+	lp_comp_activateBus :: proc "system" (this: rawptr, type: vst3.MediaType, dir: vst3.BusDirection, index: i32, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lp_setActive :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+	lp_comp_setActive :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lp_setState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
+	lp_comp_setState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lp_getState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
+	lp_comp_getState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 
 	// IAudioProcessor
 	lp_ap_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_ap_queryInterface")
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
+		log.info("lp_ap_queryInterface")
 
 		return lp_queryInterfaceImplementation(instance, iid, obj)
 	}
 	lp_ap_addRef :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_ap_addRef")
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
+		log.info("lp_ap_addRef")
 		instance.refCount += 1
 		return instance.refCount
 	}
 	lp_ap_release :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_ap_release")
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
+		log.info("lp_ap_release")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
 			free(instance)
 		}
 		return instance.refCount
 	}
-	lp_setBusArrangements :: proc "system" (
+	lp_ap_setBusArrangements :: proc "system" (
 		this: rawptr,
 		inputs: ^vst3.SpeakerArrangement,
 		numIns: i32,
@@ -286,7 +306,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lp_getBusArrangement :: proc "system" (
+	lp_ap_getBusArrangement :: proc "system" (
 		this: rawptr,
 		dir: vst3.BusDirection,
 		index: i32,
@@ -299,53 +319,56 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 		return vst3.kResultOk
 	}
-	lp_canProcessSampleSize :: proc "system" (this: rawptr, sss: vst3.SymbolicSampleSize) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_canProcessSampleSize")
+	lp_ap_canProcessSampleSize :: proc "system" (this: rawptr, sss: vst3.SymbolicSampleSize) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
+		log.info("lp_ap_canProcessSampleSize")
 		if sss == .Sample32 {
 			return vst3.kResultOk
 		}
 		return vst3.kNotImplemented
 	}
-	lp_getLatencySamples :: proc "system" (this: rawptr) -> u32 {
+	lp_ap_getLatencySamples :: proc "system" (this: rawptr) -> u32 {
 		return 0
 	}
-	lp_setupProcessing :: proc "system" (this: rawptr, setup: ^vst3.ProcessSetup) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_setupProcessing")
+	lp_ap_setupProcessing :: proc "system" (this: rawptr, setup: ^vst3.ProcessSetup) -> vst3.TResult {
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
+		log.info("lp_ap_setupProcessing")
 
 		instance.sampleRate = setup.sampleRate
 
 		return vst3.kResultOk
 	}
-	lp_setProcessing :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+	lp_ap_setProcessing :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 
-	lp_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
-		context = pluginFactory.ctx
+	lp_ap_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
 		instance := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = instance.ctx
 
 		@(static) freq : f64 = 432.0
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
 
-		paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
+		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
+			paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
 
-		for i in 0..<paramCount {
-			paramQueue := data.inputParameterChanges.lpVtbl.getParameterData(data.inputParameterChanges, i)
-			if paramQueue != nil && paramQueue.lpVtbl != nil {
-				paramId := paramQueue.lpVtbl.getParameterId(paramQueue)
-				if paramId == 2 {
-					pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
-					if pointCount > 0 {
-						sampleOffs: i32
-						normFreq : f64
-						result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normFreq)
-						if result == vst3.kResultOk {
-							freq = norm_to_param(normFreq, ParamTable[2].range)
+			for i in 0..<paramCount {
+				paramQueue := data.inputParameterChanges.lpVtbl.getParameterData(data.inputParameterChanges, i)
+				if paramQueue != nil && paramQueue.lpVtbl != nil {
+					paramId := paramQueue.lpVtbl.getParameterId(paramQueue)
+					if paramId == 2 {
+						pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
+						if pointCount > 0 {
+							sampleOffs: i32
+							normFreq : f64
+							result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normFreq)
+							if result == vst3.kResultOk {
+								freq = norm_to_param(normFreq, ParamTable[2].range)
+							}
 						}
 					}
 				}
@@ -374,31 +397,31 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 		return vst3.kResultOk
 	}
-	lp_getTailSamples :: proc "system" (this: rawptr) -> u32 {
+	lp_ap_getTailSamples :: proc "system" (this: rawptr) -> u32 {
 		return 0
 	}
 
 	// IProcessContextRequirements
 	lp_pcr_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_pcr_queryInterface")
 		instance := container_of(cast(^vst3.IProcessContextRequirements)this, LindaleProcessor, "processContextRequirements")
+		context = instance.ctx
+		log.info("lp_pcr_queryInterface")
 
 		return lp_queryInterfaceImplementation(instance, iid, obj)
 	}
 
 	lp_pcr_addRef :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_pcr_addRef")
 		instance := container_of(cast(^vst3.IProcessContextRequirements)this, LindaleProcessor, "processContextRequirements")
+		context = instance.ctx
+		log.info("lp_pcr_addRef")
 		instance.refCount += 1
 		return instance.refCount
 	}
 
 	lp_pcr_release :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_pcr_release")
 		instance := container_of(cast(^vst3.IProcessContextRequirements)this, LindaleProcessor, "processContextRequirements")
+		context = instance.ctx
+		log.info("lp_pcr_release")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
 			free(instance)
@@ -406,9 +429,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return instance.refCount
 	}
 
-	lp_getProcessContextRequirements :: proc "system" (this: rawptr) -> vst3.IProcessContextRequirementsFlagSet {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lp_getProcessContextRequirements")
+	lp_pcr_getProcessContextRequirements :: proc "system" (this: rawptr) -> vst3.IProcessContextRequirementsFlagSet {
+		instance := container_of(cast(^vst3.IProcessContextRequirements)this, LindaleProcessor, "processContextRequirements")
+		context = instance.ctx
+		log.info("lp_getProcessContextRequirements")
 
 		return {}
 	}
@@ -418,36 +442,37 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 }
 
 createLindaleController :: proc () -> ^LindaleController {
-	debug_print("Lindale: createLindaleController")
+	log.info("createLindaleController")
 	instance := new(LindaleController)
 	instance.refCount = 0
 
 	instance.editController.lpVtbl = &instance.editControllerVtable
 	instance.editController2.lpVtbl = &instance.editController2Vtable
+	// instance.pluginView.lpVtbl = &instance.pluginViewVtable
 
 	instance.editControllerVtable = {
 		funknown = vst3.FUnknownVtbl {
-			queryInterface = lc_ec1_queryInterface,
-			addRef = lc_ec1_addRef,
-			release = lc_ec1_release,
+			queryInterface = lc_ec_queryInterface,
+			addRef = lc_ec_addRef,
+			release = lc_ec_release,
 		},
 
-		initialize = lc_initialize,
-		terminate = lc_terminate,
+		initialize = lc_ec_initialize,
+		terminate = lc_ec_terminate,
 
-		setComponentState = lc_setComponentState,
-		setState = lc_setState,
-		getState = lc_getState,
-		getParameterCount = lc_getParameterCount,
-		getParameterInfo = lc_getParameterInfo,
-		getParamStringByValue = lc_getParamStringByValue,
-		getParamValueByString = lc_getParamValueByString,
-		normalizedParamToPlain = lc_normalizedParamToPlain,
-		plainParamToNormalized = lc_plainParamToNormalized,
-		getParamNormalized = lc_getParamNormalized,
-		setParamNormalized = lc_setParamNormalized,
-		setComponentHandler = lc_setComponentHandler,
-		createView = lc_createView,
+		setComponentState = lc_ec_setComponentState,
+		setState = lc_ec_setState,
+		getState = lc_ec_getState,
+		getParameterCount = lc_ec_getParameterCount,
+		getParameterInfo = lc_ec_getParameterInfo,
+		getParamStringByValue = lc_ec_getParamStringByValue,
+		getParamValueByString = lc_ec_getParamValueByString,
+		normalizedParamToPlain = lc_ec_normalizedParamToPlain,
+		plainParamToNormalized = lc_ec_plainParamToNormalized,
+		getParamNormalized = lc_ec_getParamNormalized,
+		setParamNormalized = lc_ec_setParamNormalized,
+		setComponentHandler = lc_ec_setComponentHandler,
+		createView = lc_ec_createView,
 	}
 
 	instance.editController2Vtable = {
@@ -457,10 +482,34 @@ createLindaleController :: proc () -> ^LindaleController {
 			release = lc_ec2_release,
 		},
 
-		setKnobMode = lc_setKnobMode,
-		openHelp = lc_openHelp,
-		openAboutBox = lc_openAboutBox,
+		setKnobMode = lc_ec2_setKnobMode,
+		openHelp = lc_ec2_openHelp,
+		openAboutBox = lc_ec2_openAboutBox,
 	}
+
+	// instance.pluginViewVtable = {
+	// 	funknown = vst3.FUnknownVtbl {
+	// 		queryInterface = lc_pv_queryInterface,
+	// 		addRef = lc_pv_addRef,
+	// 		release = lc_pv_release,
+	// 	},
+
+	// 	isPlatformTypeSupported = lc_pv_isPlatformTypeSupported,
+	// 	attached = lc_pv_attached,
+	// 	removed = lc_pv_removed,
+	// 	onWheel = lc_pv_onWheel,
+	// 	onKeyDown = lc_pv_onKeyDown,
+	// 	onKeyUp = lc_pv_onKeyUp,
+	// 	getSize = lc_pv_getSize,
+	// 	onSize = lc_pv_onSize,
+	// 	onFocus = lc_pv_onFocus,
+	// 	setFrame = lc_pv_setFrame,
+	// 	canResize = lc_pv_canResize,
+	// 	checkSizeConstraint = lc_pv_checkSizeConstraint,
+	// }
+
+	instance.ctx = context
+	instance.ctx.logger = get_logger(.Controller)
 
 	for i in 0..<len(instance.paramState.values) {
 		instance.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
@@ -482,50 +531,51 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 
 	// EditController
-	lc_ec1_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_queryInterface")
+	lc_ec_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
+		log.info("lc_queryInterface")
 
 		return lc_queryInterface(instance, iid, obj)
 	}
-	lc_ec1_addRef :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_addRef")
+	lc_ec_addRef :: proc "system" (this: rawptr) -> u32 {
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
+		log.info("lc_addRef")
 		instance.refCount += 1
 		return instance.refCount
 	}
-	lc_ec1_release :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_release")
+	lc_ec_release :: proc "system" (this: rawptr) -> u32 {
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
+		log.info("lc_release")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
 			free(instance)
 		}
 		return instance.refCount
 	}
-	lc_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+	lc_ec_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
+	lc_ec_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_setComponentState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+	lc_ec_setComponentState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+	lc_ec_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_getState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+	lc_ec_getState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_getParameterCount :: proc "system" (this: rawptr) -> i32 {
+	lc_ec_getParameterCount :: proc "system" (this: rawptr) -> i32 {
 		return len(ParamTable)
 	}
-	lc_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
-		context = pluginFactory.ctx
+	lc_ec_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 
 		if paramIndex >= len(ParamTable) {
 			return vst3.kInvalidArgument
@@ -547,8 +597,9 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		return vst3.kResultOk
 	}
-	lc_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: ^vst3.String128) -> vst3.TResult {
-		context = pluginFactory.ctx
+	lc_ec_getParamStringByValue :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue, str: ^vst3.String128) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 
 		buffer: [128]u8
 		paramVal := norm_to_param(valueNormalized, ParamTable[id].range)
@@ -557,8 +608,9 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		return vst3.kResultOk
 	}
-	lc_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: [^]vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
-		context = pluginFactory.ctx
+	lc_ec_getParamValueByString :: proc "system" (this: rawptr, id: vst3.ParamID, str: [^]vst3.TChar, valueNormalized: ^vst3.ParamValue) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
@@ -567,70 +619,204 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		return vst3.kResultOk
 	}
-	lc_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
-		context = pluginFactory.ctx
+	lc_ec_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 		return valueNormalized
 	}
-	lc_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
-		context = pluginFactory.ctx
+	lc_ec_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
+		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 		return plainValue
 	}
-	lc_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
-		context = pluginFactory.ctx
+	lc_ec_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 		return instance.paramState.values[id]
 	}
-	lc_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
-		context = pluginFactory.ctx
+	lc_ec_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = instance.ctx
 		instance.paramState.values[id] = value
 		return vst3.kResultOk
 	}
-	lc_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
+	lc_ec_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_createView :: proc "system" (this: rawptr, name: vst3.FIDString) -> ^vst3.IPlugView {
+	lc_ec_createView :: proc "system" (this: rawptr, name: vst3.FIDString) -> ^vst3.IPlugView {
 		return nil
+		// instance := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		// context = instance.ctx
+		// if string(name) != vst3.ViewType_kEditor {
+		// 	return nil
+		// }
+		// log.info("Editor opened")
+		// return &instance.pluginView
 	}
 
 	// EditController2
 	lc_ec2_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_ec2_queryInterface")
 		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_ec2_queryInterface")
 
 		return lc_queryInterface(instance, iid, obj)
 	}
 	lc_ec2_addRef :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_ec2_addRef")
 		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_ec2_addRef")
 		instance.refCount += 1
 		return instance.refCount
 	}
 	lc_ec2_release :: proc "system" (this: rawptr) -> u32 {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_ec2_release")
 		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_ec2_release")
 		instance.refCount -= 1
 		if instance.refCount == 0 {
 			free(instance)
 		}
 		return instance.refCount
 	}
-	lc_setKnobMode :: proc "system" (this: rawptr, mode: vst3.KnobMode) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_setKnobMode")
+	lc_ec2_setKnobMode :: proc "system" (this: rawptr, mode: vst3.KnobMode) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_setKnobMode")
 		return vst3.kResultOk
 	}
-	lc_openHelp :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_openHelp")
+	lc_ec2_openHelp :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_openHelp")
 		return vst3.kResultOk
 	}
-	lc_openAboutBox :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
-		context = pluginFactory.ctx
-		debug_print("Lindale: lc_openAboutBox")
+	lc_ec2_openAboutBox :: proc "system" (this: rawptr, onlyCheck: vst3.TBool) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
+		context = instance.ctx
+		log.info("lc_openAboutBox")
+		return vst3.kResultOk
+	}
+
+	// Plugin View
+	lc_pv_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
+		context = instance.ctx
+		log.info("lc_queryInterface")
+
+		return lc_queryInterface(instance, iid, obj)
+	}
+	lc_pv_addRef :: proc "system" (this: rawptr) -> u32 {
+		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
+		context = instance.ctx
+		log.info("lc_addRef")
+		instance.refCount += 1
+		return instance.refCount
+	}
+	lc_pv_release :: proc "system" (this: rawptr) -> u32 {
+		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
+		context = instance.ctx
+		log.info("lc_release")
+		instance.refCount -= 1
+		if instance.refCount == 0 {
+			free(instance)
+		}
+		return instance.refCount
+	}
+	lc_pv_isPlatformTypeSupported :: proc "system" (this: rawptr, type: vst3.FIDString) -> vst3.TResult {
+		when ODIN_OS == .Windows {
+			if string(type) == vst3.kPlatformTypeHWND do return vst3.kResultOk
+		}
+		when ODIN_OS == .Darwin {
+			if string(type) == vst3.kPlatformTypeNSView do return vst3.kResultOk
+		}
+		when ODIN_OS == .Linux {
+			if string(type) == vst3.kPlatformTypeX11EmbedWindowID do return vst3.kResultOk
+		}
+		return vst3.kResultFalse
+	}
+	lc_pv_attached :: proc "system" (this: rawptr, parent: rawptr, type: vst3.FIDString) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
+		context = instance.ctx
+
+		when ODIN_OS == .Windows {
+			if string(type) != vst3.kPlatformTypeHWND {
+				log.error("lc_pv_attached type not supported")
+				return vst3.kInvalidArgument
+			}
+
+			windowPropId := sdl3.CreateProperties()
+			defer sdl3.DestroyProperties(windowPropId)
+
+			sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
+			sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
+			sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
+			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
+			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
+
+			window := sdl3.CreateWindowWithProperties(windowPropId)
+			if window == nil {
+				log.error("Failed to create SDL window")
+				return vst3.kInternalError
+			}
+
+			instance.window = window
+
+			log.info("lc_pv_attached Windows HWND")
+			return vst3.kResultOk
+		}
+		when ODIN_OS == .Darwin {
+
+		}
+		when ODIN_OS == .Linux {
+
+		}
+
+		return vst3.kInternalError
+	}
+	lc_pv_removed :: proc "system" (this: rawptr) -> vst3.TResult {
+		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
+		context = instance.ctx
+
+		if instance.window != nil {
+			sdl3.DestroyWindow(instance.window)
+			instance.window = nil
+			log.info("lc_pv_removed sdl3 window")
+		}
+
+		return vst3.kResultOk
+	}
+	lc_pv_onWheel :: proc "system" (this: rawptr, distance: f32) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_getSize :: proc "system" (this: rawptr, size: ^vst3.ViewRect) -> vst3.TResult {
+		size^ = vst3.ViewRect{
+			left = 0,
+			top = 0,
+			right = 800,
+			bottom = 600,
+		}
+		return vst3.kResultOk
+	}
+	lc_pv_onSize :: proc "system" (this: rawptr, newSize: ^vst3.ViewRect) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_setFrame :: proc "system" (this: rawptr, frame: ^vst3.IPlugFrame) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
+		return vst3.kResultOk
+	}
+	lc_pv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 
@@ -639,13 +825,15 @@ createLindaleController :: proc () -> ^LindaleController {
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
+	log_init(string(cstring(sdl3.GetPrefPath("jagi", "Lindale"))))
+	context.logger = get_logger(.PluginFactory)
 
-	debug_print("Lindale: GetPluginFactory")
+	log.info("GetPluginFactory")
 
 	if !pluginFactory.initialized {
 		pf_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: pf_queryInterface")
+			log.info("pf_queryInterface")
 			if iid^ == vst3.iid_FUnknown ||
 			iid^ == vst3.iid_IPluginFactory ||
 			iid^ == vst3.iid_IPluginFactory2 ||
@@ -659,13 +847,13 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_addRef :: proc "system" (this: rawptr) -> u32 {
 			context = pluginFactory.ctx
-			debug_print("Lindale: pf_addRef")
+			log.info("pf_addRef")
 			return 1
 		}
 
 		pf_release :: proc "system" (this: rawptr) -> u32 {
 			context = pluginFactory.ctx
-			debug_print("Lindale: pf_release")
+			log.info("pf_release")
 			return 0
 		}
 
@@ -679,7 +867,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_getFactoryInfo :: proc "system" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: getFactoryInfo")
+			log.info("getFactoryInfo")
 			copy(info.vendor[:], "JagI")
 			copy(info.url[:], "jagi.quest")
 			copy(info.email[:], "jagi@jagi.quest")
@@ -689,15 +877,15 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_countClasses :: proc "system" (this: rawptr) -> i32 {
 			context = pluginFactory.ctx
-			debug_print("Lindale: countClasses")
+			log.info("countClasses")
 			return 2 // LindaleProcessor and LindaleController
 		}
 
 		pf_getClassInfo :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: getClassInfo")
+			log.info("getClassInfo")
 			if index >= 2 {
-				debug_print("Lindale: getClassInfo index >= 2")
+				log.error("getClassInfo index >= 2")
 				return vst3.kInvalidArgument
 			}
 
@@ -721,25 +909,25 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_createInstance :: proc "system" (this: rawptr, cid, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: createInstance")
+			log.info("createInstance")
 
 			cidPtr: [^]u8 = cast([^]u8)cid
 			cidAry := cidPtr[0:16]
 
-			debug_print("cid: {:x}", cidAry)
-			debug_print("processorCid: {:x}", lindaleProcessorCid)
-			debug_print("controllerCid: {:x}", lindaleControllerCid)
+			log.debug("cid: {:x}", cidAry)
+			log.debug("processorCid: {:x}", lindaleProcessorCid)
+			log.debug("controllerCid: {:x}", lindaleControllerCid)
 
 			if vst3.is_same_tuid(&lindaleProcessorCid, cid) {
 				processor := createLindaleProcessor()
 
 				if vst3.is_same_tuid(&vst3.iid_IComponent, iid) {
-					debug_print("Lindale: CreateInstance iComponent")
+					log.debug("CreateInstance iComponent")
 					obj^ = &processor.component;
 					processor.componentVtable.funknown.addRef(&processor.component);
 					return vst3.kResultOk;
 				} else if vst3.is_same_tuid(&vst3.iid_IAudioProcessor, iid) {
-					debug_print("Lindale: CreateInstance audioProcessor")
+					log.debug("CreateInstance audioProcessor")
 					obj^ = &processor.audioProcessor;
 					processor.audioProcessorVtable.funknown.addRef(&processor.audioProcessor);
 					return vst3.kResultOk;
@@ -747,7 +935,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 				free(processor)
 
-				debug_print("Lindale: CreateInstance noiid")
+				log.error("CreateInstance noiid")
 
 				// No interface found
 				obj^ = nil;
@@ -757,7 +945,7 @@ createLindaleController :: proc () -> ^LindaleController {
 				controller := createLindaleController()
 
 				if vst3.is_same_tuid(&vst3.iid_IEditController, iid) {
-					debug_print("Lindale: CreateInstance editController")
+					log.info("CreateInstance editController")
 					obj^ = &controller.editController
 					controller.editControllerVtable.funknown.addRef(&controller.editController)
 					return vst3.kResultOk
@@ -768,16 +956,16 @@ createLindaleController :: proc () -> ^LindaleController {
 				return vst3.kNoInterface
 			}
 
-			debug_print("Lindale: CreateInstance nocid")
+			log.error("CreateInstance nocid")
 
 			return vst3.kNoInterface
 		}
 
 		pf_getClassInfo2 :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfo2) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: getClassInfo2 with index {:d}", index)
+			log.info("getClassInfo2 with index {:d}", index)
 			if index >= 2 {
-				debug_print("Lindale: getClassInfo2 index >= 2")
+				log.error("getClassInfo2 index >= 2")
 				return vst3.kInvalidArgument
 			}
 
@@ -810,9 +998,9 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_getClassInfoUnicode :: proc "system" (this: rawptr, index: i32, info: ^vst3.PClassInfoW) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: getClassInfoUnicode with index {:d}", index)
+			log.info("getClassInfoUnicode with index {:d}", index)
 			if index >= 2 {
-				debug_print("Lindale: getClassInfoU index >= 2")
+				log.error("getClassInfoU index >= 2")
 				return vst3.kInvalidArgument
 			}
 			info^ = vst3.PClassInfoW {
@@ -844,9 +1032,11 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		pf_setHostContext :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
 			context = pluginFactory.ctx
-			debug_print("Lindale: setHostContext")
+			log.info("setHostContext")
 			return vst3.kResultOk
 		}
+
+		result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
 
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses

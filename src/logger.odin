@@ -13,15 +13,7 @@ import "core:testing"
 
 // Interface
 
-debug_print :: proc(format: string, args: ..any) {
-	when ODIN_OS == .Windows {
-		buf: [512]u8;
-		n := fmt.bprintf(buf[:], format, ..args);
-		windows.OutputDebugStringA(strings.unsafe_string_to_cstring(n));
-	}
-}
-
-log_init :: proc() {
+log_init :: proc(log_folder: string) {
 	// automatically zeroed
 	ringBufs := make([]LogRingBuffer, len(LogSource))
 	ctx.loggerRunning = true
@@ -36,10 +28,14 @@ log_init :: proc() {
 	timestampBuf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
 	tsStr := strings.string_from_ptr(&timestampBuf[0], 19)
 
+	logFolderLen := len(log_folder)
+
 	for &logData, source in ctx.logPools {
-		copy(logData.outputFilenameBuf[:], tsStr)
-		copy(logData.outputFilenameBuf[len(tsStr):], "_"[:])
-		copy(logData.outputFilenameBuf[len(tsStr)+1:], log_filename_from_source(source))
+		copy(logData.outputFilenameBuf[:], log_folder)
+		copy(logData.outputFilenameBuf[logFolderLen:], tsStr)
+		copy(logData.outputFilenameBuf[logFolderLen + len(tsStr):], "_"[:])
+		copy(logData.outputFilenameBuf[logFolderLen + len(tsStr)+1:], log_filename_from_source(source))
+
 		logData.outputFilename = strings.string_from_null_terminated_ptr(
 			&logData.outputFilenameBuf[0],
 			len(logData.outputFilenameBuf))
@@ -81,6 +77,7 @@ Log :: [MAX_LOG_LENGTH]u8
 LogSource :: enum {
 	Processor,
 	Controller,
+	PluginFactory,
 }
 
 // One per thread
@@ -101,6 +98,7 @@ LoggerContext :: struct {
 @(private="file")
 ctx: LoggerContext
 
+// Single producer, single consumer ring buffer
 LogRingBuffer :: struct {
 	// prevent false sharing by aligning to cache boundaries
 	using _: struct #align(64) { writeIndex: int, }, // index of next write
@@ -115,6 +113,8 @@ log_filename_from_source :: proc(source: LogSource) -> string {
 		return "processor.log"
 	case .Controller:
 		return "controller.log"
+	case .PluginFactory:
+		return "pluginfactory.log"
 	case:
 		return "unknown.log"
 	}
@@ -122,6 +122,8 @@ log_filename_from_source :: proc(source: LogSource) -> string {
 
 @(private)
 log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
+	if ringBuffer == nil do return
+
 	index := ringBuffer.writeIndex
 	nextIndex := (index + 1) % LOG_BUFFER_COUNT
 	if nextIndex == intrinsics.atomic_load_explicit(&ringBuffer.readIndex, .Acquire) {
@@ -132,6 +134,7 @@ log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 	loglen := len(msg)
 	if loglen > MAX_LOG_LENGTH do loglen = MAX_LOG_LENGTH
 
+	ringBuffer.buffers[index] = {}
 	copy(ringBuffer.buffers[index][:], msg[:loglen])
 
 	intrinsics.atomic_store_explicit(&ringBuffer.writeIndex, nextIndex, .Release)
@@ -139,6 +142,8 @@ log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 
 @(private)
 log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) -> bool {
+	if ringBuffer == nil do return false
+
 	if ringBuffer.readIndex != intrinsics.atomic_load_explicit(&ringBuffer.writeIndex, .Acquire) {
 		index := ringBuffer.readIndex
 		msg^ = ringBuffer.buffers[index]
@@ -244,7 +249,7 @@ test_start_thread :: proc() {
 @(test)
 test_logger :: proc(t: ^testing.T) {
 
-	log_init()
+	log_init("")
 	defer {
 		log_exit()
 		for &logger in ctx.logPools {
