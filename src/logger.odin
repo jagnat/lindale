@@ -194,8 +194,8 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 			lastFlush = time.now()
 		}
 
-		// Let's busy wait for now.. it's alright for testing
-		// time.sleep(time.Millisecond)
+		// TODO: Add a condition flag here to wake thread when a log is written
+		time.sleep(time.Millisecond)
 	}
 
 	// Flush remaining buffer to file
