@@ -134,6 +134,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = get_logger(.Processor)
 
+	return processor
+
 	// Universal LindaleProcessor queryInterface
 	lp_queryInterfaceImplementation :: proc(this: ^LindaleProcessor, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		log.debug("iid: {:x}", iid)
@@ -420,9 +422,6 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 		return {}
 	}
-
-
-	return processor
 }
 
 LindaleController :: struct {
@@ -432,14 +431,10 @@ LindaleController :: struct {
 	editController2Vtable: vst3.IEditController2Vtbl,
 	refCount: u32,
 
-	pluginView: vst3.IPlugView,
-	pluginViewVtable: vst3.IPlugViewVtbl,
-
 	// Context
 	paramState: ParamState,
 	ctx: runtime.Context,
-	window: ^sdl3.Window,
-	pluginViewInitialized: bool,
+	view: LindaleView,
 }
 
 createLindaleController :: proc () -> ^LindaleController {
@@ -449,7 +444,6 @@ createLindaleController :: proc () -> ^LindaleController {
 
 	controller.editController.lpVtbl = &controller.editControllerVtable
 	controller.editController2.lpVtbl = &controller.editController2Vtable
-	controller.pluginView.lpVtbl = &controller.pluginViewVtable
 
 	controller.editControllerVtable = {
 		funknown = vst3.FUnknownVtbl {
@@ -488,27 +482,6 @@ createLindaleController :: proc () -> ^LindaleController {
 		openAboutBox = lc_ec2_openAboutBox,
 	}
 
-	controller.pluginViewVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lc_pv_queryInterface,
-			addRef = lc_pv_addRef,
-			release = lc_pv_release,
-		},
-
-		isPlatformTypeSupported = lc_pv_isPlatformTypeSupported,
-		attached = lc_pv_attached,
-		removed = lc_pv_removed,
-		onWheel = lc_pv_onWheel,
-		onKeyDown = lc_pv_onKeyDown,
-		onKeyUp = lc_pv_onKeyUp,
-		getSize = lc_pv_getSize,
-		onSize = lc_pv_onSize,
-		onFocus = lc_pv_onFocus,
-		setFrame = lc_pv_setFrame,
-		canResize = lc_pv_canResize,
-		checkSizeConstraint = lc_pv_checkSizeConstraint,
-	}
-
 	controller.ctx = context
 	controller.ctx.logger = get_logger(.Controller)
 
@@ -516,7 +489,8 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
 	}
 
-	// Universal queryInterface
+	return controller
+
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IEditController || iid^ == vst3.iid_IPluginBase {
 			obj^ = &this.editController
@@ -651,7 +625,8 @@ createLindaleController :: proc () -> ^LindaleController {
 			return nil
 		}
 		log.info("Editor opened")
-		return &controller.pluginView
+		createLindaleView(&controller.view)
+		return &controller.view.pluginView
 	}
 
 	// EditController2
@@ -697,33 +672,80 @@ createLindaleController :: proc () -> ^LindaleController {
 		log.info("lc_openAboutBox")
 		return vst3.kResultOk
 	}
+}
 
-	// Plugin View
-	lc_pv_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		controller := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
-		context = controller.ctx
-		log.info("lc_queryInterface")
+LindaleView :: struct {
+	pluginView: vst3.IPlugView,
+	pluginViewVtable: vst3.IPlugViewVtbl,
+	refCount: u32,
 
-		return lc_queryInterface(controller, iid, obj)
+	window: ^sdl3.Window,
+	initialized: bool,
+	ctx: runtime.Context,
+}
+
+createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
+	view.pluginViewVtable = {
+		funknown = vst3.FUnknownVtbl {
+			queryInterface = lv_queryInterface,
+			addRef = lv_addRef,
+			release = lv_release,
+		},
+
+		isPlatformTypeSupported = lv_isPlatformTypeSupported,
+		attached = lv_attached,
+		removed = lv_removed,
+		onWheel = lv_onWheel,
+		onKeyDown = lv_onKeyDown,
+		onKeyUp = lv_onKeyUp,
+		getSize = lv_getSize,
+		onSize = lv_onSize,
+		onFocus = lv_onFocus,
+		setFrame = lv_setFrame,
+		canResize = lv_canResize,
+		checkSizeConstraint = lv_checkSizeConstraint,
 	}
-	lc_pv_addRef :: proc "system" (this: rawptr) -> u32 {
-		controller := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
-		context = controller.ctx
-		log.info("lc_addRef")
-		controller.refCount += 1
-		return controller.refCount
-	}
-	lc_pv_release :: proc "system" (this: rawptr) -> u32 {
-		controller := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
-		context = controller.ctx
-		log.info("lc_release")
-		controller.refCount -= 1
-		if controller.refCount == 0 {
-			free(controller)
+	view.pluginView.lpVtbl = &view.pluginViewVtable
+
+	return vst3.kResultOk
+
+	view_queryInterface :: proc (this: ^LindaleView, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IPlugView || iid^ == vst3.iid_IPluginBase {
+			obj^ = &this.pluginView
+		} else {
+			obj^ = nil
+			return vst3.kNoInterface
 		}
-		return controller.refCount
+
+		this.refCount += 1
+		return vst3.kResultOk
 	}
-	lc_pv_isPlatformTypeSupported :: proc "system" (this: rawptr, type: vst3.FIDString) -> vst3.TResult {
+
+	lv_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_queryInterface")
+
+		return view_queryInterface(view, iid, obj)
+	}
+	lv_addRef :: proc "system" (this: rawptr) -> u32 {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_addRef")
+		view.refCount += 1
+		return view.refCount
+	}
+	lv_release :: proc "system" (this: rawptr) -> u32 {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_release")
+		view.refCount -= 1
+		if view.refCount == 0 {
+			free(view)
+		}
+		return view.refCount
+	}
+	lv_isPlatformTypeSupported :: proc "system" (this: rawptr, type: vst3.FIDString) -> vst3.TResult {
 		when ODIN_OS == .Windows {
 			if string(type) == vst3.kPlatformTypeHWND do return vst3.kResultOk
 		}
@@ -735,73 +757,89 @@ createLindaleController :: proc () -> ^LindaleController {
 		}
 		return vst3.kResultFalse
 	}
-	lc_pv_attached :: proc "system" (this: rawptr, parent: rawptr, type: vst3.FIDString) -> vst3.TResult {
-		controller := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
-		context = controller.ctx
+	lv_attached :: proc "system" (this: rawptr, parent: rawptr, type: vst3.FIDString) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
 
 		when ODIN_OS == .Windows {
 			if string(type) != vst3.kPlatformTypeHWND {
-				log.error("lc_pv_attached type not supported")
+				log.error("lv_attached type not supported")
 				return vst3.kInvalidArgument
 			}
-
-			if controller.pluginViewInitialized {
-				return vst3.kResultOk
-			}
-
-			windowPropId := sdl3.CreateProperties()
-			// defer sdl3.DestroyProperties(windowPropId)
-
-			sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
-			sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
-			sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
-			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
-			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
-
-			window := sdl3.CreateWindowWithProperties(windowPropId)
-			if window == nil {
-				log.error("Failed to create SDL window")
-				return vst3.kInternalError
-			}
-
-			controller.window = window
-			controller.pluginViewInitialized = true
-
-			log.info("lc_pv_attached Windows HWND")
-			return vst3.kResultOk
 		}
 		when ODIN_OS == .Darwin {
-
+			if string(type) != vst3.kPlatformTypeNSView {
+				log.error("lv_attached type not supported")
+				return vst3.kInvalidArgument
+			}
 		}
 		when ODIN_OS == .Linux {
-
+			if string(type) != vst3.kPlatformTypeX11EmbedWindowID {
+				log.error("lv_attached type not supported")
+				return vst3.kInvalidArgument
+			}
 		}
 
-		return vst3.kInternalError
-	}
-	lc_pv_removed :: proc "system" (this: rawptr) -> vst3.TResult {
-		controller := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
-		context = controller.ctx
+		if view.initialized {
+			if view.window != nil {
+				sdl3.ShowWindow(view.window)
+			}
+			return vst3.kResultOk
+		}
 
-		if controller.window != nil {
-			// sdl3.DestroyWindow(controller.window)
-			sdl3.HideWindow(controller.window)
-			// controller.window = nil
-			// log.info("lc_pv_removed sdl3 window")
+		windowPropId := sdl3.CreateProperties()
+		// defer sdl3.DestroyProperties(windowPropId)
+
+		// Windower
+		when ODIN_OS == .Windows do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
+		when ODIN_OS == .Darwin do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_COCOA_VIEW_POINTER, parent)
+		when ODIN_OS == .Linux do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_X11_EMBED_WINDOW_ID_POINTER, parent)
+
+		// Render API
+		when ODIN_OS == .Windows || ODIN_OS == .Linux {
+			sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
+		}
+		when ODIN_OS == .Darwin do sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_METAL_BOOLEAN, true)
+
+		sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
+		sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
+		sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
+
+		window := sdl3.CreateWindowWithProperties(windowPropId)
+		if window == nil {
+			log.error("Failed to create SDL window")
+			return vst3.kInternalError
+		}
+
+		view.window = window
+		view.initialized = true
+
+		log.info("lv_attached created window")
+		return vst3.kResultOk
+	}
+	lv_removed :: proc "system" (this: rawptr) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+
+		if view.window != nil {
+			// sdl3.DestroyWindow(view.window)
+			sdl3.HideWindow(view.window)
+			// view.window = nil
+			// log.info("lv_removed sdl3 window")
 		}
 
 		return vst3.kResultOk
 	}
-	lc_pv_onWheel :: proc "system" (this: rawptr, distance: f32) -> vst3.TResult {
+	lv_onWheel :: proc "system" (this: rawptr, distance: f32) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+	lv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+	lv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_getSize :: proc "system" (this: rawptr, size: ^vst3.ViewRect) -> vst3.TResult {
+	lv_getSize :: proc "system" (this: rawptr, size: ^vst3.ViewRect) -> vst3.TResult {
 		size^ = vst3.ViewRect{
 			left = 0,
 			top = 0,
@@ -810,23 +848,21 @@ createLindaleController :: proc () -> ^LindaleController {
 		}
 		return vst3.kResultOk
 	}
-	lc_pv_onSize :: proc "system" (this: rawptr, newSize: ^vst3.ViewRect) -> vst3.TResult {
+	lv_onSize :: proc "system" (this: rawptr, newSize: ^vst3.ViewRect) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+	lv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_setFrame :: proc "system" (this: rawptr, frame: ^vst3.IPlugFrame) -> vst3.TResult {
+	lv_setFrame :: proc "system" (this: rawptr, frame: ^vst3.IPlugFrame) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
+	lv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_pv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
+	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-
-	return controller
 }
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
