@@ -14,7 +14,7 @@ import "base:builtin"
 import "core:log"
 
 //
-import "vendor:sdl3"
+// import "vendor:sdl3"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -54,7 +54,7 @@ LindaleController :: struct {
 	// Context
 	paramState: ParamState,
 	ctx: runtime.Context,
-	window: ^sdl3.Window
+	// window: ^sdl3.Window
 }
 
 pluginFactory: LindalePluginFactory
@@ -745,22 +745,22 @@ createLindaleController :: proc () -> ^LindaleController {
 				return vst3.kInvalidArgument
 			}
 
-			windowPropId := sdl3.CreateProperties()
-			defer sdl3.DestroyProperties(windowPropId)
+			// windowPropId := sdl3.CreateProperties()
+			// defer sdl3.DestroyProperties(windowPropId)
 
-			sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
-			sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
-			sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
-			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
-			sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
+			// sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
+			// sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
+			// sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
+			// sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
+			// sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
 
-			window := sdl3.CreateWindowWithProperties(windowPropId)
-			if window == nil {
-				log.error("Failed to create SDL window")
-				return vst3.kInternalError
-			}
+			// window := sdl3.CreateWindowWithProperties(windowPropId)
+			// if window == nil {
+			// 	log.error("Failed to create SDL window")
+			// 	return vst3.kInternalError
+			// }
 
-			instance.window = window
+			// instance.window = window
 
 			log.info("lc_pv_attached Windows HWND")
 			return vst3.kResultOk
@@ -778,11 +778,11 @@ createLindaleController :: proc () -> ^LindaleController {
 		instance := container_of(cast(^vst3.IPlugView)this, LindaleController, "pluginView")
 		context = instance.ctx
 
-		if instance.window != nil {
-			sdl3.DestroyWindow(instance.window)
-			instance.window = nil
-			log.info("lc_pv_removed sdl3 window")
-		}
+		// if instance.window != nil {
+		// 	sdl3.DestroyWindow(instance.window)
+		// 	instance.window = nil
+		// 	log.info("lc_pv_removed sdl3 window")
+		// }
 
 		return vst3.kResultOk
 	}
@@ -825,7 +825,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	log_init(string(cstring(sdl3.GetPrefPath("jagi", "Lindale"))))
+	log_init("C:\\Users\\Jagi\\AppData\\Roaming\\jagi\\Lindale\\")
 	context.logger = get_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
@@ -1036,7 +1036,7 @@ createLindaleController :: proc () -> ^LindaleController {
 			return vst3.kResultOk
 		}
 
-		result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
+		// result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
 
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses

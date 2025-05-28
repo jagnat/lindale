@@ -220,7 +220,7 @@ logger_proc :: proc(
 ) {
 	data := cast(^LoggerData)logger_data
 
-	if data == nil {
+	if data == nil || data.ringBuffer == nil {
 		return
 	}
 
