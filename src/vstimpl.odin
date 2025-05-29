@@ -780,15 +780,20 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 			}
 		}
 
-		if view.initialized {
-			if view.window != nil {
-				sdl3.ShowWindow(view.window)
-			}
+		if view.initialized && view.window != nil {
+			sdl3.ShowWindow(view.window)
 			return vst3.kResultOk
 		}
 
+		// Clean up any existing window first
+		if view.window != nil {
+			log.info("lv_attached destroying existing window")
+			sdl3.DestroyWindow(view.window)
+			view.window = nil
+		}
+
 		windowPropId := sdl3.CreateProperties()
-		// defer sdl3.DestroyProperties(windowPropId)
+		defer sdl3.DestroyProperties(windowPropId)
 
 		// Windower
 		when ODIN_OS == .Windows do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
@@ -822,10 +827,11 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		context = view.ctx
 
 		if view.window != nil {
-			// sdl3.DestroyWindow(view.window)
-			sdl3.HideWindow(view.window)
-			// view.window = nil
-			// log.info("lv_removed sdl3 window")
+			sdl3.DestroyWindow(view.window)
+			// sdl3.HideWindow(view.window)
+			view.window = nil
+			log.info("lv_removed sdl3 window")
+			view.initialized = false
 		}
 
 		return vst3.kResultOk
@@ -858,7 +864,7 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 	lv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
-		return vst3.kResultOk
+		return vst3.kResultFalse
 	}
 	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		return vst3.kResultOk
