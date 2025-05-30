@@ -12,7 +12,6 @@ Plugin :: struct {
 	draw: ^DrawContext,
 
 	// Common state
-	
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -45,6 +44,9 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 
 	if error do return nil
 
+	if plugin.render != nil do plugin.render.plugin = plugin
+	if plugin.draw != nil do plugin.draw.plugin = plugin
+
 	return plugin
 }
 
@@ -56,6 +58,10 @@ plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
 	render_init_with_handle(plug.render, parentHandle)
+	render_resize(plug.render, 800, 600)
+
+	draw_init(plug.draw)
+	draw_generate_random_rects(plug.draw)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
@@ -67,7 +73,9 @@ plugin_handle_input :: proc(plug: ^Plugin) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
+	draw_upload(plug.draw)
 	render_begin(plug.render)
+	render_draw_rects(plug.render, true)
 	render_end(plug.render)
 }
 

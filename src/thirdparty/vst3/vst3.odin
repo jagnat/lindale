@@ -83,6 +83,7 @@ KnobMode :: enum i32 {
 	RelativeCircularMode,
 	LinearMode,
 }
+AttrID :: cstring
 
 // Interface identifiers
 // TODO: Make actual compile time constants???
@@ -476,6 +477,58 @@ IEventListVtbl :: struct {
 
 IEventList :: struct {
 	lpVtbl: ^IEventListVtbl
+}
+
+IAttributeList :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IAttributeList": */
+	setInt    : proc "system" (this: rawptr, id: AttrID, value: i64) -> TResult,
+	getInt    : proc "system" (this: rawptr, id: AttrID, value: ^i64) -> TResult,
+	setFloat  : proc "system" (this: rawptr, id: AttrID, value: f64) -> TResult,
+	getFloat  : proc "system" (this: rawptr, id: AttrID, value: ^f64) -> TResult,
+	setString : proc "system" (this: rawptr, id: AttrID, str: cstring) -> TResult,
+	getString : proc "system" (this: rawptr, id: AttrID, str: ^u8, sizeInBytes: u32) -> TResult,
+	setBinary : proc "system" (this: rawptr, id: AttrID, data: rawptr, sizeInBytes: u32) -> TResult,
+	getBinary : proc "system" (this: rawptr, id: AttrID, data: ^rawptr, sizeInBytes: ^u32) -> TResult,
+}
+
+IMessageVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IMessage": */
+	getMessageID  : proc "system" (this: rawptr) -> FIDString,
+	setMessageID  : proc "system" (this: rawptr, id: FIDString),
+	getAttributes : proc "system" (this: rawptr) -> ^IAttributeList
+}
+
+IMessage :: struct {
+	lpVtbl: ^IMessageVtbl,
+}
+
+IConnectionPointVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IConnectionPoint": */
+	connect    : proc "system" (this: rawptr, other: ^IConnectionPoint) -> TResult,
+	disconnect : proc "system" (this: rawptr, other: ^IConnectionPoint) -> TResult,
+	notify     : proc "system" (this: rawptr, message: ^IMessage) -> TResult,
+}
+
+IConnectionPoint :: struct {
+	lpVtbl: ^IConnectionPointVtbl,
+}
+
+IHostApplicationVtbl :: struct {
+	funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Vst_IHostApplication": */
+	getName : proc "system" (this: rawptr, name: ^String128) -> TResult,
+	createInstance : proc "system" (this: rawptr, cid, iid: TUID, obj: ^rawptr) -> TResult,
+}
+
+IHostApplication :: struct {
+	lpVtbl: ^IHostApplicationVtbl,
 }
 
 /////////////////////////////////////////////////

@@ -9,9 +9,11 @@ import "core:mem"
 import "core:slice"
 import "core:testing"
 import "core:unicode/utf16"
+import "core:thread"
 import "base:runtime"
 import "base:builtin"
 import "core:log"
+import "core:time"
 
 //
 import "vendor:sdl3"
@@ -67,9 +69,14 @@ LindaleProcessor :: struct {
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
 	processContextRequirements: vst3.IProcessContextRequirements,
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
+	// connectionPoint: vst3.IConnectionPoint,
+	// connectionPointVtable: vst3.IConnectionPointVtbl,
 	refCount: u32,
 
 	plugin: ^Plugin,
+
+	// controllerConnection: ^vst3.IConnectionPoint,
+	hostContext: ^vst3.FUnknown,
 
 	// Context
 	paramState: ParamState,
@@ -161,7 +168,6 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	// IComponent
 	lp_comp_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
-		// context = pluginFactory.ctx
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
 		log.info("lp_comp_queryInterface")
@@ -189,6 +195,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	lp_comp_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
+		processor.hostContext = ctx
+		if ctx != nil {
+			ctx.lpVtbl.addRef(ctx)
+		}
 		log.info("lp_comp_initialize")
 		return vst3.kResultOk
 	}
@@ -342,6 +352,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
+		inputs := data.inputs
 
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
 			paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
@@ -433,6 +444,7 @@ LindaleController :: struct {
 	editControllerVtable: vst3.IEditControllerVtbl,
 	editController2: vst3.IEditController2,
 	editController2Vtable: vst3.IEditController2Vtbl,
+
 	refCount: u32,
 
 	plugin: ^Plugin,
@@ -691,6 +703,20 @@ LindaleView :: struct {
 	plugin: ^Plugin,
 
 	ctx: runtime.Context,
+	renderThread: ^thread.Thread,
+	renderThreadRunning: bool,
+}
+
+render_thread_proc :: proc(t: ^thread.Thread) {
+	view: ^LindaleView = cast(^LindaleView)t.data
+
+	for view.renderThreadRunning {
+		time.sleep(time.Millisecond * 15)
+
+		if view.plugin != nil && view.plugin.render != nil {
+			plugin_draw(view.plugin)
+		}
+	}
 }
 
 createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
@@ -793,19 +819,42 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 
 		plugin_create_view(view.plugin, parent)
 
+		if view.renderThread == nil {
+			view.renderThread = thread.create(render_thread_proc)
+			if view.renderThread != nil {
+				view.renderThread.init_context = context
+				view.renderThread.data = view
+				view.renderThreadRunning = true
+				thread.start(view.renderThread)
+			}
+		} else {
+			log.warn("Render thread already exists, not creating a new one")
+		}
+
 		log.info("lv_attached created window")
 		return vst3.kResultOk
 	}
 	lv_removed :: proc "system" (this: rawptr) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
-		log.info("lv_addRef")
+		log.info("lv_removed")
+
+		if view.renderThread != nil && view.renderThreadRunning {
+			view.renderThreadRunning = false
+			thread.join(view.renderThread)
+			thread.destroy(view.renderThread)
+			view.renderThread = nil
+		}
 
 		plugin_remove_view(view.plugin)
 
 		return vst3.kResultOk
 	}
 	lv_onWheel :: proc "system" (this: rawptr, distance: f32) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_onWheel")
+		plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
@@ -816,9 +865,15 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 	lv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_onKeyUp")
 		return vst3.kResultOk
 	}
 	lv_getSize :: proc "system" (this: rawptr, size: ^vst3.ViewRect) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_getSize")
 		size^ = vst3.ViewRect{
 			left = 0,
 			top = 0,
@@ -828,18 +883,35 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 	lv_onSize :: proc "system" (this: rawptr, newSize: ^vst3.ViewRect) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_onSize")
 		return vst3.kResultOk
 	}
 	lv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_onFocus")
+
+		plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_setFrame :: proc "system" (this: rawptr, frame: ^vst3.IPlugFrame) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_setFrame")
 		return vst3.kResultOk
 	}
 	lv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_canResize")
 		return vst3.kResultFalse
 	}
 	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		log.info("lv_checkSizeConstraint")
 		return vst3.kResultOk
 	}
 }
