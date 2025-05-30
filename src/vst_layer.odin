@@ -715,7 +715,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 		checkSizeConstraint = lv_checkSizeConstraint,
 	}
 	view.pluginView.lpVtbl = &view.pluginViewVtable
-
+	view.ctx = context
 	view.plugin = plug
 
 	return vst3.kResultOk
@@ -799,6 +799,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 	lv_removed :: proc "system" (this: rawptr) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
+		log.info("lv_addRef")
 
 		plugin_remove_view(view.plugin)
 
@@ -810,6 +811,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 	lv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
+		log.info("lv_onKeyDown")
 		plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
