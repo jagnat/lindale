@@ -10,6 +10,8 @@ import vm "core:mem/virtual"
 
 DRAW_CHUNK_COUNT :: 128
 
+WINDOW_WIDTH, WINDOW_HEIGHT : i32 : 800, 600
+
 RectDrawChunk :: struct {
 	next: ^RectDrawChunk,
 	instanceCount: int,
@@ -45,6 +47,7 @@ SimpleUIRect :: struct {
 }
 
 DrawContext :: struct {
+	plugin: ^Plugin,
 	arena: vm.Arena,
 	alloc: mem.Allocator,
 	batchesFirst: ^RectDrawBatch,
@@ -52,20 +55,17 @@ DrawContext :: struct {
 	fontTexture: Texture2D,
 }
 
-@(private="file")
-ctx: DrawContext
-
-draw_init :: proc() {
+draw_init :: proc(ctx: ^DrawContext) {
 	err := vm.arena_init_growing(&ctx.arena)
 	assert(err == .None)
 	ctx.alloc = vm.arena_allocator(&ctx.arena)
 
-	ctx.fontTexture = render_create_texture(1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
+	ctx.fontTexture = render_create_texture(ctx.plugin.render, 1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
 
 	fmt.println("size of rect instance:", size_of(RectInstance))
 }
 
-draw_get_current_batch :: proc() -> ^RectDrawBatch {
+draw_get_current_batch :: proc(ctx: ^DrawContext) -> ^RectDrawBatch {
 	if ctx.batchesLast == nil {
 		ctx.batchesLast = new(RectDrawBatch, allocator = ctx.alloc)
 		if ctx.batchesFirst == nil do ctx.batchesFirst = ctx.batchesLast
@@ -73,7 +73,7 @@ draw_get_current_batch :: proc() -> ^RectDrawBatch {
 	return ctx.batchesLast
 }
 
-draw_add_instance_to_batch :: proc(batch: ^RectDrawBatch, instance: RectInstance) {
+draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, instance: RectInstance) {
 	lastChunk := batch.chunkLast
 	if lastChunk == nil || lastChunk.instanceCount + 1 >= len(lastChunk.instancePool) {
 		newChunk := new(RectDrawChunk, allocator = ctx.alloc)
@@ -87,8 +87,8 @@ draw_add_instance_to_batch :: proc(batch: ^RectDrawBatch, instance: RectInstance
 	batch.totalInstanceCount += 1
 }
 
-draw_push_rect :: proc(rect: SimpleUIRect) {
-	curBatch := draw_get_current_batch()
+draw_push_rect :: proc(ctx: ^DrawContext, rect: SimpleUIRect) {
+	curBatch := draw_get_current_batch(ctx)
 
 	instance : RectInstance
 	instance.pos0 = {rect.x, rect.y}
@@ -97,27 +97,27 @@ draw_push_rect :: proc(rect: SimpleUIRect) {
 	instance.uv1 = {rect.u + rect.uw, rect.v + rect.vh}
 	instance.color = rect.color
 	instance.cornerRad = rect.cornerRad
-	draw_add_instance_to_batch(curBatch, instance)
+	draw_add_instance_to_batch(ctx, curBatch, instance)
 }
 
-draw_push_instance :: proc(rect: RectInstance) {
-	curBatch := draw_get_current_batch()
-	draw_add_instance_to_batch(curBatch, rect)
+draw_push_instance :: proc(ctx: ^DrawContext, rect: RectInstance) {
+	curBatch := draw_get_current_batch(ctx)
+	draw_add_instance_to_batch(ctx, curBatch, rect)
 }
 
-draw_upload :: proc() {
-	render_upload_rect_draw_batch(draw_get_current_batch())
+draw_upload :: proc(ctx: ^DrawContext) {
+	render_upload_rect_draw_batch(ctx.plugin.render, draw_get_current_batch(ctx))
 }
 
-draw_clear :: proc() {
+draw_clear :: proc(ctx: ^DrawContext) {
 	ctx.batchesFirst = nil
 	ctx.batchesLast = nil
 	vm.arena_free_all(&ctx.arena)
 }
 
-draw_generate_random_rects :: proc() {
+draw_generate_random_rects :: proc(ctx: ^DrawContext) {
 	NUM_RECTS :: 40
-	draw_clear()
+	draw_clear(ctx)
 	alph :: 100
 	colors := []ColorU8{{255, 255, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
@@ -125,13 +125,13 @@ draw_generate_random_rects :: proc() {
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			0, 0, 0, 0, // UVs
 			 rand.choice(colors), 20}
-		draw_push_rect(rect)
+		draw_push_rect(ctx, rect)
 	}
 }
 
-draw_generate_random_textured_rects :: proc() {
+draw_generate_random_textured_rects :: proc(ctx: ^DrawContext) {
 	NUM_RECTS :: 40
-	draw_clear()
+	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{255, 255, 255, alph}}
 	for i in 0 ..< NUM_RECTS {
@@ -141,13 +141,13 @@ draw_generate_random_textured_rects :: proc() {
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			u, v, 0.5, 0.5, // UVs
 			rand.choice(colors), 0}
-		draw_push_rect(rect)
+		draw_push_rect(ctx, rect)
 	}
 }
 
-draw_generate_random_spheres :: proc() {
+draw_generate_random_spheres :: proc(ctx: ^DrawContext) {
 	NUM_SPHERES::100
-	draw_clear()
+	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{139, 139, 139, alph}}
 	for i in 0 ..< NUM_SPHERES {
@@ -159,13 +159,13 @@ draw_generate_random_spheres :: proc() {
 			2 * rad, 2 * rad,
 			0, 0, 0, 0,
 			rand.choice(colors), rad}
-		draw_push_rect(rect)
+		draw_push_rect(ctx, rect)
 	}
 }
 
-draw_generate_random_subpixelrects :: proc() {
+draw_generate_random_subpixelrects :: proc(ctx: ^DrawContext) {
 	NUM::100
-	draw_clear()
+	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{139, 139, 139, alph}}
 	for i in 0 ..< NUM {
@@ -176,21 +176,21 @@ draw_generate_random_subpixelrects :: proc() {
 			1.5, 4.5,
 			0, 0, 0, 0,
 			rand.choice(colors), 0}
-		draw_push_rect(rect)
+		draw_push_rect(ctx, rect)
 	}
 }
 
-draw_one_rect :: proc() {
-	draw_clear()
+draw_one_rect :: proc(ctx: ^DrawContext) {
+	draw_clear(ctx)
 	rect := SimpleUIRect{200, 200,
 			100, 100, 
 			0, 0, 0, 0,
 			{0, 255, 0, 255}, 0}
-	draw_push_rect(rect)
+	draw_push_rect(ctx, rect)
 }
 
-draw_text :: proc(text: string, x, y: f32) {
-	draw_clear()
+draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32) {
+	draw_clear(ctx)
 
 	strLen := len(text)
 	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
@@ -200,11 +200,11 @@ draw_text :: proc(text: string, x, y: f32) {
 
 	for &rect in buf {
 		rect.color = {255, 255, 255, 255}
-		draw_push_instance(rect)
+		draw_push_instance(ctx, rect)
 	}
 
-	render_set_sampler_channels({1, 0, 0, 0}, {1, 1, 1, 0})
-	render_upload_texture(ctx.fontTexture, font_get_atlas())
+	render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
+	render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas())
 
-	render_bind_texture(&ctx.fontTexture)
+	render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
 }

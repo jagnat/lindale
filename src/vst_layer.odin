@@ -69,6 +69,8 @@ LindaleProcessor :: struct {
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
 	refCount: u32,
 
+	plugin: ^Plugin,
+
 	// Context
 	paramState: ParamState,
 	sampleRate: f64,
@@ -133,6 +135,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	processor.ctx = context
 	processor.ctx.logger = get_logger(.Processor)
+
+	processor.plugin = plugin_init({.Audio})
 
 	return processor
 
@@ -431,6 +435,8 @@ LindaleController :: struct {
 	editController2Vtable: vst3.IEditController2Vtbl,
 	refCount: u32,
 
+	plugin: ^Plugin,
+
 	// Context
 	paramState: ParamState,
 	ctx: runtime.Context,
@@ -489,6 +495,8 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
 	}
 
+	controller.plugin = plugin_init({.Controller})
+
 	return controller
 
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
@@ -531,6 +539,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		return controller.refCount
 	}
 	lc_ec_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
+
 		return vst3.kResultOk
 	}
 	lc_ec_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
@@ -625,7 +634,7 @@ createLindaleController :: proc () -> ^LindaleController {
 			return nil
 		}
 		log.info("Editor opened")
-		createLindaleView(&controller.view)
+		createLindaleView(&controller.view, controller.plugin)
 		return &controller.view.pluginView
 	}
 
@@ -679,12 +688,12 @@ LindaleView :: struct {
 	pluginViewVtable: vst3.IPlugViewVtbl,
 	refCount: u32,
 
-	window: ^sdl3.Window,
-	initialized: bool,
+	plugin: ^Plugin,
+
 	ctx: runtime.Context,
 }
 
-createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
+createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 	view.pluginViewVtable = {
 		funknown = vst3.FUnknownVtbl {
 			queryInterface = lv_queryInterface,
@@ -706,6 +715,8 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		checkSizeConstraint = lv_checkSizeConstraint,
 	}
 	view.pluginView.lpVtbl = &view.pluginViewVtable
+
+	view.plugin = plug
 
 	return vst3.kResultOk
 
@@ -741,7 +752,7 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		log.info("lv_release")
 		view.refCount -= 1
 		if view.refCount == 0 {
-			free(view)
+			// free(view)
 		}
 		return view.refCount
 	}
@@ -780,44 +791,7 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 			}
 		}
 
-		if view.initialized && view.window != nil {
-			sdl3.ShowWindow(view.window)
-			return vst3.kResultOk
-		}
-
-		// Clean up any existing window first
-		if view.window != nil {
-			log.info("lv_attached destroying existing window")
-			sdl3.DestroyWindow(view.window)
-			view.window = nil
-		}
-
-		windowPropId := sdl3.CreateProperties()
-		defer sdl3.DestroyProperties(windowPropId)
-
-		// Windower
-		when ODIN_OS == .Windows do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
-		when ODIN_OS == .Darwin do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_COCOA_VIEW_POINTER, parent)
-		when ODIN_OS == .Linux do sdl3.SetPointerProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_X11_EMBED_WINDOW_ID_POINTER, parent)
-
-		// Render API
-		when ODIN_OS == .Windows || ODIN_OS == .Linux {
-			sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
-		}
-		when ODIN_OS == .Darwin do sdl3.SetBooleanProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_METAL_BOOLEAN, true)
-
-		sdl3.SetStringProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
-		sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
-		sdl3.SetNumberProperty(windowPropId, sdl3.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
-
-		window := sdl3.CreateWindowWithProperties(windowPropId)
-		if window == nil {
-			log.error("Failed to create SDL window")
-			return vst3.kInternalError
-		}
-
-		view.window = window
-		view.initialized = true
+		plugin_create_view(view.plugin, parent)
 
 		log.info("lv_attached created window")
 		return vst3.kResultOk
@@ -826,13 +800,7 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 
-		if view.window != nil {
-			sdl3.DestroyWindow(view.window)
-			// sdl3.HideWindow(view.window)
-			view.window = nil
-			log.info("lv_removed sdl3 window")
-			view.initialized = false
-		}
+		plugin_remove_view(view.plugin)
 
 		return vst3.kResultOk
 	}
@@ -840,6 +808,9 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 		return vst3.kResultOk
 	}
 	lv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
+		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
+		context = view.ctx
+		plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
@@ -873,7 +844,7 @@ createLindaleView :: proc(view: ^LindaleView) -> vst3.TResult {
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	log_init("C:\\Users\\Jagi\\AppData\\Roaming\\jagi\\Lindale\\")
+	log_init(string(cstring(sdl3.GetPrefPath("jagi", "Lindale"))))
 	context.logger = get_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")

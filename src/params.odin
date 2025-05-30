@@ -82,11 +82,6 @@ ParamState :: struct {
 	values: [len(ParamTable)]f64, // Normalized
 }
 
-AudioProcessorState :: struct {
-	params: ParamState
-
-}
-
 print_param_to_buf :: proc(buf: ^[128]u8, paramVal: f64, info: ParamInfo) {
 	switch info.range.unit {
 	case .Decibel: fallthrough

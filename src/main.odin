@@ -4,20 +4,20 @@ import "core:fmt"
 import "core:os"
 import sdl "vendor:sdl3"
 
-ProgramContext :: struct {
-	window: ^sdl.Window,
-	audioDevice: sdl.AudioDeviceID,
-	texture: Texture2D,
-}
+// ProgramContext :: struct {
+// 	window: ^sdl.Window,
+// 	audioDevice: sdl.AudioDeviceID,
+// 	texture: Texture2D,
+// }
 
-WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
+// WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
 
-@(private="file")
-ctx: ProgramContext
+// @(private="file")
+// ctx: ProgramContext
 
 main :: proc() {
 
-	init()
+	render, draw := init()
 	fmt.println("Successful Init")
 
 	result: b8
@@ -38,15 +38,15 @@ main :: proc() {
 					os.exit(0)
 				}
 			case .WINDOW_RESIZED:
-				render_resize(event.window.data1, event.window.data2)
+				render_resize(render, event.window.data1, event.window.data2)
 			}
 		}
 
-		draw_upload()
+		draw_upload(draw)
 
-		render_begin()
-		render_draw_rects(true)
-		render_end()
+		render_begin(render)
+		// render_draw_rects(render, true)
+		render_end(render)
 
 		count += 1
 		if count % 256 == 0 {
@@ -59,7 +59,7 @@ main :: proc() {
 			tick = newTicks
 			// draw_generate_random_rects(&ctx.drawGroup)
 			// draw_generate_random_spheres(&ctx.drawGroup)
-			draw_text("This is a test.", 300, 300)
+			// draw_text(draw, "This is a test.", 300, 300)
 			// draw_generate_random_rects()
 			// draw_generate_random_textured_rects();
 		}
@@ -67,26 +67,36 @@ main :: proc() {
 	}
 }
 
-init :: proc() {
+init :: proc() -> (^RenderContext, ^DrawContext) {
 	result := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO)
 	assert(result == true)
+
+	plugin := new(Plugin)
+	ctx := new(RenderContext)
+	drawCtx := new(DrawContext)
+	ctx.plugin = plugin
+	drawCtx.plugin = plugin
+	plugin.render = ctx
+	plugin.draw = drawCtx
 
 	ctx.window = sdl.CreateWindow("Lindalë", WINDOW_WIDTH, WINDOW_HEIGHT, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
 	assert(ctx.window != nil)
 
-	render_init(ctx.window)
+	render_init(ctx)
 
-	render_resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+	render_resize(ctx, WINDOW_WIDTH, WINDOW_HEIGHT)
 
 	font_init()
 
-	draw_init()
+	draw_init(drawCtx)
 
-	draw_generate_random_rects()
+	draw_generate_random_rects(drawCtx)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(cstring(sdl.GetPrefPath("jagi", "Lindale")))
 	fmt.println(sdl.GetUserFolder(.DOCUMENTS))
 
 	sdl.ShowWindow(ctx.window)
+
+	return ctx, drawCtx
 }

@@ -8,10 +8,14 @@ import "core:math/linalg"
 import "core:c"
 import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
+import "core:log"
 
-clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1}
+// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1}
+clearColor: ColorF32 = {1, 0.117647, 0.117647, 1}
 
 RenderContext :: struct {
+	plugin: ^Plugin,
+	initialized: bool,
 	gpu: ^sdl.GPUDevice,
 	pipeline: ^sdl.GPUGraphicsPipeline,
 	window: ^sdl.Window,
@@ -26,9 +30,6 @@ RenderContext :: struct {
 }
 
 BUFFER_SIZE :: 1024 * 1024
-
-@(private="file")
-ctx: RenderContext
 
 UniformBuffer :: struct {
 	projMatrix: Mat4f,
@@ -60,8 +61,49 @@ RectInstance :: struct #packed {
 	cornerRad: f32, // corner radiustc
 }
 
-render_init :: proc(window: ^sdl.Window) {
+render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
+
+	if ctx.initialized && ctx.window != nil {
+		sdl.ShowWindow(ctx.window)
+		return
+	}
+
+	// Clean up any existing window first
+	if ctx.window != nil {
+		log.info("lv_attached destroying existing window")
+		sdl.DestroyWindow(ctx.window)
+		ctx.window = nil
+	}
+
+	windowPropId := sdl.CreateProperties()
+	defer sdl.DestroyProperties(windowPropId)
+
+	// Windower
+	when ODIN_OS == .Windows do sdl.SetPointerProperty(windowPropId, sdl.PROP_WINDOW_CREATE_WIN32_HWND_POINTER, parent)
+	when ODIN_OS == .Darwin do sdl.SetPointerProperty(windowPropId, sdl.PROP_WINDOW_CREATE_COCOA_VIEW_POINTER, parent)
+	when ODIN_OS == .Linux do sdl.SetPointerProperty(windowPropId, sdl.PROP_WINDOW_CREATE_X11_EMBED_WINDOW_ID_POINTER, parent)
+
+	// Render API
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
+	}
+	when ODIN_OS == .Darwin do sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_METAL_BOOLEAN, true)
+
+	sdl.SetStringProperty(windowPropId, sdl.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
+	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
+	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
+
+	window := sdl.CreateWindowWithProperties(windowPropId)
+	if window == nil {
+		log.error("Failed to create SDL window")
+	}
 	ctx.window = window
+	ctx.initialized = true
+
+	render_init(ctx)
+}
+
+render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
 	when ODIN_OS == .Windows || ODIN_OS == .Linux {
 		shaderFormat = {.SPIRV}
@@ -111,15 +153,15 @@ render_init :: proc(window: ^sdl.Window) {
 	defer sdl.ReleaseGPUShader(ctx.gpu, pixelShader)
 	fmt.println("Created pixel shader")
 
-	render_init_rect_pipeline(vertexShader, pixelShader)
+	render_init_rect_pipeline(ctx, vertexShader, pixelShader)
 
-	ctx.instanceBuffer = render_create_gpu_buffer(BUFFER_SIZE, {.VERTEX})
+	ctx.instanceBuffer = render_create_gpu_buffer(ctx, BUFFER_SIZE, {.VERTEX})
 
-	ctx.emptyTexture = render_create_texture(4, .R8G8B8A8_UNORM, 1, 1)
+	ctx.emptyTexture = render_create_texture(ctx, 4, .R8G8B8A8_UNORM, 1, 1)
 	textureData := []byte{255, 255, 255, 255}
-	render_upload_texture(ctx.emptyTexture, textureData)
+	render_upload_texture(ctx, ctx.emptyTexture, textureData)
 
-	render_bind_texture(&ctx.emptyTexture)
+	render_bind_texture(ctx, &ctx.emptyTexture)
 
 	// Create sampler
 	sci: sdl.GPUSamplerCreateInfo
@@ -133,9 +175,21 @@ render_init :: proc(window: ^sdl.Window) {
 
 	ctx.uniforms.samplerAlphaChannel = {0, 0, 0, 1}
 	ctx.uniforms.samplerFillChannels = {}
+
+	sdl.ShowWindow(ctx.window)
+
+	return ctx
 }
 
-render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
+render_deinit :: proc(ctx: ^RenderContext) {
+	if ctx.window != nil {
+		sdl.DestroyWindow(ctx.window)
+		ctx.window = nil
+		ctx.initialized = false
+	}
+}
+
+render_init_rect_pipeline :: proc(ctx: ^RenderContext, vertexShader, pixelShader: ^sdl.GPUShader) {
 	blendState: sdl.GPUColorTargetBlendState
 	blendState.enable_blend = true
 	blendState.src_color_blendfactor = .SRC_ALPHA
@@ -185,7 +239,7 @@ render_init_rect_pipeline :: proc(vertexShader, pixelShader: ^sdl.GPUShader) {
 	fmt.println("Created GPU pipeline")
 }
 
-render_create_gpu_buffer :: proc(sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GraphicsBuffer {
+render_create_gpu_buffer :: proc(ctx: ^RenderContext, sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GraphicsBuffer {
 	bufferCreate: sdl.GPUBufferCreateInfo
 	bufferCreate.size = sizeInBytes
 	bufferCreate.usage = usage
@@ -194,7 +248,7 @@ render_create_gpu_buffer :: proc(sizeInBytes: u32, usage: sdl.GPUBufferUsageFlag
 	return GraphicsBuffer{buffer, sizeInBytes, 0, 0, usage}
 }
 
-render_upload_rect_draw_batch :: proc(batch: ^RectDrawBatch) {
+render_upload_rect_draw_batch :: proc(ctx: ^RenderContext, batch: ^RectDrawBatch) {
 	buffer := &ctx.instanceBuffer
 	size := u32(batch.totalInstanceCount * size_of(RectInstance))
 	assert(size <= buffer.capacity)
@@ -231,7 +285,7 @@ render_upload_rect_draw_batch :: proc(batch: ^RectDrawBatch) {
 	buffer.count = u32(batch.totalInstanceCount)
 }
 
-render_upload_buffer_data :: proc(buffer: ^GraphicsBuffer, ary: []$T) {
+render_upload_buffer_data :: proc(ctx: ^RenderContext, buffer: ^GraphicsBuffer, ary: []$T) {
 	data := slice.to_bytes(ary)
 	assert(u64(len(data)) < u64(buffer.capacity))
 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
@@ -261,7 +315,7 @@ render_upload_buffer_data :: proc(buffer: ^GraphicsBuffer, ary: []$T) {
 	buffer.size = u32(len(data))
 }
 
-render_create_texture :: proc(bytesPerPixel: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
+render_create_texture :: proc(ctx: ^RenderContext, bytesPerPixel: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
 	textureCreate: sdl.GPUTextureCreateInfo
 	textureCreate.type = .D2
 	textureCreate.format = format
@@ -282,7 +336,7 @@ render_create_texture :: proc(bytesPerPixel: u32, format: sdl.GPUTextureFormat, 
 	return tex2d
 }
 
-render_upload_texture :: proc(tex: Texture2D, data: []byte) {
+render_upload_texture :: proc(ctx: ^RenderContext, tex: Texture2D, data: []byte) {
 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
 	transferBufferCreate.usage = .UPLOAD
 	transferBufferCreate.size = u32(len(data))
@@ -310,19 +364,19 @@ render_upload_texture :: proc(tex: Texture2D, data: []byte) {
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
 }
 
-render_create_texture_from_file :: proc(file: []u8) -> Texture2D {
+render_create_texture_from_file :: proc(ctx: ^RenderContext, file: []u8) -> Texture2D {
 	x, y, channels: c.int
 	tex: Texture2D
 
 	bits := stbi.load_from_memory(raw_data(file), i32(len(file)), &x, &y, &channels, 4)
 
-	tex = render_create_texture(u32(channels), .R8G8B8A8_UNORM, u32(x), u32(y))
-	render_upload_texture(tex, bits[:channels * x * y])
+	tex = render_create_texture(ctx, u32(channels), .R8G8B8A8_UNORM, u32(x), u32(y))
+	render_upload_texture(ctx, tex, bits[:channels * x * y])
 
 	return tex
 }
 
-render_begin :: proc() {
+render_begin :: proc(ctx: ^RenderContext) {
 	ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(ctx.cmdBuf != nil)
 
@@ -341,7 +395,7 @@ render_begin :: proc() {
 	ctx.renderPass = sdl.BeginGPURenderPass(ctx.cmdBuf, &targetInfo, 1, nil)
 }
 
-render_draw_rects :: proc(scissor: bool = false) {
+render_draw_rects :: proc(ctx: ^RenderContext, scissor: bool = false) {
 	scissorRect := sdl.Rect{x = 100, y = 100, w = i32(ctx.width - 200), h = i32(ctx.height - 200)}
 	fullScissorRect := sdl.Rect{x = 0, y = 0, w = i32(ctx.width), h = i32(ctx.height)}
 	if scissor {
@@ -363,22 +417,22 @@ render_draw_rects :: proc(scissor: bool = false) {
 	sdl.DrawGPUPrimitives(ctx.renderPass, 4, u32(ctx.instanceBuffer.count), 0, 0)
 }
 
-render_bind_texture :: proc(texture: ^Texture2D) {
+render_bind_texture :: proc(ctx: ^RenderContext, texture: ^Texture2D) {
 	ctx.boundTexture = texture
 }
 
-render_set_sampler_channels :: proc(samplerAlphaChannel, samplerFillChannels : Vec4f) {
+render_set_sampler_channels :: proc(ctx: ^RenderContext, samplerAlphaChannel, samplerFillChannels : Vec4f) {
 	ctx.uniforms.samplerAlphaChannel = samplerAlphaChannel
 	ctx.uniforms.samplerFillChannels = samplerFillChannels
 }
 
-render_end :: proc() {
+render_end :: proc(ctx: ^RenderContext) {
 	sdl.EndGPURenderPass(ctx.renderPass)
 	result := sdl.SubmitGPUCommandBuffer(ctx.cmdBuf)
 	assert(result)
 }
 
-render_resize :: proc(w, h: i32) {
+render_resize :: proc(ctx: ^RenderContext, w, h: i32) {
 	ctx.width = f32(w)
 	ctx.height = f32(h)
 	ctx.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
