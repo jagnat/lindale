@@ -156,6 +156,8 @@ log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) -> bool {
 	return false
 }
 
+LOG_FLUSH_TIME :: time.Millisecond * 1000
+
 @(private)
 log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	lastFlush := time.now()
@@ -163,7 +165,7 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	for ctx.loggerRunning {
 		msg: Log
 
-		shouldFlush := time.since(lastFlush) > time.Millisecond * 100
+		shouldFlush := time.since(lastFlush) > LOG_FLUSH_TIME
 
 		for &logger in ctx.logPools {
 			if logger.ringBuffer != nil {
@@ -195,7 +197,7 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 		}
 
 		// TODO: Add a condition flag here to wake thread when a log is written
-		time.sleep(time.Millisecond)
+		time.sleep(time.Millisecond * 10)
 	}
 
 	// Flush remaining buffer to file
@@ -265,7 +267,7 @@ test_logger :: proc(t: ^testing.T) {
 		test_msg := "Hello, logger"
 		log.info(test_msg)
 
-		time.sleep(time.Millisecond * 200)
+		time.sleep(2 * LOG_FLUSH_TIME)
 
 		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
 		testing.expect(t, ok, "Failed to read log file")
@@ -285,7 +287,7 @@ test_logger :: proc(t: ^testing.T) {
 		log.error(droppedStr)
 		test_start_thread()
 
-		time.sleep(200 * time.Millisecond)
+		time.sleep(2 * LOG_FLUSH_TIME)
 		log.info("This should not be dropped")
 
 		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
