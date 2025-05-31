@@ -386,7 +386,7 @@ render_create_texture_from_file :: proc(ctx: ^RenderContext, file: []u8) -> Text
 	return tex
 }
 
-render_begin :: proc(ctx: ^RenderContext) {
+render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}) {
 	ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(ctx.cmdBuf != nil)
 
@@ -398,7 +398,7 @@ render_begin :: proc(ctx: ^RenderContext) {
 
 
 	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
-	clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
+	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
 	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
 

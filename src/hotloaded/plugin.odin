@@ -143,7 +143,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 plugin_draw :: proc(plug: ^Plugin) {
 	// draw_generate_random_rects(plug.draw)
 	draw_upload(plug.draw)
-	render_begin(plug.render)
+	render_begin(plug.render, ColorF32{0.1, 0.2, 0, 1})
 	render_draw_rects(plug.render, false)
 	render_end(plug.render)
 }
