@@ -84,6 +84,14 @@ LindaleProcessor :: struct {
 	ctx: runtime.Context,
 }
 
+// TODO: HACK for demo, not threadsafe, doesn't support multiple instances
+ANALYSIS_BUFFER_SIZE :: 2048
+AnalysisTransfer :: struct {
+	buf: [ANALYSIS_BUFFER_SIZE]f32,
+	writeIndex: int,
+}
+dirty_disgusting_global_analysis: AnalysisTransfer
+
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	log.info("createLindaleProcessor")
 	processor := new(LindaleProcessor)
@@ -144,6 +152,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx.logger = get_logger(.Processor)
 
 	processor.plugin = plugin_init({.Audio})
+
+	for i in 0..<len(processor.plugin.processor.params.values) {
+		processor.plugin.processor.params.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
+	}
 
 	return processor
 
@@ -343,17 +355,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	lp_ap_setProcessing :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-
 	lp_ap_process :: proc "system" (this: rawptr, data: ^vst3.ProcessData) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
 		context = processor.ctx
 
-		@(static) freq : f64 = 432.0
 		numSamples := data.numSamples
 		numOutputs := data.numOutputs
 		outputs := data.outputs
 		inputs := data.inputs
 
+		// Fetch parameter updates
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
 			paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
 
@@ -361,37 +372,49 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				paramQueue := data.inputParameterChanges.lpVtbl.getParameterData(data.inputParameterChanges, i)
 				if paramQueue != nil && paramQueue.lpVtbl != nil {
 					paramId := paramQueue.lpVtbl.getParameterId(paramQueue)
-					if paramId == 2 {
-						pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
-						if pointCount > 0 {
-							sampleOffs: i32
-							normFreq : f64
-							result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normFreq)
-							if result == vst3.kResultOk {
-								freq = norm_to_param(normFreq, ParamTable[2].range)
-							}
+					pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
+					if pointCount > 0 {
+						sampleOffs: i32
+						normParam : f64
+						result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normParam)
+						if result == vst3.kResultOk {
+							processor.plugin.processor.params.values[paramId] = normParam
 						}
 					}
 				}
 			}
 		}
 
+		freq := norm_to_param(processor.plugin.processor.params.values[2], ParamTable[2].range)
 		samplesPerHalfPeriod := cast(i32)(processor.sampleRate / (2 * freq))
+
+		mix := f32(processor.plugin.processor.params.values[1]) // keep mix normalized, 0 to 1
 
 		@(static) squarePhase : i32 = 0
 
+		// Generate output buffer
 		for s in 0..< numSamples {
 			AMPLITUDE :: 0.01
-			val : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
+			squareVal : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
 			squarePhase += 1
 			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
 
 			for i in 0 ..< numOutputs {
-				bufs := outputs[i].channelBuffers32
+				outputBufs := outputs[i].channelBuffers32
 				numChannels := outputs[i].numChannels
+				inputBufs := inputs[i].channelBuffers32
+
 				for c in 0..<numChannels {
-					out := bufs[c]
-					out[s] = val
+					inVal : f32 = 0
+					if data.numInputs > 0 && inputs[i].numChannels > c {
+						inVal = inputs[i].channelBuffers32[c][s]
+					}
+					out := outputBufs[c]
+					out[s] = mix * squareVal + (1 - mix) * inVal
+					if c == 0 {
+						dirty_disgusting_global_analysis.buf[dirty_disgusting_global_analysis.writeIndex] = out[s]
+						dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % ANALYSIS_BUFFER_SIZE
+					}
 				}
 			}
 		}
@@ -711,9 +734,22 @@ render_thread_proc :: proc(t: ^thread.Thread) {
 	view: ^LindaleView = cast(^LindaleView)t.data
 
 	for view.renderThreadRunning {
-		time.sleep(time.Millisecond * 15)
+		time.sleep(time.Millisecond * 5)
 
 		if view.plugin != nil && view.plugin.render != nil {
+
+			buffer2: AnalysisTransfer
+
+			{
+				buffer : AnalysisTransfer = dirty_disgusting_global_analysis
+
+				// Re-linearize
+				firstLen := ANALYSIS_BUFFER_SIZE - buffer.writeIndex
+				copy(buffer2.buf[:firstLen], buffer.buf[buffer.writeIndex:])
+				copy(buffer2.buf[firstLen:], buffer.buf[:buffer.writeIndex])
+			}
+
+			plugin_do_analysis(view.plugin, &buffer2)
 			plugin_draw(view.plugin)
 		}
 	}
@@ -854,14 +890,14 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		log.info("lv_onWheel")
-		plugin_draw(view.plugin)
+		// plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_onKeyDown :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		log.info("lv_onKeyDown")
-		plugin_draw(view.plugin)
+		// plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_onKeyUp :: proc "system" (this: rawptr, key: u16, keyCode: i16, modifiers: i16) -> vst3.TResult {
@@ -893,7 +929,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^Plugin) -> vst3.TResult {
 		context = view.ctx
 		log.info("lv_onFocus")
 
-		plugin_draw(view.plugin)
+		// plugin_draw(view.plugin)
 		return vst3.kResultOk
 	}
 	lv_setFrame :: proc "system" (this: rawptr, frame: ^vst3.IPlugFrame) -> vst3.TResult {
