@@ -61,6 +61,18 @@
 			}
 		},
 		{
+			"name": "Odin hotreload dll",
+			"working_dir": "${project_path}",
+			"windows":
+			{
+				"shell_cmd": "build_vst3.bat"
+			},
+			"osx":
+			{
+				"shell_cmd": "sh ./build_hotreload_vst.command"
+			}
+		},
+		{
 			"name": "Odin test",
 			"shell_cmd": "odin build $project_path/src -debug -build-mode:test -out:$project_path/test.exe",
 		}

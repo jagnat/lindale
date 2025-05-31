@@ -10,9 +10,6 @@ import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
 import "core:log"
 
-// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1}
-clearColor: ColorF32 = {0.278, 0.216, 0.369, 1}
-
 RenderContext :: struct {
 	plugin: ^Plugin,
 	initialized: bool,
@@ -130,9 +127,9 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	assert(result == true)
 
 	when ODIN_OS == .Windows || ODIN_OS == .Linux {
-		vShaderBits := #load("shaders/vs.spv")
+		vShaderBits := #load("../shaders/vs.spv")
 	} else when ODIN_OS == .Darwin {
-		vShaderBits := #load("shaders/shader.metal")
+		vShaderBits := #load("../shaders/shader.metal")
 	}
 
 	vertexCreate: sdl.GPUShaderCreateInfo
@@ -148,9 +145,9 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	fmt.println("Created vertex shader")
 
 	when ODIN_OS == .Windows || ODIN_OS == .Linux {
-		pShaderBits := #load("shaders/ps.spv")
+		pShaderBits := #load("../shaders/ps.spv")
 	} else when ODIN_OS == .Darwin {
-		pShaderBits := #load("shaders/shader.metal")
+		pShaderBits := #load("../shaders/shader.metal")
 	}
 
 	pixelCreate: sdl.GPUShaderCreateInfo
@@ -398,6 +395,12 @@ render_begin :: proc(ctx: ^RenderContext) {
 	result := sdl.WaitAndAcquireGPUSwapchainTexture(ctx.cmdBuf, ctx.window, &swapchainTexture, nil, nil)
 	assert(result == true)
 	assert(swapchainTexture != nil)
+
+
+	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
+	clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
+	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
+	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
 
 	targetInfo: sdl.GPUColorTargetInfo
 	targetInfo.texture = swapchainTexture

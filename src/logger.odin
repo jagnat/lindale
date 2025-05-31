@@ -1,4 +1,4 @@
-package lindale
+package plugin
 
 import "base:runtime"
 import "base:intrinsics"
@@ -78,6 +78,7 @@ LogSource :: enum {
 	Processor,
 	Controller,
 	PluginFactory,
+	HotReload,
 }
 
 // One per thread
@@ -115,6 +116,8 @@ log_filename_from_source :: proc(source: LogSource) -> string {
 		return "controller.log"
 	case .PluginFactory:
 		return "pluginfactory.log"
+	case .HotReload:
+		return "hotreload.log"
 	case:
 		return "unknown.log"
 	}

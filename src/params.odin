@@ -1,4 +1,4 @@
-package lindale
+package plugin
 
 import "core:math"
 import "core:fmt"

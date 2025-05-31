@@ -4,12 +4,12 @@ import "base:runtime"
 import "core:log"
 import "core:math/linalg"
 import "core:math"
-import dif "thirdparty/uFFT_DIF"
-import dit "thirdparty/uFFT_DIT"
+import dif "../thirdparty/uFFT_DIF"
+import dit "../thirdparty/uFFT_DIT"
 
 Plugin :: struct {
-	// Audio processor state
-	processor: ^AudioProcessorContext,
+	// // Audio processor state
+	// processor: ^AudioProcessorContext,
 
 	// UI / controller state
 	render: ^RenderContext,
@@ -24,17 +24,40 @@ PluginComponent :: enum {
 	Controller,
 }
 
+PluginApi :: struct {
+	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
+	draw : proc(plug: ^Plugin)
+}
+
+// TODO: HACK for demo, not threadsafe, doesn't support multiple instances
+ANALYSIS_BUFFER_SIZE :: 2048
+AnalysisTransfer :: struct {
+	buf: [ANALYSIS_BUFFER_SIZE]f32,
+	writeIndex: int,
+}
+
+HOT_DLL :: #config(HOT_DLL, false)
+
+when HOT_DLL {
+	@(export) GetPluginApi :: proc() -> PluginApi {
+		return PluginApi{
+			do_analysis = plugin_do_analysis,
+			draw = plugin_draw,
+		}
+	}
+}
+
 plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 	plugin := new(Plugin)
 	if plugin == nil do return nil
 	error := false
 	defer if error do free(plugin)
 
-	if .Audio in components {
-		plugin.processor = new(AudioProcessorContext)
-		if plugin.processor == nil do error = true
-	}
-	defer if error && plugin.processor != nil do free(plugin.processor)
+	// if .Audio in components {
+	// 	plugin.processor = new(AudioProcessorContext)
+	// 	if plugin.processor == nil do error = true
+	// }
+	// defer if error && plugin.processor != nil do free(plugin.processor)
 
 	if .Controller in components {
 		plugin.render = new(RenderContext)
@@ -89,7 +112,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	startX : f32 = 50
 	endX : f32 = 800 - 50
 	startY : f32 = 600 - 50
-	fft_height :: 500
+	fft_height :: 1000
 	fft_bin_width :: 4
 	MIN_FREQ : f32 : 20
 	MAX_FREQ : f32 : 22050
@@ -111,7 +134,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			x - (fft_bin_width / 2), y0,
 			width, height,
 			0, 0, 0, 0,
-			ColorU8{255, 255, 255, u8(alpha * 255)}, width / 2
+			ColorU8{0, 255, 255, u8(alpha * 255)}, width / 2
 		}
 		draw_push_rect(plug.draw, rect)
 	}
@@ -130,5 +153,5 @@ plugin_param_changed :: proc(plug: ^Plugin, paramName: string) {
 }
 
 plugin_process_audio :: proc(plug: ^Plugin) {
-	process(plug.processor)
+	
 }

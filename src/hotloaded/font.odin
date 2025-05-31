@@ -6,7 +6,7 @@ import stbtt "vendor:stb/truetype"
 import stbi "vendor:stb/image"
 import fs "vendor:fontstash"
 
-font_NotoSans := #load("../resources/NotoSans.ttf")
+font_NotoSans := #load("../../resources/NotoSans.ttf")
 
 FONT_ATLAS_SIZE :: 512
 
