@@ -134,16 +134,19 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			x - (fft_bin_width / 2), y0,
 			width, height,
 			0, 0, 0, 0,
-			ColorU8{0, 255, 255, u8(alpha * 255)}, width / 2
+			ColorU8{255, 255, 255, u8(alpha * 255)}, width / 2
 		}
 		draw_push_rect(plug.draw, rect)
 	}
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
-	// draw_generate_random_rects(plug.draw)
 	draw_upload(plug.draw)
-	render_begin(plug.render, ColorF32{0.1, 0.2, 0, 1})
+	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
+	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
+	clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
+	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
+	render_begin(plug.render, clearColor)
 	render_draw_rects(plug.render, false)
 	render_end(plug.render)
 }

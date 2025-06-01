@@ -59,7 +59,7 @@ ParamInfo :: struct {
 			min = 0.0,
 			max = 100.0,
 			stepCount = 0,
-			defaultValue = 100.0,
+			defaultValue = 0.0,
 			unit = .Percentage,
 		}
 	},
