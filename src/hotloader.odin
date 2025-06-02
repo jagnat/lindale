@@ -13,11 +13,10 @@ import pl "hotloaded"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
-hotload_dll_path :: "/Users/jagi/Programming/lindale/out/hot/LindaleHot.dylib"
-hotloaded_dll_0 :: "/Users/jagi/Programming/lindale/out/hot/LindaleInFlight1.dylib"
-hotloaded_dll_1 :: "/Users/jagi/Programming/lindale/out/hot/LindaleInFlight2.dylib"
+// hotload_dll_path :: "/Users/jagi/Programming/lindale/out/hot/LindaleHot.dylib"
+hotload_dll_path :: "C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleHot.dll"
 
-NUM_DLLS :: 2000
+NUM_DLLS :: 20
 
 // @(rodata)
 // hotloadedDllPaths := [2]string{hotloaded_dll_0, hotloaded_dll_1}
@@ -28,7 +27,8 @@ HotloadState :: struct {
 	idx: int,
 	dllLastModTime: os.File_Time,
 	hotload_thread: ^thread.Thread,
-	initialized: bool
+	initialized: bool,
+	dllNameCount: int,
 }
 @(private="file")
 ctx: HotloadState
@@ -74,10 +74,11 @@ _close_and_copy_dll :: proc(toIdx: int) -> bool {
 		log.info("No hotloaded library to unload")
 	}
 
-	filename := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", toIdx)
+	// filename := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", toIdx)
+	filename := fmt.tprintf("C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleInFlight%03d.dll", toIdx)
 
 	fail := os.remove(filename)
-	if fail != nil && fail != .Not_Exist && fail != .ENOENT {
+	if fail != nil && fail != .Not_Exist {
 		log.error("Failed to remove old hotloaded dll", filename, "err:", fail)
 	}
 
@@ -137,7 +138,8 @@ _load_api :: proc() -> bool {
 	}
 	hotloader: HotLoaderProc = {}
 
-	filepath := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", nextIdx)
+	// filepath := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", nextIdx)
+	filepath := fmt.tprintf("C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleInFlight%03d.dll", nextIdx)
 
 	lib, ok := dynlib.load_library(filepath)
 	if ok && lib != nil {
@@ -155,18 +157,7 @@ _load_api :: proc() -> bool {
 		}
 	}
 
-	// _, ok := dynlib.initialize_symbols(&hotloader, hotloadedDllPaths[nextIdx])
-	// if ok && hotloader.GetPluginApi != nil {
-	// 	log.info("Got to loader proc")
-	// 	ctx.apis[nextIdx] = hotloader.GetPluginApi()
-	// 	ctx.libs[nextIdx] = hotloader.__handle
-	// 	intrinsics.atomic_store_explicit(&ctx.idx, nextIdx, .Release)
-	// 	// no atomic needed, only called from hotload thread besides first load
-	// 	ctx.dllLastModTime = modificationTime
-	// 	return true
-	// }
-
-	log.error("couldnt initialize sybmols")
+	log.error("couldnt initialize symbols")
 
 	return false
 }

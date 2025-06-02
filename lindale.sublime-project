@@ -65,7 +65,7 @@
 			"working_dir": "${project_path}",
 			"windows":
 			{
-				"shell_cmd": "build_vst3.bat"
+				"shell_cmd": "build_hotload_vst3.bat"
 			},
 			"osx":
 			{
