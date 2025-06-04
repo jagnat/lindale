@@ -422,11 +422,11 @@ FUnknownVtbl :: struct {
 }
 
 FUnknown :: struct {
-	lpVtbl: ^FUnknownVtbl,
+	using lpVtbl: ^FUnknownVtbl,
 }
 
 IBStreamVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_IBStream": */
 	read  : proc "system" (this: rawptr, buffer: rawptr, numBytes: i32, numBytesRead: ^i32) -> TResult,
@@ -436,11 +436,11 @@ IBStreamVtbl :: struct {
 }
 
 IBStream :: struct {
-	lpVtbl: ^IBStreamVtbl,
+	using lpVtbl: ^IBStreamVtbl,
 }
 
 IParamValueQueueVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IParamValueQueue": */
 	getParameterId : proc "system" (this: rawptr) -> ParamID,
@@ -450,11 +450,11 @@ IParamValueQueueVtbl :: struct {
 }
 
 IParamValueQueue :: struct {
-	lpVtbl : ^IParamValueQueueVtbl
+	using lpVtbl : ^IParamValueQueueVtbl
 }
 
 IParameterChangesVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IParameterChanges": */
 	getParameterCount : proc "system" (this: rawptr) -> i32,
@@ -463,11 +463,11 @@ IParameterChangesVtbl :: struct {
 }
 
 IParameterChanges :: struct {
-	lpVtbl: ^IParameterChangesVtbl
+	using lpVtbl: ^IParameterChangesVtbl
 }
 
 IEventListVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IEventList": */
 	getEventCount : proc "system" (this: rawptr) -> i32,
@@ -476,11 +476,11 @@ IEventListVtbl :: struct {
 }
 
 IEventList :: struct {
-	lpVtbl: ^IEventListVtbl
+	using lpVtbl: ^IEventListVtbl
 }
 
 IAttributeList :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IAttributeList": */
 	setInt    : proc "system" (this: rawptr, id: AttrID, value: i64) -> TResult,
@@ -494,7 +494,7 @@ IAttributeList :: struct {
 }
 
 IMessageVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IMessage": */
 	getMessageID  : proc "system" (this: rawptr) -> FIDString,
@@ -503,11 +503,11 @@ IMessageVtbl :: struct {
 }
 
 IMessage :: struct {
-	lpVtbl: ^IMessageVtbl,
+	using lpVtbl: ^IMessageVtbl,
 }
 
 IConnectionPointVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IConnectionPoint": */
 	connect    : proc "system" (this: rawptr, other: ^IConnectionPoint) -> TResult,
@@ -516,11 +516,11 @@ IConnectionPointVtbl :: struct {
 }
 
 IConnectionPoint :: struct {
-	lpVtbl: ^IConnectionPointVtbl,
+	using lpVtbl: ^IConnectionPointVtbl,
 }
 
 IHostApplicationVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IHostApplication": */
 	getName : proc "system" (this: rawptr, name: ^String128) -> TResult,
@@ -528,12 +528,12 @@ IHostApplicationVtbl :: struct {
 }
 
 IHostApplication :: struct {
-	lpVtbl: ^IHostApplicationVtbl,
+	using lpVtbl: ^IHostApplicationVtbl,
 }
 
 /////////////////////////////////////////////////
 IComponentVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods derived from "Steinberg_IPluginBase": */
 	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
@@ -552,12 +552,12 @@ IComponentVtbl :: struct {
 }
 
 IComponent :: struct {
-	lpVtbl: ^IComponentVtbl
+	using lpVtbl: ^IComponentVtbl
 }
 
 /////////////////////////////////////////////////
 IAudioProcessorVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IAudioProcessor": */
 	setBusArrangements   : proc "system" (this: rawptr, inputs: ^SpeakerArrangement, numIns: i32, outputs: ^SpeakerArrangement, numOuts: i32) -> TResult,
@@ -571,21 +571,21 @@ IAudioProcessorVtbl :: struct {
 }
 
 IAudioProcessor :: struct {
-	lpVtbl: ^IAudioProcessorVtbl
+	using lpVtbl: ^IAudioProcessorVtbl
 }
 
 IProcessContextRequirementsVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 	/* methods defined in "Steinberg_Vst_IProcessContextRequirements": */
 	getProcessContextRequirements : proc "system" (this: rawptr) -> IProcessContextRequirementsFlagSet
 }
 
 IProcessContextRequirements :: struct {
-	lpVtbl: ^IProcessContextRequirementsVtbl
+	using lpVtbl: ^IProcessContextRequirementsVtbl
 }
 
 IComponentHandlerVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IComponentHandler": */
 	beginEdit        : proc "system" (this: rawptr, id: ParamID) -> TResult,
@@ -595,22 +595,22 @@ IComponentHandlerVtbl :: struct {
 }
 
 IComponentHandler :: struct {
-	lpVtbl: ^IComponentHandlerVtbl
+	using lpVtbl: ^IComponentHandlerVtbl
 }
 
 IPlugFrameVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_IPlugFrame": */
 	resizeView : proc "system" (this: rawptr, view: ^IPlugView, newSize: ^ViewRect) -> TResult,
 }
 
 IPlugFrame :: struct {
-	lpVtbl: ^IPlugFrameVtbl
+	using lpVtbl: ^IPlugFrameVtbl
 }
 
 IPlugViewVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_IPlugView": */
 	isPlatformTypeSupported : proc "system" (this: rawptr, type: FIDString) -> TResult,
@@ -628,12 +628,12 @@ IPlugViewVtbl :: struct {
 }
 
 IPlugView :: struct {
-	lpVtbl: ^IPlugViewVtbl
+	using lpVtbl: ^IPlugViewVtbl
 }
 
 /////////////////////////////////////////////////
 IEditControllerVtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods derived from "Steinberg_IPluginBase": */
 	initialize : proc "system" (this: rawptr, ctx: ^FUnknown) -> TResult,
@@ -656,11 +656,11 @@ IEditControllerVtbl :: struct {
 }
 
 IEditController :: struct {
-	lpVtbl: ^IEditControllerVtbl
+	using lpVtbl: ^IEditControllerVtbl
 }
 
 IEditController2Vtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IEditController2": */
 	setKnobMode  : proc "system" (this: rawptr, mode: KnobMode) -> TResult,
@@ -669,11 +669,11 @@ IEditController2Vtbl :: struct {
 }
 
 IEditController2 :: struct {
-	lpVtbl: ^IEditController2Vtbl
+	using lpVtbl: ^IEditController2Vtbl
 }
 
 IPluginFactory3Vtbl :: struct {
-	funknown: FUnknownVtbl,
+	using funknown: FUnknownVtbl,
 
 	/* methods derived from "Steinberg_IPluginFactory": */
 	getFactoryInfo : proc "system" (this: rawptr, info: ^PFactoryInfo) -> TResult,
@@ -690,5 +690,5 @@ IPluginFactory3Vtbl :: struct {
 }
 
 IPluginFactory3 :: struct {
-	lpVtbl: ^IPluginFactory3Vtbl
+	using lpVtbl: ^IPluginFactory3Vtbl
 }

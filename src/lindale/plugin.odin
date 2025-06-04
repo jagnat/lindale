@@ -146,7 +146,10 @@ plugin_draw :: proc(plug: ^Plugin) {
 	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
-	clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
+	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
+
+	// clearColor := ColorF32_from_hex(0xca9f85ff)
+	clearColor := ColorF32_from_hex(0xff00ffff)
 	render_begin(plug.render, clearColor)
 	render_draw_rects(plug.render, false)
 	render_end(plug.render)

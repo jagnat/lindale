@@ -102,11 +102,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.refCount = 0
 
 	processor.componentVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lp_comp_queryInterface,
-			addRef = lp_comp_addRef,
-			release = lp_comp_release,
-		},
+		queryInterface = lp_comp_queryInterface,
+		addRef = lp_comp_addRef,
+		release = lp_comp_release,
 
 		initialize = lp_comp_initialize,
 		terminate = lp_comp_terminate,
@@ -123,11 +121,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	}
 
 	processor.audioProcessorVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lp_ap_queryInterface,
-			addRef = lp_ap_addRef,
-			release = lp_ap_release,
-		},
+		queryInterface = lp_ap_queryInterface,
+		addRef = lp_ap_addRef,
+		release = lp_ap_release,
 
 		setBusArrangements = lp_ap_setBusArrangements,
 		getBusArrangement = lp_ap_getBusArrangement,
@@ -140,11 +136,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	}
 
 	processor.processContextRequirementsVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lp_pcr_queryInterface,
-			addRef = lp_pcr_addRef,
-			release = lp_pcr_release,
-		},
+		queryInterface = lp_pcr_queryInterface,
+		addRef = lp_pcr_addRef,
+		release = lp_pcr_release,
 		getProcessContextRequirements = lp_pcr_getProcessContextRequirements,
 	}
 
@@ -213,7 +207,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 		processor.hostContext = ctx
 		if ctx != nil {
-			ctx.lpVtbl.addRef(ctx)
+			ctx->addRef()
 		}
 		log.info("lp_comp_initialize")
 		return vst3.kResultOk
@@ -370,17 +364,17 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 		// Fetch parameter updates
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
-			paramCount := data.inputParameterChanges.lpVtbl.getParameterCount(data.inputParameterChanges)
+			paramCount := data.inputParameterChanges->getParameterCount()
 
 			for i in 0..<paramCount {
-				paramQueue := data.inputParameterChanges.lpVtbl.getParameterData(data.inputParameterChanges, i)
+				paramQueue := data.inputParameterChanges->getParameterData(i)
 				if paramQueue != nil && paramQueue.lpVtbl != nil {
-					paramId := paramQueue.lpVtbl.getParameterId(paramQueue)
-					pointCount := paramQueue.lpVtbl.getPointCount(paramQueue)
+					paramId := paramQueue->getParameterId()
+					pointCount := paramQueue->getPointCount()
 					if pointCount > 0 {
 						sampleOffs: i32
 						normParam : f64
-						result := paramQueue.lpVtbl.getPoint(paramQueue, pointCount - 1, &sampleOffs, &normParam)
+						result := paramQueue->getPoint(pointCount - 1, &sampleOffs, &normParam)
 						if result == vst3.kResultOk {
 							processor.params.values[paramId] = normParam
 						}
@@ -491,11 +485,9 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.editController2.lpVtbl = &controller.editController2Vtable
 
 	controller.editControllerVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lc_ec_queryInterface,
-			addRef = lc_ec_addRef,
-			release = lc_ec_release,
-		},
+		queryInterface = lc_ec_queryInterface,
+		addRef = lc_ec_addRef,
+		release = lc_ec_release,
 
 		initialize = lc_ec_initialize,
 		terminate = lc_ec_terminate,
@@ -516,11 +508,9 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 
 	controller.editController2Vtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lc_ec2_queryInterface,
-			addRef = lc_ec2_addRef,
-			release = lc_ec2_release,
-		},
+		queryInterface = lc_ec2_queryInterface,
+		addRef = lc_ec2_addRef,
+		release = lc_ec2_release,
 
 		setKnobMode = lc_ec2_setKnobMode,
 		openHelp = lc_ec2_openHelp,
@@ -763,11 +753,9 @@ render_thread_proc :: proc(t: ^thread.Thread) {
 
 createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult {
 	view.pluginViewVtable = {
-		funknown = vst3.FUnknownVtbl {
-			queryInterface = lv_queryInterface,
-			addRef = lv_addRef,
-			release = lv_release,
-		},
+		queryInterface = lv_queryInterface,
+		addRef = lv_addRef,
+		release = lv_release,
 
 		isPlatformTypeSupported = lv_isPlatformTypeSupported,
 		attached = lv_attached,
@@ -992,14 +980,6 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			return 0
 		}
 
-		funknown := vst3.FUnknownVtbl {
-			queryInterface = pf_queryInterface,
-			addRef = pf_addRef,
-			release = pf_release,
-		}
-
-		pluginFactory.vtable.funknown = funknown
-
 		pf_getFactoryInfo :: proc "system" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
 			context = pluginFactory.ctx
 			log.info("getFactoryInfo")
@@ -1062,12 +1042,12 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				if vst3.is_same_tuid(&vst3.iid_IComponent, iid) {
 					log.debug("CreateInstance iComponent")
 					obj^ = &processor.component;
-					processor.componentVtable.funknown.addRef(&processor.component);
+					processor.component->addRef();
 					return vst3.kResultOk;
 				} else if vst3.is_same_tuid(&vst3.iid_IAudioProcessor, iid) {
 					log.debug("CreateInstance audioProcessor")
 					obj^ = &processor.audioProcessor;
-					processor.audioProcessorVtable.funknown.addRef(&processor.audioProcessor);
+					processor.audioProcessor->addRef();
 					return vst3.kResultOk;
 				}
 
@@ -1088,7 +1068,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				if vst3.is_same_tuid(&vst3.iid_IEditController, iid) {
 					log.info("CreateInstance editController")
 					obj^ = &controller.editController
-					controller.editControllerVtable.funknown.addRef(&controller.editController)
+					controller.editController->addRef()
 					return vst3.kResultOk
 				}
 
@@ -1183,7 +1163,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			return nil
 		}
 
-		pluginFactory.api = hotload_api()
+		pluginFactory.vtable.queryInterface = pf_queryInterface
+		pluginFactory.vtable.addRef = pf_addRef
+		pluginFactory.vtable.release = pf_release
 
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses
@@ -1196,7 +1178,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		pluginFactory.vtable.setHostContext = pf_setHostContext
 
 		pluginFactory.vtablePtr.lpVtbl = &pluginFactory.vtable
+
 		pluginFactory.ctx = context
+		pluginFactory.api = hotload_api()
 		pluginFactory.initialized = true
 	}
 
@@ -1249,15 +1233,15 @@ test_lindaleProcessor :: proc(t: ^testing.T) {
 	for testCase in iidTestCases {
 		testCase := testCase
 
-		result := processor.componentVtable.funknown.queryInterface(&processor.component, &testCase, &obj)
+		result := processor.component->queryInterface(&testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 
-		result = processor.audioProcessorVtable.funknown.queryInterface(&processor.audioProcessor, &testCase, &obj)
+		result = processor.audioProcessor->queryInterface(&testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 
-		result = processor.processContextRequirementsVtable.funknown.queryInterface(&processor.processContextRequirements, &testCase, &obj)
+		result = processor.processContextRequirements->queryInterface(&testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 	}
@@ -1265,23 +1249,23 @@ test_lindaleProcessor :: proc(t: ^testing.T) {
 	startingRefCount := u32(3 * len(iidTestCases))
 
 	// Test AddRef and Release
-	refCount := processor.componentVtable.funknown.addRef(&processor.component)
+	refCount := processor.component->addRef()
 	testing.expect_value(t, refCount, startingRefCount + 1)
-	refCount = processor.audioProcessorVtable.funknown.addRef(&processor.audioProcessor)
+	refCount = processor.audioProcessor->addRef()
 	testing.expect_value(t, refCount, startingRefCount + 2)
 
-	refCount = processor.componentVtable.funknown.release(&processor.component)
+	refCount = processor.component->release()
 	testing.expect_value(t, refCount, startingRefCount + 1)
-	refCount = processor.audioProcessorVtable.funknown.release(&processor.audioProcessor)
+	refCount = processor.audioProcessor->release()
 	testing.expect_value(t, refCount, startingRefCount)
 
-	refCount = processor.componentVtable.funknown.release(&processor.component)
+	refCount = processor.component->release()
 	testing.expect_value(t, refCount, startingRefCount - 1)
-	refCount = processor.audioProcessorVtable.funknown.release(&processor.audioProcessor)
+	refCount = processor.audioProcessor->release()
 	testing.expect_value(t, refCount, startingRefCount - 2)
 
 	invalidTuid := vst3.iid_IEditController2
-	result := processor.componentVtable.funknown.queryInterface(&processor.component, &invalidTuid, &obj)
+	result := processor.component->queryInterface(&invalidTuid, &obj)
 	testing.expect_value(t, result, vst3.kNoInterface)
 	free_all(context.allocator)
 }
@@ -1305,11 +1289,11 @@ test_lindaleController :: proc(t: ^testing.T) {
 	for testCase in iidTestCases {
 		testCase := testCase
 
-		result := controller.editControllerVtable.funknown.queryInterface(&controller.editController, &testCase, &obj)
+		result := controller.editController->queryInterface(&testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 
-		result = controller.editController2Vtable.funknown.queryInterface(&controller.editController2, &testCase, &obj)
+		result = controller.editController2->queryInterface(&testCase, &obj)
 		testing.expect_value(t, result, vst3.kResultOk)
 		testing.expect(t, obj != nil)
 	}
@@ -1317,23 +1301,23 @@ test_lindaleController :: proc(t: ^testing.T) {
 	startingRefCount := u32(2 * len(iidTestCases))
 
 	// Test AddRef and Release
-	refCount := controller.editControllerVtable.funknown.addRef(&controller.editController)
+	refCount := controller.editController->addRef()
 	testing.expect_value(t, refCount, startingRefCount + 1)
-	refCount = controller.editController2Vtable.funknown.addRef(&controller.editController2)
+	refCount = controller.editController2->addRef()
 	testing.expect_value(t, refCount, startingRefCount + 2)
 
-	refCount = controller.editControllerVtable.funknown.release(&controller.editController)
+	refCount = controller.editController->release()
 	testing.expect_value(t, refCount, startingRefCount + 1)
-	refCount = controller.editController2Vtable.funknown.release(&controller.editController2)
+	refCount = controller.editController2->release()
 	testing.expect_value(t, refCount, startingRefCount)
 
-	refCount = controller.editControllerVtable.funknown.release(&controller.editController)
+	refCount = controller.editController->release()
 	testing.expect_value(t, refCount, startingRefCount - 1)
-	refCount = controller.editController2Vtable.funknown.release(&controller.editController2)
+	refCount = controller.editController2->release()
 	testing.expect_value(t, refCount, startingRefCount - 2)
 
 	invalidTuid := vst3.iid_IAudioProcessor
-	result := controller.editControllerVtable.funknown.queryInterface(&controller.editController, &invalidTuid, &obj)
+	result := controller.editController->queryInterface(&invalidTuid, &obj)
 	testing.expect_value(t, result, vst3.kNoInterface)
 	free_all(context.allocator)
 }

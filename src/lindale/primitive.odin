@@ -16,7 +16,7 @@ ColorU8 :: struct {
 
 ColorF32 :: [4]f32
 
-ColorF32_from_hex :: proc(hex: u32) -> [4]f32 {
+ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
 	r := f32((hex >> 24) & 0xFF) / 255.0
 	g := f32((hex >> 16) & 0xFF) / 255.0
 	b := f32((hex >>  8) & 0xFF) / 255.0
