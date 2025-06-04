@@ -36,10 +36,9 @@ HotloadState :: struct {
 @(private="file")
 ctx: HotloadState
 
-// Only thing needed by plugin implementation
-// then just use the returned api
-hotload_init :: proc() -> lin.PluginApi {
-	if ctx.initialized do return hotload_api()
+// Call when launching a plugin instance
+hotload_init :: proc() {
+	if ctx.initialized do return
 
 	ctx.lindaleHotDll = fmt.bprint(
 		ctx.lindaleHotDllBuf[:],
@@ -60,7 +59,7 @@ hotload_init :: proc() -> lin.PluginApi {
 
 	ctx.dllSuffix = 1
 
-	if !_load_api() do return lin.PluginApi{}
+	// if !_load_api() do return
 
 	// launch thread
 	ctx.hotload_thread = thread.create(_hotreload_thread_proc)
@@ -69,12 +68,10 @@ hotload_init :: proc() -> lin.PluginApi {
 		thread.start(ctx.hotload_thread)
 	} else {
 		log.error("Failed to create hotreload thread")
-		return lin.PluginApi{}
+		return
 	}
 
 	ctx.initialized = true
-
-	return hotload_api()
 }
 
 hotload_api :: proc() -> lin.PluginApi {
@@ -158,6 +155,8 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 
 _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 	context.logger = get_logger(.HotReload)
+
+	if !_load_api() do log.error("FAILED to load hotloaded dll on startup")
 
 	for {
 		modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)

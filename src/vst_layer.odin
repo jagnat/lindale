@@ -1056,6 +1056,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			if vst3.is_same_tuid(&lindaleProcessorCid, cid) {
 				processor := createLindaleProcessor()
 
+				// init
+				hotload_init()
+
 				if vst3.is_same_tuid(&vst3.iid_IComponent, iid) {
 					log.debug("CreateInstance iComponent")
 					obj^ = &processor.component;
@@ -1078,6 +1081,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 			} else if vst3.is_same_tuid(&lindaleControllerCid, cid) {
 				controller := createLindaleController()
+
+				// init
+				hotload_init()
 
 				if vst3.is_same_tuid(&vst3.iid_IEditController, iid) {
 					log.info("CreateInstance editController")
@@ -1172,7 +1178,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		}
 
 		result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
-		if !result  {
+		if !result {
 			log.error("Failed to initialize SDL: ", sdl3.GetError())
 			return nil
 		}
