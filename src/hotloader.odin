@@ -1,4 +1,4 @@
-package plugin
+package platform
 
 import "core:os"
 import "core:os/os2"
@@ -8,59 +8,124 @@ import "base:intrinsics"
 import "core:log"
 import "core:time"
 import "core:fmt"
+import "core:strings"
+import "core:path/filepath"
 
-import pl "hotloaded"
+import lin "lindale"
+
+import "vendor:sdl3"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
-// hotload_dll_path :: "/Users/jagi/Programming/lindale/out/hot/LindaleHot.dylib"
-hotload_dll_path :: "C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleHot.dll"
-
-NUM_DLLS :: 20
-
-// @(rodata)
-// hotloadedDllPaths := [2]string{hotloaded_dll_0, hotloaded_dll_1}
+NUM_DLLS :: 2
 
 HotloadState :: struct {
-	apis: [NUM_DLLS]pl.PluginApi,
+	apis: [NUM_DLLS]lin.PluginApi,
 	libs: [NUM_DLLS]dynlib.Library,
+	suffixes: [NUM_DLLS]int,
 	idx: int,
 	dllLastModTime: os.File_Time,
 	hotload_thread: ^thread.Thread,
 	initialized: bool,
-	dllNameCount: int,
+	dllSuffix: int,
+	lindaleHotDllBuf: [128]u8,
+	lindaleHotDll: string,
+	hotloadedDllFmtBuf: [128]u8,
+	hotloadedDllFmt: string,
 }
 @(private="file")
 ctx: HotloadState
 
 // Only thing needed by plugin implementation
 // then just use the returned api
-hotload_init :: proc() -> pl.PluginApi {
-	if ctx.initialized do return _get_buffer_api()
+hotload_init :: proc() -> lin.PluginApi {
+	if ctx.initialized do return hotload_api()
 
-	if !_load_api() do return pl.PluginApi{}
+	ctx.lindaleHotDll = fmt.bprint(
+		ctx.lindaleHotDllBuf[:],
+		get_config().runtimeFolderPath,
+		"hot",
+		filepath.SEPARATOR,
+		"LindaleHot.",
+		dynlib.LIBRARY_FILE_EXTENSION, sep="")
+	log.info("hotload dll:", ctx.lindaleHotDll)
+
+	ctx.hotloadedDllFmt = fmt.bprint(
+		ctx.hotloadedDllFmtBuf[:],
+		get_config().runtimeFolderPath,
+		"hot",
+		filepath.SEPARATOR,
+		"LindaleHot%03d.",
+		dynlib.LIBRARY_FILE_EXTENSION, sep="")
+
+	ctx.dllSuffix = 1
+
+	if !_load_api() do return lin.PluginApi{}
 
 	// launch thread
-	ctx.hotload_thread = thread.create(hotreload_thread_proc)
+	ctx.hotload_thread = thread.create(_hotreload_thread_proc)
 	if ctx.hotload_thread != nil {
 		ctx.hotload_thread.init_context = context
 		thread.start(ctx.hotload_thread)
 	} else {
 		log.error("Failed to create hotreload thread")
-		return pl.PluginApi{}
+		return lin.PluginApi{}
 	}
 
 	ctx.initialized = true
 
-	return _get_buffer_api()
+	return hotload_api()
+}
+
+hotload_api :: proc() -> lin.PluginApi {
+	api : lin.PluginApi = {
+		do_analysis = buffer_do_analysis,
+		draw = buffer_draw,
+	}
+
+	return api
+
+	buffer_do_analysis :: proc(plug: ^lin.Plugin, transfer: ^lin.AnalysisTransfer) {
+		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].do_analysis == nil {
+			lin.plugin_do_analysis(plug, transfer)
+		} else {
+			ctx.apis[idx].do_analysis(plug, transfer)
+		}
+	}
+	buffer_draw :: proc(plug: ^lin.Plugin) {
+		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+			lin.plugin_draw(plug)
+		} else {
+			ctx.apis[idx].draw(plug)
+		}
+	}
+}
+
+hotload_deinit :: proc() {
+	if ctx.initialized {
+		buf: [128]u8
+		// Delete the hotloaded dlls
+		for i in ctx.suffixes {
+			if i == 0 do continue
+			oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, i)
+			fail := os.remove(oldSlotFilename)
+			if fail != nil && fail != .Not_Exist {
+				log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
+			}
+		}
+	}
 }
 
 //////////////
 // internal //
 //////////////
 
-_close_and_copy_dll :: proc(toIdx: int) -> bool {
-	ctx.apis[toIdx] = pl.PluginApi{}
+_close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
+	buf: [128]u8
+
+	ctx.apis[toIdx] = lin.PluginApi{}
 	defer free_all(context.temp_allocator)
 
 	if ctx.libs[toIdx] != nil {
@@ -74,32 +139,31 @@ _close_and_copy_dll :: proc(toIdx: int) -> bool {
 		log.info("No hotloaded library to unload")
 	}
 
-	// filename := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", toIdx)
-	filename := fmt.tprintf("C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleInFlight%03d.dll", toIdx)
+	oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, ctx.suffixes[toIdx])
 
-	fail := os.remove(filename)
+	fail := os.remove(oldSlotFilename)
 	if fail != nil && fail != .Not_Exist {
-		log.error("Failed to remove old hotloaded dll", filename, "err:", fail)
+		log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 	}
 
-	err := os2.copy_file(filename, hotload_dll_path)
+	err := os2.copy_file(newDllPath, ctx.lindaleHotDll)
 	if err == nil {
-		log.info("Copied hotloaded dll to", filename)
+		log.info("Copied hotloaded dll to", newDllPath)
 		return true
 	} else {
-		log.error("Failed to copy hotloaded dll to %s: %v", hotload_dll_path, err)
+		log.error("Failed to copy hotloaded dll", newDllPath, err)
 		return false
 	}
 }
 
-hotreload_thread_proc :: proc(t: ^thread.Thread) {
+_hotreload_thread_proc :: proc(t: ^thread.Thread) {
 	context.logger = get_logger(.HotReload)
 
 	for {
-		modificationTime, err := os.last_write_time_by_name(hotload_dll_path)
+		modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)
 		if err != nil {
 			log.error("Failed to get modification time of hotloaded dll", err)
-			time.sleep(time.Millisecond * 1000) // wait before retrying
+			time.sleep(200 * time.Millisecond)
 			continue
 		}
 
@@ -113,43 +177,39 @@ hotreload_thread_proc :: proc(t: ^thread.Thread) {
 			log.info("Hotloaded API successfully")
 		}
 
-		time.sleep(time.Millisecond * 100)
-		// log.info("Checking for hotloaded dll changes...")
+		time.sleep(time.Millisecond * 200)
 	}
 }
 
-HotLoaderProc :: struct {
-	__handle: dynlib.Library,
-	GetPluginApi : proc () -> pl.PluginApi,
-}
-
 _load_api :: proc() -> bool {
-	modificationTime, err := os.last_write_time_by_name(hotload_dll_path)
+	modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)
 	if err != nil {
 		log.error("Failed to get modification time of hotloaded dll", err)
 		return false
 	}
 
+	buf:[128]u8
+	nextDll := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, ctx.dllSuffix)
+	log.info("next dll:", nextDll)
+
 	nextIdx := (ctx.idx + 1) % NUM_DLLS
 
-	if !_close_and_copy_dll(nextIdx) {
+	if !_close_and_copy_dll(nextIdx, nextDll) {
 		log.error("Failed to copy hotloaded dll")
 		return false
 	}
-	hotloader: HotLoaderProc = {}
 
-	// filepath := fmt.tprintf("/Users/jagi/Programming/lindale/out/hot/LindaleInFlight%03d.dylib", nextIdx)
-	filepath := fmt.tprintf("C:\\Users\\Jagi\\Documents\\Programming\\lindalë\\out\\hot\\LindaleInFlight%03d.dll", nextIdx)
-
-	lib, ok := dynlib.load_library(filepath)
+	lib, ok := dynlib.load_library(nextDll)
 	if ok && lib != nil {
 		log.info("Got to loader proc")
 		ptr, found := dynlib.symbol_address(lib, "GetPluginApi")
 		if found {
 			log.info("Loaded symbol")
-			hotloader.GetPluginApi = cast(proc() -> pl.PluginApi)ptr
-			ctx.apis[nextIdx] = hotloader.GetPluginApi()
+			GetPluginApi := cast(proc() -> lin.PluginApi)ptr
+			ctx.apis[nextIdx] = GetPluginApi()
 			ctx.libs[nextIdx] = lib
+			ctx.suffixes[nextIdx] = ctx.dllSuffix
+			ctx.dllSuffix += 1
 			intrinsics.atomic_store_explicit(&ctx.idx, nextIdx, .Release)
 			// no atomic needed, only called from hotload thread besides first load
 			ctx.dllLastModTime = modificationTime
@@ -160,34 +220,4 @@ _load_api :: proc() -> bool {
 	log.error("couldnt initialize symbols")
 
 	return false
-}
-
-_get_buffer_api :: proc() -> pl.PluginApi {
-	api : pl.PluginApi = {
-		do_analysis = buffer_do_analysis,
-		draw = buffer_draw,
-	}
-
-	return api
-
-	buffer_do_analysis :: proc(plug: ^pl.Plugin, transfer: ^pl.AnalysisTransfer) {
-		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-		if idx < 0 || idx >= len(ctx.apis) {
-			return
-		}
-		api := ctx.apis[idx]
-		if api.do_analysis != nil {
-			api.do_analysis(plug, transfer)
-		}
-	}
-	buffer_draw :: proc(plug: ^pl.Plugin) {
-		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-		if idx < 0 || idx >= len(ctx.apis) {
-			return
-		}
-		api := ctx.apis[idx]
-		if api.draw != nil {
-			api.draw(plug)
-		}
-	}
 }

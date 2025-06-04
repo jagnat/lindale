@@ -1,4 +1,4 @@
-package plugin
+package platform
 
 import "base:runtime"
 import "base:intrinsics"
@@ -51,9 +51,11 @@ log_init :: proc(log_folder: string) {
 }
 
 log_exit :: proc() {
-	ctx.loggerRunning = false
-	thread.join(ctx.readerThread)
-	thread.destroy(ctx.readerThread)
+	if ctx.loggerRunning {
+		ctx.loggerRunning = false
+		thread.join(ctx.readerThread)
+		thread.destroy(ctx.readerThread)
+	}
 }
 
 get_logger :: proc(source: LogSource) -> runtime.Logger {

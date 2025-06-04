@@ -1,4 +1,4 @@
-package plugin
+package platform
 
 import "thirdparty/vst3"
 import "core:c"
@@ -14,11 +14,11 @@ import "base:runtime"
 import "base:builtin"
 import "core:log"
 import "core:time"
+import "core:sys/windows"
 
-//
 import "vendor:sdl3"
 
-import pl "hotloaded"
+import lin "lindale"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -28,43 +28,48 @@ LindalePluginFactory :: struct {
 	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
 	ctx: runtime.Context,
-	api: pl.PluginApi,
+	api: lin.PluginApi,
 }
 
 pluginFactory: LindalePluginFactory
 
-@export bundleEntry :: proc "system" (bundleRef: rawptr) -> c.bool {
-	return true
+when ODIN_OS == .Darwin {
+	@export bundleEntry :: proc "system" (bundleRef: rawptr) -> c.bool {
+		context = runtime.default_context()
+		return true
+	}
+
+	@export bundleExit :: proc "system" () -> c.bool {
+		context = pluginFactory.ctx
+		log.info("bundleExit")
+		deinit()
+		return true
+	}
+} else when ODIN_OS == .Linux {
+	@export ModuleEntry :: proc "system" () -> c.bool {
+		context = runtime.default_context()
+		log.info("ModuleEntry")
+		return true
+	}
+
+	@export ModuleExit :: proc "system" () -> c.bool {
+		context = pluginFactory.ctx
+		log.info("ModuleExit")
+		deinit()
+		return true
+	}
+} else when ODIN_OS == .Windows {
+	// @(fini)
+	// WindowsExit :: proc () {
+	// 	context = pluginFactory.ctx
+	// 	deinit()
+	// }
 }
 
-@export bundleExit :: proc "system" () -> c.bool {
-	context = runtime.default_context()
+deinit :: proc() {
+	log.info("Deinitializing")
+	hotload_deinit()
 	log_exit()
-	return true
-}
-
-@export InitModule :: proc "system" () -> c.bool {
-	context = runtime.default_context()
-	log.info("InitModule")
-	return true
-}
-
-@export InitDll :: proc "system" () -> c.bool {
-	context = runtime.default_context()
-	log.info("InitDll")
-	return true
-}
-
-@export DeinitModule :: proc "system" () -> c.bool {
-	context = runtime.default_context()
-	log.info("DeinitModule")
-	return true
-}
-
-@export ExitDll :: proc "system" () -> c.bool {
-	context = runtime.default_context()
-	log.info("ExitDll")
-	return true
 }
 
 LindaleProcessor :: struct {
@@ -78,7 +83,7 @@ LindaleProcessor :: struct {
 	// connectionPointVtable: vst3.IConnectionPointVtbl,
 	refCount: u32,
 
-	plugin: ^pl.Plugin,
+	plugin: ^lin.Plugin,
 
 	// controllerConnection: ^vst3.IConnectionPoint,
 	hostContext: ^vst3.FUnknown,
@@ -89,7 +94,7 @@ LindaleProcessor :: struct {
 	ctx: runtime.Context,
 }
 
-dirty_disgusting_global_analysis: pl.AnalysisTransfer
+dirty_disgusting_global_analysis: lin.AnalysisTransfer
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	log.info("createLindaleProcessor")
@@ -150,7 +155,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = get_logger(.Processor)
 
-	processor.plugin = pl.plugin_init({.Audio})
+	processor.plugin = lin.plugin_init({.Audio})
 
 	for i in 0..<len(processor.params.values) {
 		processor.params.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
@@ -412,7 +417,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 					out[s] = mix * squareVal + (1 - mix) * inVal
 					if c == 0 {
 						dirty_disgusting_global_analysis.buf[dirty_disgusting_global_analysis.writeIndex] = out[s]
-						dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % pl.ANALYSIS_BUFFER_SIZE
+						dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % lin.ANALYSIS_BUFFER_SIZE
 					}
 				}
 			}
@@ -469,7 +474,7 @@ LindaleController :: struct {
 
 	refCount: u32,
 
-	plugin: ^pl.Plugin,
+	plugin: ^lin.Plugin,
 
 	// Context
 	paramState: ParamState,
@@ -529,7 +534,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
 	}
 
-	controller.plugin = pl.plugin_init({.Controller})
+	controller.plugin = lin.plugin_init({.Controller})
 
 	return controller
 
@@ -722,7 +727,7 @@ LindaleView :: struct {
 	pluginViewVtable: vst3.IPlugViewVtbl,
 	refCount: u32,
 
-	plugin: ^pl.Plugin,
+	plugin: ^lin.Plugin,
 
 	ctx: runtime.Context,
 	renderThread: ^thread.Thread,
@@ -737,26 +742,26 @@ render_thread_proc :: proc(t: ^thread.Thread) {
 
 		if view.plugin != nil && view.plugin.render != nil {
 
-			buffer2: pl.AnalysisTransfer
+			buffer2: lin.AnalysisTransfer
 
 			{
-				buffer : pl.AnalysisTransfer = dirty_disgusting_global_analysis
+				buffer : lin.AnalysisTransfer = dirty_disgusting_global_analysis
 
 				// Re-linearize
-				firstLen := pl.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
+				firstLen := lin.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
 				copy(buffer2.buf[:firstLen], buffer.buf[buffer.writeIndex:])
 				copy(buffer2.buf[firstLen:], buffer.buf[:buffer.writeIndex])
 			}
 
-			// pl.plugin_do_analysis(view.plugin, &buffer2)
-			// pl.plugin_draw(view.plugin)
+			// lin.plugin_do_analysis(view.plugin, &buffer2)
+			// lin.plugin_draw(view.plugin)
 			pluginFactory.api.do_analysis(view.plugin, &buffer2)
 			pluginFactory.api.draw(view.plugin)
 		}
 	}
 }
 
-createLindaleView :: proc(view: ^LindaleView, plug: ^pl.Plugin) -> vst3.TResult {
+createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult {
 	view.pluginViewVtable = {
 		funknown = vst3.FUnknownVtbl {
 			queryInterface = lv_queryInterface,
@@ -854,7 +859,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^pl.Plugin) -> vst3.TResult 
 			}
 		}
 
-		pl.plugin_create_view(view.plugin, parent)
+		lin.plugin_create_view(view.plugin, parent)
 
 		if view.renderThread == nil {
 			view.renderThread = thread.create(render_thread_proc)
@@ -883,7 +888,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^pl.Plugin) -> vst3.TResult 
 			view.renderThread = nil
 		}
 
-		pl.plugin_remove_view(view.plugin)
+		lin.plugin_remove_view(view.plugin)
 
 		return vst3.kResultOk
 	}
@@ -955,7 +960,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^pl.Plugin) -> vst3.TResult 
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	log_init(string(cstring(sdl3.GetPrefPath("jagi", "Lindale"))))
+	log_init(get_config().runtimeFolderPath)
 	context.logger = get_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
@@ -1166,19 +1171,13 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^pl.Plugin) -> vst3.TResult 
 			return vst3.kResultOk
 		}
 
-
-
 		result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
 		if !result  {
 			log.error("Failed to initialize SDL: ", sdl3.GetError())
 			return nil
 		}
 
-		pluginFactory.api = hotload_init()
-		if pluginFactory.api.do_analysis == nil || pluginFactory.api.draw == nil {
-			log.error("Failed to initialize plugin API")
-			// return nil
-		}
+		pluginFactory.api = hotload_api()
 
 		pluginFactory.vtable.getFactoryInfo = pf_getFactoryInfo
 		pluginFactory.vtable.countClasses = pf_countClasses

@@ -1,4 +1,4 @@
-package plugin
+package platform
 
 import "core:math"
 import "core:fmt"

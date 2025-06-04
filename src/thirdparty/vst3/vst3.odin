@@ -26,7 +26,7 @@ SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
 			(byte)((l3 & 0xFF000000) >> 24), (byte)((l3 & 0x00FF0000) >> 16),
 			(byte)((l3 & 0x0000FF00) >>  8), (byte)((l3 & 0x000000FF)      ),
 			(byte)((l4 & 0xFF000000) >> 24), (byte)((l4 & 0x00FF0000) >> 16),
-			(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      ) 
+			(byte)((l4 & 0x0000FF00) >>  8), (byte)((l4 & 0x000000FF)      )
 		}
 	}
 }

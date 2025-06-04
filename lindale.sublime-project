@@ -69,7 +69,7 @@
 			},
 			"osx":
 			{
-				"shell_cmd": "sh ./build_hotreload_vst.command"
+				"shell_cmd": "sh ./build_hotload_vst.command"
 			}
 		},
 		{
