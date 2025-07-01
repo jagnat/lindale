@@ -69,7 +69,7 @@ when ODIN_OS == .Darwin {
 deinit :: proc() {
 	log.info("Deinitializing")
 	hotload_deinit()
-	log_exit()
+	mutex_log_exit()
 }
 
 LindaleProcessor :: struct {
@@ -147,7 +147,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.processContextRequirements.lpVtbl = &processor.processContextRequirementsVtable
 
 	processor.ctx = context
-	processor.ctx.logger = get_logger(.Processor)
+	processor.ctx.logger = get_mutex_logger(.Processor)
 
 	processor.plugin = lin.plugin_init({.Audio})
 
@@ -518,7 +518,7 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 
 	controller.ctx = context
-	controller.ctx.logger = get_logger(.Controller)
+	controller.ctx.logger = get_mutex_logger(.Controller)
 
 	for i in 0..<len(controller.paramState.values) {
 		controller.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
@@ -948,8 +948,8 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	log_init(get_config().runtimeFolderPath)
-	context.logger = get_logger(.PluginFactory)
+	mutex_log_init(get_config().runtimeFolderPath)
+	context.logger = get_mutex_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
 

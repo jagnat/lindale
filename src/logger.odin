@@ -13,6 +13,7 @@ import "core:testing"
 
 // Interface
 
+@(private="file") // temp disable
 log_init :: proc(log_folder: string) {
 	// automatically zeroed
 	ringBufs := make([]LogRingBuffer, len(LogSource))
@@ -50,6 +51,7 @@ log_init :: proc(log_folder: string) {
 	}
 }
 
+@(private="file") // temp disable
 log_exit :: proc() {
 	if ctx.loggerRunning {
 		ctx.loggerRunning = false
@@ -58,6 +60,7 @@ log_exit :: proc() {
 	}
 }
 
+@(private="file") // temp disable
 get_logger :: proc(source: LogSource) -> runtime.Logger {
 	return runtime.Logger{
 		logger_proc,
@@ -71,12 +74,12 @@ get_logger :: proc(source: LogSource) -> runtime.Logger {
 // Internal
 
 MAX_LOG_LENGTH :: 256
-LOG_BUFFER_COUNT :: 10
+LOG_BUFFER_COUNT :: 64
 FILE_BUFFER_SIZE :: 8192
 
 Log :: [MAX_LOG_LENGTH]u8
 
-LogSource :: enum {
+LogSource :: enum int {
 	Processor,
 	Controller,
 	PluginFactory,

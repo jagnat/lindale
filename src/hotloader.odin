@@ -154,7 +154,7 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 }
 
 _hotreload_thread_proc :: proc(t: ^thread.Thread) {
-	context.logger = get_logger(.HotReload)
+	context.logger = get_mutex_logger(.HotReload)
 
 	if !_load_api() do log.error("FAILED to load hotloaded dll on startup")
 
