@@ -417,7 +417,7 @@ render_draw_rects :: proc(ctx: ^RenderContext, scissor: bool = false) {
 	if scissor {
 		sdl.SetGPUScissor(ctx.renderPass, scissorRect)
 	} else {
-		sdl.SetGPUScissor(ctx.renderPass, fullScissorRect)
+		// sdl.SetGPUScissor(ctx.renderPass, fullScissorRect)
 	}
 	sdl.BindGPUGraphicsPipeline(ctx.renderPass, ctx.pipeline)
 	instanceBinding := sdl.GPUBufferBinding{buffer = ctx.instanceBuffer.handle, offset = 0}
