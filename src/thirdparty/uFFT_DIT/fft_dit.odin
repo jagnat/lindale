@@ -152,7 +152,7 @@ fft_reverse :: proc ( b : i32, /* float complex *buffers[2] */ buffers : [ 2 ][ 
 		delta : u32  = N >> uint( j )
 
 		for n : u32 = 0; n < N; n += delta {
-			phi : complex64 = complex64( complex( ( transmute( f32 ) revbits( u32( n ) / delta, j ) ) / ( transmute( f32) ( u32( 2 ) << uint( j ) ) ), 0.0 ) )
+			phi : complex64 = complex64( complex( f32 (revbits( u32( n ) / delta, j ) ) /  f32( ( u32( 2 ) << uint( j ) ) ), 0.0 ) )
 			buf_a := mem.ptr_offset( buffers[ b & 1 ], n )
 			buf_b := mem.ptr_offset( buffers[ ~ b & 1 ], n )
 			fft_split( buf_a, buf_b, delta, phi )
