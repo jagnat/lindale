@@ -19,6 +19,7 @@ import "core:sys/windows"
 import "vendor:sdl3"
 
 import lin "lindale"
+import plat "platform_specific"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -662,7 +663,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		if string(name) != vst3.ViewType_kEditor {
 			return nil
 		}
-		log.info("Editor opened")
+		log.info("createView: Editor opened")
 		createLindaleView(&controller.view, controller.plugin)
 		return &controller.view.pluginView
 	}
@@ -720,34 +721,35 @@ LindaleView :: struct {
 	plugin: ^lin.Plugin,
 
 	ctx: runtime.Context,
-	renderThread: ^thread.Thread,
-	renderThreadRunning: bool,
+	parent: rawptr,
+	timer: ^plat.Timer,
 }
 
-render_thread_proc :: proc(t: ^thread.Thread) {
-	view: ^LindaleView = cast(^LindaleView)t.data
+timer_proc :: proc (timer: ^plat.Timer) {
+	view := cast(^LindaleView)timer.data
 
-	for view.renderThreadRunning {
-		time.sleep(time.Millisecond * 5)
+	log.info("timer_proc")
 
-		if view.plugin != nil && view.plugin.render != nil {
+	event: sdl3.Event
+	view.plugin.flipColor = false
 
-			buffer2: lin.AnalysisTransfer
+	if view.plugin != nil && view.plugin.render != nil {
 
-			{
-				buffer : lin.AnalysisTransfer = dirty_disgusting_global_analysis
+		buffer2: lin.AnalysisTransfer
 
-				// Re-linearize
-				firstLen := lin.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
-				copy(buffer2.buf[:firstLen], buffer.buf[buffer.writeIndex:])
-				copy(buffer2.buf[firstLen:], buffer.buf[:buffer.writeIndex])
-			}
+		{
+			buffer : lin.AnalysisTransfer = dirty_disgusting_global_analysis
 
-			// lin.plugin_do_analysis(view.plugin, &buffer2)
-			// lin.plugin_draw(view.plugin)
-			pluginFactory.api.do_analysis(view.plugin, &buffer2)
-			pluginFactory.api.draw(view.plugin)
+			// Re-linearize
+			firstLen := lin.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
+			copy(buffer2.buf[:firstLen], buffer.buf[buffer.writeIndex:])
+			copy(buffer2.buf[firstLen:], buffer.buf[:buffer.writeIndex])
 		}
+
+		// lin.plugin_do_analysis(view.plugin, &buffer2)
+		// lin.plugin_draw(view.plugin)
+		pluginFactory.api.do_analysis(view.plugin, &buffer2)
+		pluginFactory.api.draw(view.plugin)
 	}
 }
 
@@ -773,6 +775,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 	view.pluginView.lpVtbl = &view.pluginViewVtable
 	view.ctx = context
 	view.plugin = plug
+	view.timer = plat.timer_create(30 /* ms */, timer_proc, view)
 
 	return vst3.kResultOk
 
@@ -849,16 +852,11 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 		lin.plugin_create_view(view.plugin, parent)
 
-		if view.renderThread == nil {
-			view.renderThread = thread.create(render_thread_proc)
-			if view.renderThread != nil {
-				view.renderThread.init_context = context
-				view.renderThread.data = view
-				view.renderThreadRunning = true
-				thread.start(view.renderThread)
-			}
+		if !plat.timer_running(view.timer) {
+			view.parent = parent
+			plat.timer_start(view.timer)
 		} else {
-			log.warn("Render thread already exists, not creating a new one")
+			log.info("Timer already running")
 		}
 
 		log.info("lv_attached created window")
@@ -869,11 +867,8 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		log.info("lv_removed")
 
-		if view.renderThread != nil && view.renderThreadRunning {
-			view.renderThreadRunning = false
-			thread.join(view.renderThread)
-			thread.destroy(view.renderThread)
-			view.renderThread = nil
+		if plat.timer_running(view.timer) {
+			plat.timer_stop(view.timer)
 		}
 
 		lin.plugin_remove_view(view.plugin)
@@ -1157,7 +1152,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			return vst3.kResultOk
 		}
 
-		result := sdl3.Init(sdl3.INIT_VIDEO | sdl3.INIT_AUDIO)
+		result := sdl3.Init(sdl3.INIT_VIDEO)
 		if !result {
 			log.error("Failed to initialize SDL: ", sdl3.GetError())
 			return nil

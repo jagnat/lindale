@@ -1,9 +1,11 @@
 package lindale
 
 import "base:runtime"
+import "core:fmt"
 import "core:log"
 import "core:math/linalg"
 import "core:math"
+import "core:math/rand"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
@@ -14,6 +16,8 @@ Plugin :: struct {
 	// UI / controller state
 	render: ^RenderContext,
 	draw: ^DrawContext,
+
+	flipColor: bool,
 
 	// Common state
 }
@@ -117,11 +121,15 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	MIN_FREQ : f32 : 20
 	MAX_FREQ : f32 : 22050
 
+	@(static) doLog := true
+
 	draw_clear(plug.draw)
 	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 		val := vec[i]
 		mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
-		adjusted := math.log2(mag + 1) / math.log2(f32(1025))
+		log2_plus_one := math.log2(mag + 1)
+		log2_1025 := math.log2(f32(1025))
+		adjusted := log2_plus_one / log2_1025
 		height := (adjusted * fft_height) + 5
 		freq := f32(i) * 44100.0 / ANALYSIS_BUFFER_SIZE
 		t := log_like_tween(i, 1024)
@@ -138,18 +146,24 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 		}
 		draw_push_rect(plug.draw, rect)
 	}
+	doLog = false
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
 	draw_upload(plug.draw)
+
 	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
 	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
 	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
 
+	choices := [?]ColorF32{{0.117647, 0.117647, 0.117647, 1}, {0.278, 0.216, 0.369, 1}, {0.278, 0.716, 0.369, 1}, {0.278, 0.716, 0.969, 1}}
+	@(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
+	// clearColor := rand.choice(choices[:])
+	if plug.flipColor do clearColor = rand.choice(choices[:])
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
-	clearColor := ColorF32_from_hex(0xff00ffff)
+	// clearColor := ColorF32_from_hex(0xff00ffff)
 	render_begin(plug.render, clearColor)
 	render_draw_rects(plug.render, false)
 	render_end(plug.render)
