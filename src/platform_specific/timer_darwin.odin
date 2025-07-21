@@ -44,16 +44,16 @@ foreign CF {
 	kCFRunLoopCommonModes : CFRunLoopMode
 }
 
+MacTimer :: struct {
+	callback: proc "c" (timer: CFTimerRef, info: rawptr),
+	timer: CFRunLoopTimerRef,
+}
+
 macTimerCallback :: proc "c" (timerRef: CFTimerRef, info: rawptr) {
 	timer := cast(^Timer)info
 	context = timer.ctx
 
 	timer->callback()
-}
-
-MacTimer :: struct {
-	callback: proc "c" (timer: CFTimerRef, info: rawptr),
-	timer: CFRunLoopTimerRef,
 }
 
 timer_create :: proc (periodMs: u32, callback: proc (timer: ^Timer), data: rawptr) -> ^Timer {
