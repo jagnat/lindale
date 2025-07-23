@@ -8,8 +8,8 @@ VST3 plugin written in Odin.
 
 ### TODO:
 - [ ] Fix SDL3 event loop on Mac, don't create our own render loop in a background thread
-- [ ] Extend hotloading:
-  - [ ] Move audio processing procedures into hotloaded code
+- [x] Extend hotloading:
+  - [x] Move audio processing procedures into hotloaded code
   - [ ] Add onHotLoad and onHotUnload handlers to plugin
   - [ ] Look into IComponentHandler::restartComponent for dynamic param configuration?
 - [ ] Make sure our allocators are set up correctly
