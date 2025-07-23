@@ -78,6 +78,7 @@ hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
 		do_analysis = buffer_do_analysis,
 		draw = buffer_draw,
+		process_audio = buffer_process_audio
 	}
 
 	return api
@@ -96,6 +97,14 @@ hotload_api :: proc() -> lin.PluginApi {
 			lin.plugin_draw(plug)
 		} else {
 			ctx.apis[idx].draw(plug)
+		}
+	}
+	buffer_process_audio :: proc(plug: ^lin.Plugin) {
+		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+			lin.plugin_process_audio(plug)
+		} else {
+			ctx.apis[idx].process_audio(plug)
 		}
 	}
 }

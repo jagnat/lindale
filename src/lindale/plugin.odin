@@ -10,8 +10,8 @@ import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
 Plugin :: struct {
-	// // Audio processor state
-	// processor: ^AudioProcessorContext,
+	// Audio processor state
+	audioProcessor: ^AudioProcessorContext,
 
 	// UI / controller state
 	render: ^RenderContext,
@@ -30,7 +30,8 @@ PluginComponent :: enum {
 
 PluginApi :: struct {
 	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
-	draw : proc(plug: ^Plugin)
+	draw : proc(plug: ^Plugin),
+	process_audio : proc(plug: ^Plugin),
 }
 
 // TODO: HACK for demo, not threadsafe, doesn't support multiple instances
@@ -39,6 +40,7 @@ AnalysisTransfer :: struct {
 	buf: [ANALYSIS_BUFFER_SIZE]f32,
 	writeIndex: int,
 }
+dirty_disgusting_global_analysis: AnalysisTransfer
 
 HOT_DLL :: #config(HOT_DLL, false)
 
@@ -47,6 +49,7 @@ when HOT_DLL {
 		return PluginApi{
 			do_analysis = plugin_do_analysis,
 			draw = plugin_draw,
+			process_audio = plugin_process_audio,
 		}
 	}
 }
@@ -57,11 +60,11 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 	error := false
 	defer if error do free(plugin)
 
-	// if .Audio in components {
-	// 	plugin.processor = new(AudioProcessorContext)
-	// 	if plugin.processor == nil do error = true
-	// }
-	// defer if error && plugin.processor != nil do free(plugin.processor)
+	if .Audio in components {
+		plugin.audioProcessor = new(AudioProcessorContext)
+		if plugin.audioProcessor == nil do error = true
+	}
+	defer if error && plugin.audioProcessor != nil do free(plugin.audioProcessor)
 
 	if .Controller in components {
 		plugin.render = new(RenderContext)
@@ -174,5 +177,44 @@ plugin_param_changed :: proc(plug: ^Plugin, paramName: string) {
 }
 
 plugin_process_audio :: proc(plug: ^Plugin) {
-	
+	audioContext := plug.audioProcessor
+	if audioContext == nil do return
+
+	freq := norm_to_param(audioContext.lastParamState.values[.Freq], ParamTable[.Freq].range)
+	// freq : f64 = 666
+	samplesPerHalfPeriod := cast(i32)(audioContext.sampleRate / (2 * freq))
+
+	mix := f32(audioContext.lastParamState.values[.Mix]) // keep mix normalized, 0 to 1
+
+	@(static) squarePhase : i32 = 0
+
+	outputs := audioContext.outputBuffers
+	inputs := audioContext.inputBuffers
+
+	// Generate output buffer, iterate samples TODO: should be done channel first?
+	for s in 0..< len(outputs[0].buffers32[0]) {
+		AMPLITUDE :: 0.01
+		squareVal : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
+		squarePhase += 1
+		if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
+
+		for i in 0 ..< len(outputs) {
+			outputBufs := outputs[i].buffers32
+			numChannels := len(outputs[i].buffers32)
+			inputBufs := inputs[i].buffers32
+
+			for c in 0..<numChannels {
+				inVal : f32 = 0
+				if len(inputs) > 0 && len(inputs[i].buffers32) > c {
+					inVal = inputs[i].buffers32[c][s]
+				}
+				out := outputBufs[c]
+				out[s] = mix * squareVal + (1 - mix) * inVal
+				if c == 0 {
+					dirty_disgusting_global_analysis.buf[dirty_disgusting_global_analysis.writeIndex] = out[s]
+					dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % ANALYSIS_BUFFER_SIZE
+				}
+			}
+		}
+	}
 }

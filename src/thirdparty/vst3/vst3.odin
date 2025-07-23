@@ -327,6 +327,22 @@ Chord :: struct {
 	rootNote: u8,
 	chordMask: i16,
 }
+ProcessingStatesFlagsSet :: bit_set[ProcessingStatesFlags]
+ProcessingStatesFlags :: enum u32 {
+	kPlaying = 1,
+	kCycleActive = 2,
+	kRecording = 3,
+	kSystemTimeValid = 8,
+	kContTimeValid = 17,
+	kProjectTimeMusicValid = 9,
+	kBarPositionValid = 11,
+	kCycleValid = 12,
+	kTempoValid = 10,
+	kTimeSigValid = 13,
+	kChordValid = 18,
+	kSmpteValid = 14,
+	kClockValid = 15,
+}
 
 ProcessContext :: struct {
 	state: u32,

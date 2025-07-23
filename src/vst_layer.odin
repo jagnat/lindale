@@ -90,12 +90,10 @@ LindaleProcessor :: struct {
 	hostContext: ^vst3.FUnknown,
 
 	// Context
-	params: ParamState,
+	params: lin.ParamState,
 	sampleRate: f64,
 	ctx: runtime.Context,
 }
-
-dirty_disgusting_global_analysis: lin.AnalysisTransfer
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	log.info("createLindaleProcessor")
@@ -152,8 +150,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	processor.plugin = lin.plugin_init({.Audio})
 
-	for i in 0..<len(processor.params.values) {
-		processor.params.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
+	for i in lin.ParamID {
+		processor.params.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
 	}
 
 	return processor
@@ -359,64 +357,100 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 
 		numSamples := data.numSamples
+		numInputs := data.numInputs
 		numOutputs := data.numOutputs
 		outputs := data.outputs
 		inputs := data.inputs
 
+		// TODO: Dynamically allocate?
+		groups: [32]lin.AudioBufferGroup
+		channelSlices: [64][]u8 // we will cast slice to the right type later
+		paramChanges: [lin.ParamID][64]lin.ParameterChange
+		channelSliceBumpIdx: i32
+
+		audioContext := processor.plugin.audioProcessor
+		audioContext.sampleRate = data.processContext.sampleRate
+		audioContext.projectTimeSamples = data.processContext.projectTimeSamples
+		audioContext.lastParamState = processor.params
+
 		// Fetch parameter updates
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
 			paramCount := data.inputParameterChanges->getParameterCount()
-
 			for i in 0..<paramCount {
 				paramQueue := data.inputParameterChanges->getParameterData(i)
 				if paramQueue != nil && paramQueue.lpVtbl != nil {
-					paramId := paramQueue->getParameterId()
+					paramId := cast(lin.ParamID)(paramQueue->getParameterId())
 					pointCount := paramQueue->getPointCount()
 					if pointCount > 0 {
-						sampleOffs: i32
-						normParam : f64
-						result := paramQueue->getPoint(pointCount - 1, &sampleOffs, &normParam)
-						if result == vst3.kResultOk {
-							processor.params.values[paramId] = normParam
+						actualCount := 0
+						for i in 0..< pointCount {
+							sampleOffs: i32
+							normParam : f64
+							result := paramQueue->getPoint(i, &sampleOffs, &normParam)
+							if result == vst3.kResultOk {
+								processor.params.values[paramId] = normParam
+								paramChanges[paramId][actualCount] = lin.ParameterChange {
+									sampleOffset = sampleOffs,
+									value = normParam,
+								}
+								actualCount += 1
+							}
 						}
+						audioContext.paramChanges[paramId] = paramChanges[paramId][:actualCount]
 					}
 				}
 			}
 		}
 
-		freq := norm_to_param(processor.params.values[2], ParamTable[2].range)
-		samplesPerHalfPeriod := cast(i32)(processor.sampleRate / (2 * freq))
+		audioContext.inputBuffers = groups[:numInputs]
+		audioContext.outputBuffers = groups[numInputs:numInputs + numOutputs]
 
-		mix := f32(processor.params.values[1]) // keep mix normalized, 0 to 1
+		// Convert input buffers to slices
+		for i in 0..< numInputs {
+			input := inputs[i]
+			inputChannelCount := input.numChannels
+			audioContext.inputBuffers[i].silenceFlags = input.silenceFlags
+			audioContext.inputBuffers[i].sampleSize = data.symbolicSampleSize == .Sample32? .F32 : .F64
+			channels := channelSlices[channelSliceBumpIdx:channelSliceBumpIdx+inputChannelCount]
+			channelSliceBumpIdx += inputChannelCount
 
-		@(static) squarePhase : i32 = 0
-
-		// Generate output buffer
-		for s in 0..< numSamples {
-			AMPLITUDE :: 0.01
-			squareVal : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
-			squarePhase += 1
-			if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
-
-			for i in 0 ..< numOutputs {
-				outputBufs := outputs[i].channelBuffers32
-				numChannels := outputs[i].numChannels
-				inputBufs := inputs[i].channelBuffers32
-
-				for c in 0..<numChannels {
-					inVal : f32 = 0
-					if data.numInputs > 0 && inputs[i].numChannels > c {
-						inVal = inputs[i].channelBuffers32[c][s]
-					}
-					out := outputBufs[c]
-					out[s] = mix * squareVal + (1 - mix) * inVal
-					if c == 0 {
-						dirty_disgusting_global_analysis.buf[dirty_disgusting_global_analysis.writeIndex] = out[s]
-						dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % lin.ANALYSIS_BUFFER_SIZE
-					}
+			if data.symbolicSampleSize == .Sample32 {
+				audioContext.inputBuffers[i].buffers32 = transmute([][]f32)channels
+				for j in 0..<inputChannelCount {
+					audioContext.inputBuffers[i].buffers32[j] = input.channelBuffers32[j][:data.numSamples]
+				}
+			} else {
+				audioContext.inputBuffers[i].buffers64 = transmute([][]f64)channels
+				for j in 0..<inputChannelCount {
+					audioContext.inputBuffers[i].buffers64[j] = input.channelBuffers64[j][:data.numSamples]
 				}
 			}
 		}
+
+		// Convert output buffers to slices
+		for i in 0..< numOutputs {
+			output := outputs[i]
+			outputChannelCount := output.numChannels
+			audioContext.outputBuffers[i].silenceFlags = output.silenceFlags
+			audioContext.outputBuffers[i].sampleSize = data.symbolicSampleSize == .Sample32? .F32 : .F64
+			channels := channelSlices[channelSliceBumpIdx:channelSliceBumpIdx+outputChannelCount]
+			channelSliceBumpIdx += outputChannelCount
+
+			if data.symbolicSampleSize == .Sample32 {
+				audioContext.outputBuffers[i].buffers32 = transmute([][]f32)channels
+				for j in 0..<outputChannelCount {
+					audioContext.outputBuffers[i].buffers32[j] = output.channelBuffers32[j][:data.numSamples]
+				}
+			} else {
+				audioContext.outputBuffers[i].buffers64 = transmute([][]f64)channels
+				for j in 0..<outputChannelCount {
+					audioContext.outputBuffers[i].buffers64[j] = output.channelBuffers64[j][:data.numSamples]
+				}
+			}
+		}
+
+		// Invoke hot-loaded audio process function
+		pluginFactory.api.process_audio(processor.plugin)
 
 		return vst3.kResultOk
 	}
@@ -472,7 +506,7 @@ LindaleController :: struct {
 	plugin: ^lin.Plugin,
 
 	// Context
-	paramState: ParamState,
+	paramState: lin.ParamState,
 	ctx: runtime.Context,
 	view: LindaleView,
 }
@@ -521,8 +555,8 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.ctx = context
 	controller.ctx.logger = get_mutex_logger(.Controller)
 
-	for i in 0..<len(controller.paramState.values) {
-		controller.paramState.values[i] = param_to_norm(ParamTable[i].range.defaultValue, ParamTable[i].range)
+	for i in lin.ParamID {
+		controller.paramState.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
 	}
 
 	controller.plugin = lin.plugin_init({.Controller})
@@ -585,29 +619,31 @@ createLindaleController :: proc () -> ^LindaleController {
 		return vst3.kResultOk
 	}
 	lc_ec_getParameterCount :: proc "system" (this: rawptr) -> i32 {
-		return len(ParamTable)
+		return len(lin.ParamTable)
 	}
 	lc_ec_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
-		if paramIndex >= len(ParamTable) {
+		if paramIndex >= len(lin.ParamTable) {
 			return vst3.kInvalidArgument
 		}
 
-		paramInfo := ParamTable[paramIndex]
+		paramId := cast(lin.ParamID)paramIndex
+
+		paramInfo := lin.ParamTable[paramId]
 
 		info^ = vst3.ParameterInfo {
-			id = paramInfo.id,
+			id = cast(u32)paramId,
 			stepCount = paramInfo.range.stepCount,
-			defaultNormalizedValue = param_to_norm(paramInfo.range.defaultValue, paramInfo.range),
+			defaultNormalizedValue = lin.param_to_norm(paramInfo.range.defaultValue, paramInfo.range),
 			unitId = vst3.kRootUnitId,
 			flags = {.kCanAutomate,},
 		}
 
 		utf16.encode_string(info.title[:], paramInfo.name)
 		utf16.encode_string(info.shortTitle[:], paramInfo.shortName)
-		utf16.encode_string(info.units[:], ParamUnitTypeStrings[paramInfo.range.unit])
+		utf16.encode_string(info.units[:], lin.ParamUnitTypeStrings[paramInfo.range.unit])
 
 		return vst3.kResultOk
 	}
@@ -615,9 +651,11 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
+		paramId := cast(lin.ParamID)id
+
 		buffer: [128]u8
-		paramVal := norm_to_param(valueNormalized, ParamTable[id].range)
-		print_param_to_buf(&buffer, paramVal, ParamTable[id])
+		paramVal := lin.norm_to_param(valueNormalized, lin.ParamTable[paramId].range)
+		print_param_to_buf(&buffer, paramVal, lin.ParamTable[paramId])
 		utf16.encode_string(str[:128], string(buffer[:128]))
 
 		return vst3.kResultOk
@@ -626,10 +664,12 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
+		paramId := cast(lin.ParamID)id
+
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
 		paramVal := get_param_from_buf(&buffer)
-		valueNormalized^ = param_to_norm(paramVal, ParamTable[id].range)
+		valueNormalized^ = lin.param_to_norm(paramVal, lin.ParamTable[paramId].range)
 
 		return vst3.kResultOk
 	}
@@ -646,12 +686,14 @@ createLindaleController :: proc () -> ^LindaleController {
 	lc_ec_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		return controller.paramState.values[id]
+		paramId := cast(lin.ParamID)id
+		return controller.paramState.values[paramId]
 	}
 	lc_ec_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		controller.paramState.values[id] = value
+		paramId := cast(lin.ParamID)id
+		controller.paramState.values[paramId] = value
 		return vst3.kResultOk
 	}
 	lc_ec_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
@@ -738,7 +780,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 		buffer2: lin.AnalysisTransfer
 
 		{
-			buffer : lin.AnalysisTransfer = dirty_disgusting_global_analysis
+			buffer : lin.AnalysisTransfer = lin.dirty_disgusting_global_analysis
 
 			// Re-linearize
 			firstLen := lin.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
