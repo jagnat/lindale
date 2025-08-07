@@ -172,10 +172,6 @@ plugin_draw :: proc(plug: ^Plugin) {
 	render_end(plug.render)
 }
 
-plugin_param_changed :: proc(plug: ^Plugin, paramName: string) {
-
-}
-
 plugin_process_audio :: proc(plug: ^Plugin) {
 	audioContext := plug.audioProcessor
 	if audioContext == nil do return

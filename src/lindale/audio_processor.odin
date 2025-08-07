@@ -22,7 +22,7 @@ ParameterChange :: struct {
 AudioProcessorContext :: struct {
 	inputBuffers: []AudioBufferGroup,
 	outputBuffers: []AudioBufferGroup,
-	
+
 	paramChanges: [ParamID][]ParameterChange,
 	lastParamState: ParamState,
 
@@ -30,3 +30,4 @@ AudioProcessorContext :: struct {
 	sampleRate: f64,
 	projectTimeSamples: i64,
 }
+

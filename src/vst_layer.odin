@@ -655,7 +655,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		buffer: [128]u8
 		paramVal := lin.norm_to_param(valueNormalized, lin.ParamTable[paramId].range)
-		print_param_to_buf(&buffer, paramVal, lin.ParamTable[paramId])
+		lin.vst3_print_param_to_buf(&buffer, paramVal, lin.ParamTable[paramId])
 		utf16.encode_string(str[:128], string(buffer[:128]))
 
 		return vst3.kResultOk
@@ -668,7 +668,7 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
-		paramVal := get_param_from_buf(&buffer)
+		paramVal := lin.vst3_get_param_from_buf(&buffer)
 		valueNormalized^ = lin.param_to_norm(paramVal, lin.ParamTable[paramId].range)
 
 		return vst3.kResultOk
@@ -770,10 +770,12 @@ LindaleView :: struct {
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 
-	log.info("timer_proc")
-
 	event: sdl3.Event
 	view.plugin.flipColor = false
+
+	for sdl3.PollEvent(&event) {
+		log.info("event with type: ", event.type)
+	}
 
 	if view.plugin != nil && view.plugin.render != nil {
 

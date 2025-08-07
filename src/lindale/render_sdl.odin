@@ -60,15 +60,6 @@ RectInstance :: struct #packed {
 
 render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
 
-	sdl.SetEventEnabled(.KEY_DOWN, false)
-	sdl.SetEventEnabled(.KEY_UP, false)
-	sdl.SetEventEnabled(.MOUSE_MOTION, false)
-	sdl.SetEventEnabled(.MOUSE_BUTTON_DOWN, false)
-	sdl.SetEventEnabled(.MOUSE_WHEEL, false)
-	sdl.SetEventEnabled(.MOUSE_BUTTON_UP, false)
-	sdl.SetEventEnabled(.MOUSE_ADDED, false)
-	sdl.SetEventEnabled(.MOUSE_REMOVED, false)
-
 	if ctx.initialized && ctx.window != nil {
 		sdl.ShowWindow(ctx.window)
 		return
@@ -99,7 +90,7 @@ render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
 	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
 	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
 
-	sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN, false)
+	// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN, false)
 	// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_MOUSE_GRABBED_BOOLEAN)
 	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_FLAGS_NUMBER, i64(sdl.WINDOW_EXTERNAL))
 
@@ -183,9 +174,8 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	ctx.sampler = sdl.CreateGPUSampler(ctx.gpu, sci)
 	assert(ctx.sampler != nil)
 
-	ctx.uniforms.samplerAlphaChannel = {0, 0, 0, 1}
-	ctx.uniforms.samplerFillChannels = {}
-
+	render_set_sampler_channels(ctx, {0, 0, 0, 1}, {})
+	
 	sdl.ShowWindow(ctx.window)
 
 	return ctx
