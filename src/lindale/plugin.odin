@@ -153,7 +153,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
-	draw_upload(plug.draw)
+	// draw_upload(plug.draw)
 
 	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
 	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
@@ -167,9 +167,11 @@ plugin_draw :: proc(plug: ^Plugin) {
 	if plug.flipColor do clearColor = rand.choice(choices[:])
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
 	// clearColor := ColorF32_from_hex(0xff00ffff)
-	render_begin(plug.render, clearColor)
-	render_draw_rects(plug.render, false)
-	render_end(plug.render)
+	// render_begin(plug.render, clearColor)
+	// render_draw_rects(plug.render, false)
+	// render_end(plug.render)
+
+	draw_submit(plug.draw)
 }
 
 plugin_process_audio :: proc(plug: ^Plugin) {

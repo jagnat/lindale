@@ -46,7 +46,9 @@ GraphicsBuffer :: struct {
 Texture2D :: struct {
 	texHandle: ^sdl.GPUTexture,
 	w, h: u32,
-	bytesPerPixel: u32
+	bytesPerPixel: u32,
+	samplerAlphaChannel: Vec4f,
+	samplerFillChannels: Vec4f,
 }
 
 RectInstance :: struct #packed {

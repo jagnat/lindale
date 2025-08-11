@@ -794,6 +794,8 @@ timer_proc :: proc (timer: ^plat.Timer) {
 		// lin.plugin_draw(view.plugin)
 		pluginFactory.api.do_analysis(view.plugin, &buffer2)
 		pluginFactory.api.draw(view.plugin)
+
+		free_all(context.temp_allocator)
 	}
 }
 
