@@ -20,6 +20,9 @@ Plugin :: struct {
 	flipColor: bool,
 
 	// Common state
+
+	// TODO: DELETE GROSS
+	gross_global_glob: AnalysisTransfer
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -40,7 +43,6 @@ AnalysisTransfer :: struct {
 	buf: [ANALYSIS_BUFFER_SIZE]f32,
 	writeIndex: int,
 }
-dirty_disgusting_global_analysis: AnalysisTransfer
 
 HOT_DLL :: #config(HOT_DLL, false)
 
@@ -209,8 +211,8 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 				out := outputBufs[c]
 				out[s] = mix * squareVal + (1 - mix) * inVal
 				if c == 0 {
-					dirty_disgusting_global_analysis.buf[dirty_disgusting_global_analysis.writeIndex] = out[s]
-					dirty_disgusting_global_analysis.writeIndex = (dirty_disgusting_global_analysis.writeIndex + 1) % ANALYSIS_BUFFER_SIZE
+					plug.gross_global_glob.buf[plug.gross_global_glob.writeIndex] = out[s]
+					plug.gross_global_glob.writeIndex = (plug.gross_global_glob.writeIndex + 1) % ANALYSIS_BUFFER_SIZE
 				}
 			}
 		}

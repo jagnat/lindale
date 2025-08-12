@@ -154,6 +154,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.params.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
 	}
 
+	gross_global_buffer_ptr = &processor.plugin.gross_global_glob
+
 	return processor
 
 	// Universal LindaleProcessor queryInterface
@@ -767,6 +769,8 @@ LindaleView :: struct {
 	timer: ^plat.Timer,
 }
 
+gross_global_buffer_ptr: ^lin.AnalysisTransfer
+
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 
@@ -781,13 +785,12 @@ timer_proc :: proc (timer: ^plat.Timer) {
 
 		buffer2: lin.AnalysisTransfer
 
-		{
-			buffer : lin.AnalysisTransfer = lin.dirty_disgusting_global_analysis
+		if gross_global_buffer_ptr != nil {
 
 			// Re-linearize
-			firstLen := lin.ANALYSIS_BUFFER_SIZE - buffer.writeIndex
-			copy(buffer2.buf[:firstLen], buffer.buf[buffer.writeIndex:])
-			copy(buffer2.buf[firstLen:], buffer.buf[:buffer.writeIndex])
+			firstLen := lin.ANALYSIS_BUFFER_SIZE - gross_global_buffer_ptr.writeIndex
+			copy(buffer2.buf[:firstLen], gross_global_buffer_ptr.buf[gross_global_buffer_ptr.writeIndex:])
+			copy(buffer2.buf[firstLen:], gross_global_buffer_ptr.buf[:gross_global_buffer_ptr.writeIndex])
 		}
 
 		// lin.plugin_do_analysis(view.plugin, &buffer2)
