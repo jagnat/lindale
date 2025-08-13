@@ -71,7 +71,11 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
 	float4 outputColor = input.color;
-	float4 sampleColor = tex.sample(sampl, input.uv);
+	float noTexture = input.params.y;
+	float4 sampleColor = float4(1.0, 1.0, 1.0, 1.0);
+	if (noTexture < 1) {
+		sampleColor = tex.sample(sampl, input.uv);
+	}
 	float sampleAlpha = dot(sampleColor, uniformBuffer.samplerAlphaChannel);
 	outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
 

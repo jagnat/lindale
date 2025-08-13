@@ -390,12 +390,6 @@ render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}) {
 	assert(result == true)
 	assert(swapchainTexture != nil)
 
-
-	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
-	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
-	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
-	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
-
 	targetInfo: sdl.GPUColorTargetInfo
 	targetInfo.texture = swapchainTexture
 	targetInfo.clear_color = sdl.FColor(clearColor)

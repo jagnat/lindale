@@ -82,7 +82,10 @@ VSOutput VSMain(VSInput input) {
 
 float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 outputColor = input.color;
-	float4 sampleColor = tex.Sample(sampl, input.uv);
+	float4 sampleColor = float4(1, 1, 1, 1)
+	if (input.params.y < 1) {
+		sampleColor = tex.Sample(sampl, input.uv);
+	}
 	float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
 	outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
 

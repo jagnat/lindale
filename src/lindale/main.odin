@@ -86,7 +86,7 @@ init :: proc() -> (^RenderContext, ^DrawContext) {
 
 	render_resize(ctx, WINDOW_WIDTH, WINDOW_HEIGHT)
 
-	font_init()
+	font_init(&drawCtx.fontState)
 
 	draw_init(drawCtx)
 

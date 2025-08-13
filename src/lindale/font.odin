@@ -14,21 +14,18 @@ FontState :: struct {
 	fontContext: fs.FontContext,
 }
 
-@(private="file")
-ctx: FontState
-
-font_init :: proc() {
+font_init :: proc(ctx: ^FontState) {
 
 	fs.Init(&ctx.fontContext, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE, .TOPLEFT)
 
 	fs.AddFontMem(&ctx.fontContext, "Noto Sans", font_NotoSans, false)
 }
 
-font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
+font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []RectInstance) -> int {
 	state := fs.__getState(&ctx.fontContext)
 	state.size = 22
 
-	iter := fs.TextIterInit(&ctx.fontContext, 300, 300, text)
+	iter := fs.TextIterInit(&ctx.fontContext, x, y, text)
 
 	i := 0
 
@@ -52,7 +49,7 @@ font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 	return i
 }
 
-font_get_atlas :: proc() -> []byte {
+font_get_atlas :: proc(ctx: ^FontState) -> []byte {
 	return ctx.fontContext.textureData
 }
 

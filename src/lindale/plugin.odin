@@ -173,6 +173,9 @@ plugin_draw :: proc(plug: ^Plugin) {
 	// render_draw_rects(plug.render, false)
 	// render_end(plug.render)
 
+	draw_text(plug.draw, "this is a test", 100, 100)
+
+	draw_set_clear_color(plug.draw, clearColor)
 	draw_submit(plug.draw)
 }
 
