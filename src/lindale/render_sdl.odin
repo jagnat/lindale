@@ -58,6 +58,8 @@ RectInstance :: struct #packed {
 	uv1: [2]f32, // Bottom right
 	color: ColorU8, // rect color
 	cornerRad: f32, // corner radiustc
+	noTexture: f32, // 
+	_pad: f32, // Ignored
 }
 
 render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
@@ -226,7 +228,7 @@ render_init_rect_pipeline :: proc(ctx: ^RenderContext, vertexShader, pixelShader
 	vaDesc[2] = sdl.GPUVertexAttribute{location = 2, offset = 4 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[3] = sdl.GPUVertexAttribute{location = 3, offset = 6 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[4] = sdl.GPUVertexAttribute{location = 4, offset = 8 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 9 * size_of(f32), buffer_slot = 0, format = .FLOAT}
+	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 9 * size_of(f32), buffer_slot = 0, format = .FLOAT3}
 	vertexInputState.num_vertex_attributes = 6
 
 	vertexInputState.num_vertex_buffers = 1

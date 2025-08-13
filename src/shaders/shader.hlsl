@@ -21,7 +21,7 @@ struct VSInput {
 	[[vk::location(2)]] float2 uv0 : TEXCOORD0;
 	[[vk::location(3)]] float2 uv1 : TEXCOORD1;
 	[[vk::location(4)]] float4 color : COLOR;
-	[[vk::location(5)]] float cornerRad : CORNER;
+	[[vk::location(5)]] float3 params : PARAMS; // (cornerRad, noTexture, padding)
 	uint vertexId : SV_VertexID; // TL, BL, TR, BR
 };
 
@@ -31,7 +31,7 @@ struct VSOutput {
 	float2 rectPos : RECTPOS;
 	nointerpolation float2 halfRectSize: RECTSZ;
 	nointerpolation float4 color : COLOR;
-	nointerpolation float cornerRad : CORNER;
+	nointerpolation float3 params : PARAMS;
 };
 
 float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
@@ -75,7 +75,7 @@ VSOutput VSMain(VSInput input) {
 	output.halfRectSize = (input.pos1 - input.pos0) / 2;
 	output.rectPos = rectMult * output.halfRectSize;
 	output.color = input.color;
-	output.cornerRad = input.cornerRad;
+	output.params = input.params;
 
 	return output;
 }
@@ -87,7 +87,7 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 	outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
-	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);
+	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.params.x);
 	float mixFactor = smoothstep(-0.75f, 0.75f, sdf);
 	outputColor.a *= 1.0f - mixFactor;
 

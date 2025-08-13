@@ -41,7 +41,9 @@ font_get_text_quads :: proc(text: string, rects: []RectInstance) -> int {
 			{quad.s0, quad.t0},
 			{quad.s1, quad.t1},
 			{}, // Color
-			0 // Corner Radius
+			0, // Corner Radius
+			0, // Not white texture
+			0, // Padding
 		}
 		rects[i] = instance
 		i += 1

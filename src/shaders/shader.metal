@@ -14,7 +14,7 @@ struct VSInput {
 	float2 uv0 [[attribute(2)]];
 	float2 uv1 [[attribute(3)]];
 	float4 color [[attribute(4)]];
-	float cornerRad [[attribute(5)]];
+	float3 params [[attribute(5)]]; // (cornerRad, noTexture, padding)
 };
 
 struct VSOutput {
@@ -23,7 +23,7 @@ struct VSOutput {
 	float2 rectPos;
 	float2 halfRectSize [[flat]];
 	float4 color [[flat]];
-	float cornerRad [[flat]];
+	float3 params [[flat]];
 };
 
 float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
@@ -64,7 +64,7 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	output.halfRectSize = (input.pos1 - input.pos0) / 2.0;
 	output.rectPos = rectMult * output.halfRectSize;
 	output.color = input.color;
-	output.cornerRad = input.cornerRad;
+	output.params = input.params;
 
 	return output;
 }
@@ -76,7 +76,7 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 	outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
-	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.cornerRad);
+	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.params.x);
 	float mixFactor = smoothstep(-0.75, 0.75, sdf);
 	outputColor.a *= 1.0 - mixFactor;
 
