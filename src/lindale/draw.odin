@@ -288,8 +288,12 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32) {
 		draw_push_instance(ctx, rect)
 	}
 
-	render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
-	render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
+	// render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
 
-	render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
+	dirtyRect := &ctx.fontState.fontContext.dirtyRect
+
+	if font_is_texture_dirty(&ctx.fontState) {
+		render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
+		font_reset_dirty_flag(&ctx.fontState)
+	}
 }

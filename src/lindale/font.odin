@@ -53,6 +53,14 @@ font_get_atlas :: proc(ctx: ^FontState) -> []byte {
 	return ctx.fontContext.textureData
 }
 
+font_is_texture_dirty :: proc(ctx: ^FontState) -> bool {
+	// dirty flag isn't properly set by fontstash, so we do the check this way
+	return ctx.fontContext.dirtyRect[0] < ctx.fontContext.dirtyRect[2] && ctx.fontContext.dirtyRect[1] < ctx.fontContext.dirtyRect[3]
+}
+
+font_reset_dirty_flag :: proc(ctx: ^FontState) {
+	fs.__dirtyRectReset(&ctx.fontContext)
+}
 
 __fs_resize :: proc(data: rawptr, w, h: int) {
 	fmt.println("HERE>")
