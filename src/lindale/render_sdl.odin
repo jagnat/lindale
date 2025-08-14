@@ -380,7 +380,7 @@ render_create_texture_from_file :: proc(ctx: ^RenderContext, file: []u8) -> Text
 	return tex
 }
 
-render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}) {
+render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}, clear: bool = false) {
 	ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
 	assert(ctx.cmdBuf != nil)
 
@@ -393,20 +393,21 @@ render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}) {
 	targetInfo: sdl.GPUColorTargetInfo
 	targetInfo.texture = swapchainTexture
 	targetInfo.clear_color = sdl.FColor(clearColor)
-	targetInfo.load_op = .CLEAR
+	targetInfo.load_op = clear? .CLEAR : .LOAD
 	targetInfo.store_op = .STORE
 
 	ctx.renderPass = sdl.BeginGPURenderPass(ctx.cmdBuf, &targetInfo, 1, nil)
 }
 
-render_draw_rects :: proc(ctx: ^RenderContext, scissor: bool = false) {
-	scissorRect := sdl.Rect{x = 100, y = 100, w = i32(ctx.width - 200), h = i32(ctx.height - 200)}
-	fullScissorRect := sdl.Rect{x = 0, y = 0, w = i32(ctx.width), h = i32(ctx.height)}
-	if scissor {
-		sdl.SetGPUScissor(ctx.renderPass, scissorRect)
-	} else {
-		// sdl.SetGPUScissor(ctx.renderPass, fullScissorRect)
+render_set_scissor :: proc(ctx: ^RenderContext, rect: RectI32) {
+	sdlRect := sdl.Rect{x = rect.x, y = rect.y, w = rect.w, h = rect.h}
+	if rect.x == 0 && rect.y == 0 && rect.w == 0 && rect.h == 0 {
+		return
 	}
+	sdl.SetGPUScissor(ctx.renderPass, sdlRect)
+}
+
+render_draw_rects :: proc(ctx: ^RenderContext) {
 	sdl.BindGPUGraphicsPipeline(ctx.renderPass, ctx.pipeline)
 	instanceBinding := sdl.GPUBufferBinding{buffer = ctx.instanceBuffer.handle, offset = 0}
 	sdl.BindGPUVertexBuffers(ctx.renderPass, 0, &instanceBinding, 1)

@@ -129,6 +129,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	@(static) doLog := true
 
 	draw_clear(plug.draw)
+	draw_set_scissor(plug.draw, RectI32{i32(startX), 300, i32(endX - startX), 400})
 	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 		val := vec[i]
 		mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
@@ -155,8 +156,6 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
-	// draw_upload(plug.draw)
-
 	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
 	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
@@ -169,10 +168,8 @@ plugin_draw :: proc(plug: ^Plugin) {
 	if plug.flipColor do clearColor = rand.choice(choices[:])
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
 	// clearColor := ColorF32_from_hex(0xff00ffff)
-	// render_begin(plug.render, clearColor)
-	// render_draw_rects(plug.render, false)
-	// render_end(plug.render)
 
+	draw_remove_scissor(plug.draw)
 	draw_text(plug.draw, "this is a test", 100, 100)
 
 	draw_set_clear_color(plug.draw, clearColor)

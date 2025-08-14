@@ -45,7 +45,7 @@ main :: proc() {
 		draw_upload(draw)
 
 		render_begin(render)
-		render_draw_rects(render, true)
+		render_draw_rects(render)
 		render_end(render)
 
 		count += 1
