@@ -187,18 +187,19 @@ draw_submit :: proc(ctx: ^DrawContext) {
 
 	clear := true
 
-	// Upload batches first
+	render_frame_begin(ctx.plugin.render, ctx.clearColor)
+
 	curBatch := ctx.batchesFirst
 	for curBatch != nil {
-		render_begin(ctx.plugin.render, ctx.clearColor, clear)
 		render_upload_rect_draw_batch(ctx.plugin.render, curBatch)
 		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
 		render_draw_rects(ctx.plugin.render)
-		render_end(ctx.plugin.render)
 		curBatch = curBatch.next
 		clear = false
 
 	}
+
+	render_frame_end(ctx.plugin.render)
 }
 
 draw_generate_random_rects :: proc(ctx: ^DrawContext) {
