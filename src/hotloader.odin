@@ -74,6 +74,8 @@ hotload_init :: proc() {
 	ctx.initialized = true
 }
 
+HOT_DLL :: #config(HOT_DLL, false)
+
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
 		do_analysis = buffer_do_analysis,
@@ -84,27 +86,39 @@ hotload_api :: proc() -> lin.PluginApi {
 	return api
 
 	buffer_do_analysis :: proc(plug: ^lin.Plugin, transfer: ^lin.AnalysisTransfer) {
-		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].do_analysis == nil {
+		when !HOT_DLL {
 			lin.plugin_do_analysis(plug, transfer)
 		} else {
-			ctx.apis[idx].do_analysis(plug, transfer)
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].do_analysis == nil {
+				lin.plugin_do_analysis(plug, transfer)
+			} else {
+				ctx.apis[idx].do_analysis(plug, transfer)
+			}
 		}
 	}
 	buffer_draw :: proc(plug: ^lin.Plugin) {
-		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+		when !HOT_DLL {
 			lin.plugin_draw(plug)
 		} else {
-			ctx.apis[idx].draw(plug)
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+				lin.plugin_draw(plug)
+			} else {
+				ctx.apis[idx].draw(plug)
+			}
 		}
 	}
 	buffer_process_audio :: proc(plug: ^lin.Plugin) {
-		idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-		if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+		when !HOT_DLL {
 			lin.plugin_process_audio(plug)
 		} else {
-			ctx.apis[idx].process_audio(plug)
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+				lin.plugin_process_audio(plug)
+			} else {
+				ctx.apis[idx].process_audio(plug)
+			}
 		}
 	}
 }
