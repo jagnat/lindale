@@ -14,7 +14,7 @@ WINDOW_WIDTH, WINDOW_HEIGHT : i32 : 800, 600
 
 RectDrawChunk :: struct {
 	next: ^RectDrawChunk,
-	instanceCount: int,
+	instanceCount: u32,
 	instancePool: [DRAW_CHUNK_COUNT]RectInstance,
 }
 
@@ -26,7 +26,7 @@ RectDrawBatchParams :: struct {
 RectDrawBatch :: struct {
 	chunkFirst: ^RectDrawChunk,
 	chunkLast:  ^RectDrawChunk,
-	totalInstanceCount: int,
+	totalInstanceCount: u32,
 	params: RectDrawBatchParams,
 	next: ^RectDrawBatch,
 }
@@ -50,6 +50,7 @@ DrawContext :: struct {
 	alloc: mem.Allocator,
 	batchesFirst: ^RectDrawBatch,
 	batchesLast: ^RectDrawBatch,
+	totalInstanceCount: u32,
 	fontTexture: Texture2D,
 	clearColor: ColorF32,
 }
@@ -63,10 +64,6 @@ draw_init :: proc(ctx: ^DrawContext) {
 	ctx.fontTexture = render_create_texture(ctx.plugin.render, 1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
 	font_init(&ctx.fontState)
 	render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
-
-	// ctx.emptyTexture = render_create_texture(ctx.plugin.render, 4, .R8G8B8A8_UNORM, 1, 1)
-	// textureData := []byte{255, 255, 255, 255}
-	// render_upload_texture(ctx.plugin.render, ctx.emptyTexture, textureData)
 
 	fmt.println("size of rect instance:", size_of(RectInstance))
 }
@@ -114,6 +111,7 @@ draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, ins
 	lastChunk.instancePool[lastChunk.instanceCount] = instance
 	lastChunk.instanceCount += 1
 	batch.totalInstanceCount += 1
+	ctx.totalInstanceCount += 1
 }
 
 draw_set_texture :: proc(ctx: ^DrawContext, texture: ^Texture2D) {
@@ -168,37 +166,61 @@ draw_push_instance :: proc(ctx: ^DrawContext, rect: RectInstance) {
 	draw_add_instance_to_batch(ctx, curBatch, rect)
 }
 
-draw_upload :: proc(ctx: ^DrawContext) {
-	render_upload_rect_draw_batch(ctx.plugin.render, draw_get_current_batch(ctx))
-}
-
 draw_clear :: proc(ctx: ^DrawContext) {
 	ctx.batchesFirst = nil
 	ctx.batchesLast = nil
+	ctx.totalInstanceCount = 0
 	vm.arena_free_all(&ctx.arena)
 }
 
 draw_submit :: proc(ctx: ^DrawContext) {
 	if ctx.batchesFirst == nil do return // nothing to do
 
-	render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
-	render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
-	render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
+	// render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
+	// render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
+	// render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
 
-	clear := true
+	render_frame_begin(ctx.plugin.render)
 
-	// Upload batches first
+	// Upload textures
+	render_upload_texture(ctx.plugin.render, ctx.fontTexture, ctx.fontState.fontContext.textureData)
+
+	// Upload instances
+	uploadCtx := render_begin_instance_upload(ctx.plugin.render, u32(ctx.totalInstanceCount))
 	curBatch := ctx.batchesFirst
+	fill := uploadCtx.instanceFill
+	idx: u32 = 0
 	for curBatch != nil {
-		render_begin(ctx.plugin.render, ctx.clearColor, clear)
-		render_upload_rect_draw_batch(ctx.plugin.render, curBatch)
-		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
-		render_draw_rects(ctx.plugin.render)
-		render_end(ctx.plugin.render)
+		curChunk := curBatch.chunkFirst
+		for curChunk != nil {
+			copy(fill[idx:idx+curChunk.instanceCount], curChunk.instancePool[:curChunk.instanceCount])
+			idx += curChunk.instanceCount
+			curChunk = curChunk.next
+		}
 		curBatch = curBatch.next
-		clear = false
-
 	}
+	assert(idx == ctx.totalInstanceCount)
+	render_end_instance_upload(ctx.plugin.render, uploadCtx)
+
+	// Draw
+	render_begin_pass(ctx.plugin.render, ctx.clearColor)
+
+	curBatch = ctx.batchesFirst
+	batchOffs: u32 = 0
+	for curBatch != nil {
+		// set scissor, texture, uniforms
+		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
+		render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
+		render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
+
+		render_draw_rects(ctx.plugin.render, batchOffs, curBatch.totalInstanceCount)
+		batchOffs += curBatch.totalInstanceCount
+		curBatch = curBatch.next
+	}
+
+	render_end_pass(ctx.plugin.render)
+
+	render_frame_end(ctx.plugin.render)
 }
 
 draw_generate_random_rects :: proc(ctx: ^DrawContext) {

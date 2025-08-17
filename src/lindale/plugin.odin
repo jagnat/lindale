@@ -93,15 +93,18 @@ plugin_destroy :: proc(plug: ^Plugin) {
 plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
+	log.info("RENDER_INIT BEFORE")
 	render_init_with_handle(plug.render, parentHandle)
 	render_resize(plug.render, 800, 600)
+	log.info("RENDER_INIT AFTER")
 
 	draw_init(plug.draw)
-	draw_generate_random_rects(plug.draw)
+	log.info("DRAW_INIT AFTER")
+	// draw_generate_random_rects(plug.draw)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
-	render_deinit(plug.render)
+	// render_deinit(plug.render)
 }
 
 log_like_tween :: proc(i: int, N: int) -> f32 {
@@ -129,7 +132,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	@(static) doLog := true
 
 	draw_clear(plug.draw)
-	draw_set_scissor(plug.draw, RectI32{i32(startX), 300, i32(endX - startX), 400})
+	// draw_set_scissor(plug.draw, RectI32{0, 200, 200, 200})
 	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 		val := vec[i]
 		mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))

@@ -42,11 +42,11 @@ main :: proc() {
 			}
 		}
 
-		draw_upload(draw)
+		// draw_upload(draw)
 
-		render_begin(render)
-		render_draw_rects(render)
-		render_end(render)
+		// render_begin(render)
+		// render_draw_rects(render)
+		// render_end(render)
 
 		count += 1
 		if count % 256 == 0 {
