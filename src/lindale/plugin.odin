@@ -194,6 +194,8 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 	outputs := audioContext.outputBuffers
 	inputs := audioContext.inputBuffers
 
+	if len(outputs) < 1 do return
+
 	// Generate output buffer, iterate samples TODO: should be done channel first?
 	for s in 0..< len(outputs[0].buffers32[0]) {
 		AMPLITUDE :: 0.01

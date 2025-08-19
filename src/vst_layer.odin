@@ -371,8 +371,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		channelSliceBumpIdx: i32
 
 		audioContext := processor.plugin.audioProcessor
-		audioContext.sampleRate = data.processContext.sampleRate
-		audioContext.projectTimeSamples = data.processContext.projectTimeSamples
+		if data.processContext != nil {
+			audioContext.sampleRate = data.processContext.sampleRate
+			audioContext.projectTimeSamples = data.processContext.projectTimeSamples
+		}
 		audioContext.lastParamState = processor.params
 
 		// Fetch parameter updates

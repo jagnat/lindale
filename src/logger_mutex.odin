@@ -141,7 +141,7 @@ log_mutex_reader_thread_proc :: proc(t: ^thread.Thread) {
 				mutex_log_flush()
 			}
 
-			fmt.println(logStr)
+			fmt.print(logStr)
 
 			// Write to buffer
 			copy(ctx.logWriteBuffer[ctx.logWritePos:], logStr)

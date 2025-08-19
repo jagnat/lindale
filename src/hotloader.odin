@@ -19,6 +19,8 @@ import "vendor:sdl3"
 
 NUM_DLLS :: 2
 
+HOT_DLL :: #config(HOT_DLL, false)
+
 HotloadState :: struct {
 	apis: [NUM_DLLS]lin.PluginApi,
 	libs: [NUM_DLLS]dynlib.Library,
@@ -38,6 +40,10 @@ ctx: HotloadState
 
 // Call when launching a plugin instance
 hotload_init :: proc() {
+	when !HOT_DLL {
+		return
+	}
+
 	if ctx.initialized do return
 
 	ctx.lindaleHotDll = fmt.bprint(
@@ -73,8 +79,6 @@ hotload_init :: proc() {
 
 	ctx.initialized = true
 }
-
-HOT_DLL :: #config(HOT_DLL, false)
 
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
@@ -223,10 +227,10 @@ _load_api :: proc() -> bool {
 
 	lib, ok := dynlib.load_library(nextDll)
 	if ok && lib != nil {
-		log.info("Got to loader proc")
+		log.info("Loaded hotload library")
 		ptr, found := dynlib.symbol_address(lib, "GetPluginApi")
 		if found {
-			log.info("Loaded symbol")
+			log.info("Loaded GetPluginApi symbol")
 			GetPluginApi := cast(proc() -> lin.PluginApi)ptr
 			ctx.apis[nextIdx] = GetPluginApi()
 			ctx.libs[nextIdx] = lib

@@ -1,8 +1,9 @@
-package lindale
+package test_host
 
 import "core:fmt"
 import "core:os"
 import sdl "vendor:sdl3"
+import lin "../lindale"
 
 // ProgramContext :: struct {
 // 	window: ^sdl.Window,
@@ -38,7 +39,7 @@ main :: proc() {
 					os.exit(0)
 				}
 			case .WINDOW_RESIZED:
-				render_resize(render, event.window.data1, event.window.data2)
+				lin.render_resize(render, event.window.data1, event.window.data2)
 			}
 		}
 
@@ -67,30 +68,30 @@ main :: proc() {
 	}
 }
 
-init :: proc() -> (^RenderContext, ^DrawContext) {
+init :: proc() -> (^lin.RenderContext, ^lin.DrawContext) {
 	result := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO)
 	assert(result == true)
 
-	plugin := new(Plugin)
-	ctx := new(RenderContext)
-	drawCtx := new(DrawContext)
+	plugin := new(lin.Plugin)
+	ctx := new(lin.RenderContext)
+	drawCtx := new(lin.DrawContext)
 	ctx.plugin = plugin
 	drawCtx.plugin = plugin
 	plugin.render = ctx
 	plugin.draw = drawCtx
 
-	ctx.window = sdl.CreateWindow("Lindalë", WINDOW_WIDTH, WINDOW_HEIGHT, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
+	ctx.window = sdl.CreateWindow("Lindalë", lin.WINDOW_WIDTH,lin.WINDOW_HEIGHT, sdl.WINDOW_HIDDEN | sdl.WINDOW_RESIZABLE)
 	assert(ctx.window != nil)
 
-	render_init(ctx)
+	lin.render_init(ctx)
 
-	render_resize(ctx, WINDOW_WIDTH, WINDOW_HEIGHT)
+	lin.render_resize(ctx, lin.WINDOW_WIDTH, lin.WINDOW_HEIGHT)
 
-	font_init(&drawCtx.fontState)
+	lin.font_init(&drawCtx.fontState)
 
-	draw_init(drawCtx)
+	lin.draw_init(drawCtx)
 
-	draw_generate_random_rects(drawCtx)
+	lin.draw_generate_random_rects(drawCtx)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(cstring(sdl.GetPrefPath("jagi", "Lindale")))
