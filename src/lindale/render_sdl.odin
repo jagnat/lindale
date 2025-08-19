@@ -301,10 +301,7 @@ render_create_texture :: proc(ctx: ^RenderContext, bytesPerPixel: u32, format: s
 	tex2d.w = w
 	tex2d.h = h
 	tex2d.bytesPerPixel = bytesPerPixel
-	// TODO: change this if bpp is < 4? Does my shader even support that yet?
-	// tex2d.samplerAlphaChannel = {0, 0, 0, 1}
-	// tex2d.samplerFillChannels = {1, 1, 1, 0}
-	// text2d.singleChannelTexture = format == .
+	if tex2d.bytesPerPixel == 1 do tex2d.singleChannelTexture = true
 
 	return tex2d
 }
