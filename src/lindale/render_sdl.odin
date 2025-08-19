@@ -17,7 +17,7 @@ RenderContext :: struct {
 	pipeline: ^sdl.GPUGraphicsPipeline,
 	window: ^sdl.Window,
 	instanceBuffer: GraphicsBuffer, // Instance buffer
-	width, height: f32,
+	width, height: i32,
 	sampler: ^sdl.GPUSampler,
 	cmdBuf: ^sdl.GPUCommandBuffer,
 	renderPass: ^sdl.GPURenderPass,
@@ -393,7 +393,8 @@ render_end_pass :: proc(ctx: ^RenderContext) {
 render_set_scissor :: proc(ctx: ^RenderContext, rect: RectI32) {
 	sdlRect := sdl.Rect{x = rect.x, y = rect.y, w = rect.w, h = rect.h}
 	if rect.x == 0 && rect.y == 0 && rect.w == 0 && rect.h == 0 {
-		return
+		sdlRect.w = ctx.width
+		sdlRect.h = ctx.height
 	}
 	sdl.SetGPUScissor(ctx.renderPass, sdlRect)
 }
@@ -403,6 +404,7 @@ render_bind_texture :: proc(ctx: ^RenderContext, tex: ^Texture2D) {
 	textureBinding.texture = tex.texHandle
 	textureBinding.sampler = ctx.sampler
 	sdl.BindGPUFragmentSamplers(ctx.renderPass, 0, &textureBinding, 1)
+	ctx.uniforms.singleChannelTexture = tex.singleChannelTexture? 1 : 0
 }
 
 render_draw_rects :: proc(ctx: ^RenderContext, instanceOffs, instanceCount: u32) {
@@ -417,7 +419,7 @@ render_set_single_channel_texture :: proc(ctx: ^RenderContext, singleChannelText
 }
 
 render_resize :: proc(ctx: ^RenderContext, w, h: i32) {
-	ctx.width = f32(w)
-	ctx.height = f32(h)
-	ctx.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, ctx.width, ctx.height, 0, -1, 1)
+	ctx.width = w
+	ctx.height = h
+	ctx.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(ctx.width), f32(ctx.height), 0, -1, 1)
 }

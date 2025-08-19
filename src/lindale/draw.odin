@@ -65,8 +65,6 @@ draw_init :: proc(ctx: ^DrawContext) {
 	ctx.fontTexture.data = ctx.fontState.fontContext.textureData
 	
 	font_init(&ctx.fontState)
-
-	fmt.println("size of rect instance:", size_of(RectInstance))
 }
 
 draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
@@ -208,7 +206,6 @@ draw_submit :: proc(ctx: ^DrawContext) {
 	for curBatch != nil {
 		// set scissor, texture, uniforms
 		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
-		render_set_single_channel_texture(ctx.plugin.render, true)
 		render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
 
 		render_draw_rects(ctx.plugin.render, batchOffs, curBatch.totalInstanceCount)
