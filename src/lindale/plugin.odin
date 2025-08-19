@@ -93,18 +93,14 @@ plugin_destroy :: proc(plug: ^Plugin) {
 plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
-	log.info("RENDER_INIT BEFORE")
 	render_init_with_handle(plug.render, parentHandle)
 	render_resize(plug.render, 800, 600)
-	log.info("RENDER_INIT AFTER")
 
 	draw_init(plug.draw)
-	log.info("DRAW_INIT AFTER")
-	// draw_generate_random_rects(plug.draw)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
-	// render_deinit(plug.render)
+	render_deinit(plug.render)
 }
 
 log_like_tween :: proc(i: int, N: int) -> f32 {
@@ -125,7 +121,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	endX : f32 = 800 - 50
 	startY : f32 = 600 - 50
 	fft_height :: 1000
-	fft_bin_width :: 4
+	fft_bin_width :: 3
 	MIN_FREQ : f32 : 20
 	MAX_FREQ : f32 : 22050
 
@@ -151,7 +147,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			x - (fft_bin_width / 2), y0,
 			width, height,
 			0, 0, 0, 0,
-			ColorU8{255, 255, 255, u8(alpha * 255)}, width / 2
+			ColorU8{255, 240, 255, u8(alpha * 255)}, width/3
 		}
 		draw_push_rect(plug.draw, rect)
 	}
@@ -172,7 +168,7 @@ plugin_draw :: proc(plug: ^Plugin) {
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
 	// clearColor := ColorF32_from_hex(0xff00ffff)
 
-	draw_remove_scissor(plug.draw)
+	// draw_remove_scissor(plug.draw)
 	draw_text(plug.draw, "this is a test", 100, 100)
 
 	draw_set_clear_color(plug.draw, clearColor)

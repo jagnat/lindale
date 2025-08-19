@@ -62,8 +62,9 @@ draw_init :: proc(ctx: ^DrawContext) {
 	ctx.clearColor = {0, 0, 0, 1}
 
 	ctx.fontTexture = render_create_texture(ctx.plugin.render, 1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
+	ctx.fontTexture.data = ctx.fontState.fontContext.textureData
+	
 	font_init(&ctx.fontState)
-	render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
 
 	fmt.println("size of rect instance:", size_of(RectInstance))
 }
@@ -176,14 +177,11 @@ draw_clear :: proc(ctx: ^DrawContext) {
 draw_submit :: proc(ctx: ^DrawContext) {
 	if ctx.batchesFirst == nil do return // nothing to do
 
-	// render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
-	// render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
-	// render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
-
-	render_frame_begin(ctx.plugin.render)
+	ready := render_frame_begin(ctx.plugin.render)
+	if !ready do return
 
 	// Upload textures
-	render_upload_texture(ctx.plugin.render, ctx.fontTexture, ctx.fontState.fontContext.textureData)
+	render_upload_texture(ctx.plugin.render, &ctx.fontTexture, ctx.fontState.fontContext.textureData)
 
 	// Upload instances
 	uploadCtx := render_begin_instance_upload(ctx.plugin.render, u32(ctx.totalInstanceCount))
@@ -210,7 +208,7 @@ draw_submit :: proc(ctx: ^DrawContext) {
 	for curBatch != nil {
 		// set scissor, texture, uniforms
 		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
-		render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
+		render_set_single_channel_texture(ctx.plugin.render, true)
 		render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
 
 		render_draw_rects(ctx.plugin.render, batchOffs, curBatch.totalInstanceCount)
@@ -297,7 +295,7 @@ draw_one_rect :: proc(ctx: ^DrawContext) {
 	draw_push_rect(ctx, rect)
 }
 
-draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32) {
+draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {255, 255, 255, 255}) {
 	strLen := len(text)
 	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
 
@@ -306,16 +304,12 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32) {
 	draw_set_texture(ctx, &ctx.fontTexture)
 
 	for &rect in buf {
-		rect.color = {255, 255, 255, 255}
+		rect.color = color
 		draw_push_instance(ctx, rect)
 	}
 
-	// render_set_sampler_channels(ctx.plugin.render, {1, 0, 0, 0}, {1, 1, 1, 0})
-
-	dirtyRect := &ctx.fontState.fontContext.dirtyRect
-
 	if font_is_texture_dirty(&ctx.fontState) {
-		render_upload_texture(ctx.plugin.render, ctx.fontTexture, font_get_atlas(&ctx.fontState))
+		ctx.fontTexture.uploaded = false
 		font_reset_dirty_flag(&ctx.fontState)
 	}
 }

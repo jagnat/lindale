@@ -5,17 +5,6 @@ import "core:os"
 import sdl "vendor:sdl3"
 import lin "../lindale"
 
-// ProgramContext :: struct {
-// 	window: ^sdl.Window,
-// 	audioDevice: sdl.AudioDeviceID,
-// 	texture: Texture2D,
-// }
-
-// WINDOW_WIDTH, WINDOW_HEIGHT : i32 = 1600, 1000
-
-// @(private="file")
-// ctx: ProgramContext
-
 main :: proc() {
 
 	render, draw := init()
@@ -43,11 +32,15 @@ main :: proc() {
 			}
 		}
 
-		// draw_upload(draw)
+		lin.draw_clear(draw)
 
-		// render_begin(render)
-		// render_draw_rects(render)
-		// render_end(render)
+		lin.draw_push_rect(draw, lin.SimpleUIRect{10, 10, 200, 200, 0, 0, 0, 0, lin.ColorU8{255, 255, 255, 20}, 10})
+
+		lin.draw_text(draw, "This is a test.", 100, 100)
+
+		clearColor := lin.ColorF32{0.117647, 0.117647, 0.117647, 1}
+		lin.draw_set_clear_color(draw, clearColor)
+		lin.draw_submit(draw)
 
 		count += 1
 		if count % 256 == 0 {
@@ -55,8 +48,8 @@ main :: proc() {
 
 			elapsedTimeMs := (newTicks - tick) / 1_000_000
 
-			fmt.println("elapsedMs: ", elapsedTimeMs)
-			fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
+			// fmt.println("elapsedMs: ", elapsedTimeMs)
+			// fmt.println("avg ms/frame: ", f32(elapsedTimeMs) / 256)
 			tick = newTicks
 			// draw_generate_random_rects(&ctx.drawGroup)
 			// draw_generate_random_spheres(&ctx.drawGroup)
@@ -84,14 +77,9 @@ init :: proc() -> (^lin.RenderContext, ^lin.DrawContext) {
 	assert(ctx.window != nil)
 
 	lin.render_init(ctx)
-
 	lin.render_resize(ctx, lin.WINDOW_WIDTH, lin.WINDOW_HEIGHT)
 
-	lin.font_init(&drawCtx.fontState)
-
 	lin.draw_init(drawCtx)
-
-	lin.draw_generate_random_rects(drawCtx)
 
 	fmt.println(sdl.GetBasePath())
 	fmt.println(cstring(sdl.GetPrefPath("jagi", "Lindale")))

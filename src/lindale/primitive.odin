@@ -3,6 +3,7 @@ package lindale
 import "core:math/linalg"
 import "core:math"
 
+Vec2f :: linalg.Vector2f32
 Vec4f :: linalg.Vector4f32
 Mat4f :: linalg.Matrix4x4f32
 

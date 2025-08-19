@@ -32,10 +32,10 @@
 			}
 		},
 		{
-			"name": "Odin Run Debug",
+			"name": "Odin Run Test Host",
 			"working_dir": "${project_path}",
 			"windows": {
-				"shell_cmd": "build.bat"
+				"shell_cmd": "build_test_host.bat"
 			},
 			"linux": {
 				"shell_cmd": "sh build.sh"
@@ -58,14 +58,6 @@
 			"linux":
 			{
 				"shell_cmd": "compile_osx.sh",
-			}
-		},
-		{
-			"name": "Odin Run Release",
-			"working_dir": "${project_path}",
-			"windows":
-			{
-				"shell_cmd": "odin run $project_path/src -o:aggressive -no-bounds-check -microarch:native -out:$project_path/Lindale.exe"
 			}
 		},
 		{

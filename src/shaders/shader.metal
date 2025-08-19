@@ -3,9 +3,8 @@ using namespace metal;
 
 struct UniformBuffer {
 	float4x4 orthoMat;
-	float4 samplerAlphaChannel;
-	float4 samplerFillChannels;
 	float2 dims;
+	uint singleChannelTexture;
 };
 
 struct VSInput {
@@ -75,9 +74,15 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 	float4 sampleColor = float4(1.0, 1.0, 1.0, 1.0);
 	if (noTexture < 1) {
 		sampleColor = tex.sample(sampl, input.uv);
+
+		if (uniformBuffer.singleChannelTexture == 1) {
+			outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
+		} else {
+			outputColor = input.color * sampleColor;
+		}
 	}
-	float sampleAlpha = dot(sampleColor, uniformBuffer.samplerAlphaChannel);
-	outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
+	// float sampleAlpha = dot(sampleColor, uniformBuffer.samplerAlphaChannel);
+	// outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.params.x);

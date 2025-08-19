@@ -29,9 +29,8 @@ BUFFER_SIZE :: 1024 * 1024
 
 UniformBuffer :: struct {
 	projMatrix: Mat4f,
-	samplerAlphaChannel: Vec4f,
-	samplerFillChannels: Vec4f,
-	dim: [2]f32,
+	dims: Vec2f,
+	singleChannelTexture: u32,
 }
 
 GraphicsBuffer :: struct {
@@ -46,8 +45,9 @@ Texture2D :: struct {
 	texHandle: ^sdl.GPUTexture,
 	w, h: u32,
 	bytesPerPixel: u32,
-	samplerAlphaChannel: Vec4f,
-	samplerFillChannels: Vec4f,
+	data: []byte,
+	uploaded: bool,
+	singleChannelTexture: bool,
 }
 
 RectInstance :: struct #packed {
@@ -170,8 +170,6 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	sci.compare_op = .ALWAYS
 	ctx.sampler = sdl.CreateGPUSampler(ctx.gpu, sci)
 	assert(ctx.sampler != nil)
-
-	render_set_sampler_channels(ctx, {0, 0, 0, 1}, {})
 	
 	sdl.ShowWindow(ctx.window)
 
@@ -286,73 +284,6 @@ render_end_instance_upload :: proc(ctx: ^RenderContext, uploadCtx: InstanceUploa
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
 }
 
-// render_upload_rect_draw_batch :: proc(ctx: ^RenderContext, batch: ^RectDrawBatch) {
-// 	buffer := &ctx.instanceBuffer
-// 	size := u32(batch.totalInstanceCount * size_of(RectInstance))
-// 	assert(size <= buffer.capacity)
-// 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
-// 	transferBufferCreate.usage = .UPLOAD
-// 	transferBufferCreate.size = size
-// 	transferBuffer := sdl.CreateGPUTransferBuffer(ctx.gpu, transferBufferCreate)
-// 	assert(transferBuffer != nil)
-
-// 	transferData := sdl.MapGPUTransferBuffer(ctx.gpu, transferBuffer, false)
-// 	assert(transferData != nil)
-
-// 	transferPtr := ([^]RectInstance)(transferData)
-
-// 	index := 0
-
-// 	for chunk := batch.chunkFirst; chunk != nil; chunk = chunk.next {
-// 		mem.copy(&transferPtr[index], &chunk.instancePool[0], chunk.instanceCount * size_of(RectInstance))
-// 		index += chunk.instanceCount
-// 	}
-
-// 	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
-// 	copyPass := sdl.BeginGPUCopyPass(cmdBuf)
-
-// 	tbl := sdl.GPUTransferBufferLocation{transfer_buffer = transferBuffer, offset = 0}
-// 	gbr := sdl.GPUBufferRegion{buffer = buffer.handle, offset = 0, size = size}
-// 	sdl.UploadToGPUBuffer(copyPass, tbl, gbr, false)
-
-// 	sdl.EndGPUCopyPass(copyPass)
-// 	result := sdl.SubmitGPUCommandBuffer(cmdBuf)
-// 	assert(result)
-// 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
-// 	buffer.size = size
-// 	buffer.count = u32(batch.totalInstanceCount)
-// }
-
-// render_upload_buffer_data :: proc(ctx: ^RenderContext, buffer: ^GraphicsBuffer, ary: []$T) {
-// 	data := slice.to_bytes(ary)
-// 	assert(u64(len(data)) < u64(buffer.capacity))
-// 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
-// 	transferBufferCreate.usage = .UPLOAD
-// 	transferBufferCreate.size = u32(len(data))
-// 	transferBuffer := sdl.CreateGPUTransferBuffer(ctx.gpu, transferBufferCreate)
-// 	assert(transferBuffer != nil)
-
-// 	transferData := sdl.MapGPUTransferBuffer(ctx.gpu, transferBuffer, false)
-// 	assert(transferData != nil)
-
-// 	mem.copy(transferData, raw_data(data), len(data))
-
-// 	sdl.UnmapGPUTransferBuffer(ctx.gpu, transferBuffer)
-
-// 	cmdBuf := sdl.AcquireGPUCommandBuffer(ctx.gpu)
-// 	copyPass := sdl.BeginGPUCopyPass(cmdBuf)
-
-// 	tbl := sdl.GPUTransferBufferLocation{transfer_buffer = transferBuffer, offset = 0}
-// 	gbr := sdl.GPUBufferRegion{buffer = buffer.handle, offset = 0, size = u32(len(data))}
-// 	sdl.UploadToGPUBuffer(copyPass, tbl, gbr, false)
-
-// 	sdl.EndGPUCopyPass(copyPass)
-// 	result := sdl.SubmitGPUCommandBuffer(cmdBuf)
-// 	assert(result)
-// 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
-// 	buffer.size = u32(len(data))
-// }
-
 render_create_texture :: proc(ctx: ^RenderContext, bytesPerPixel: u32, format: sdl.GPUTextureFormat, w, h: u32) -> Texture2D {
 	textureCreate: sdl.GPUTextureCreateInfo
 	textureCreate.type = .D2
@@ -370,12 +301,16 @@ render_create_texture :: proc(ctx: ^RenderContext, bytesPerPixel: u32, format: s
 	tex2d.w = w
 	tex2d.h = h
 	tex2d.bytesPerPixel = bytesPerPixel
+	// TODO: change this if bpp is < 4? Does my shader even support that yet?
+	// tex2d.samplerAlphaChannel = {0, 0, 0, 1}
+	// tex2d.samplerFillChannels = {1, 1, 1, 0}
+	// text2d.singleChannelTexture = format == .
 
 	return tex2d
 }
 
 // NOTE: Only should call within frame render typically
-render_upload_texture :: proc(ctx: ^RenderContext, tex: Texture2D, data: []byte) {
+render_upload_texture :: proc(ctx: ^RenderContext, tex: ^Texture2D, data: []byte) {
 	transferBufferCreate: sdl.GPUTransferBufferCreateInfo
 	transferBufferCreate.usage = .UPLOAD
 	transferBufferCreate.size = u32(len(data))
@@ -407,6 +342,8 @@ render_upload_texture :: proc(ctx: ^RenderContext, tex: Texture2D, data: []byte)
 		assert(result)
 	}
 	sdl.ReleaseGPUTransferBuffer(ctx.gpu, transferBuffer)
+
+	tex.uploaded = true
 }
 
 render_create_texture_from_file :: proc(ctx: ^RenderContext, file: []u8) -> Texture2D {
@@ -416,72 +353,21 @@ render_create_texture_from_file :: proc(ctx: ^RenderContext, file: []u8) -> Text
 	bits := stbi.load_from_memory(raw_data(file), i32(len(file)), &x, &y, &channels, 4)
 
 	tex = render_create_texture(ctx, u32(channels), .R8G8B8A8_UNORM, u32(x), u32(y))
-	render_upload_texture(ctx, tex, bits[:channels * x * y])
+	render_upload_texture(ctx, &tex, bits[:channels * x * y])
 
 	return tex
 }
 
-// // ONCE PER FRAME SETUP
-// render_frame_begin():
-//   renderCmdBuffer = SDL_AcquireGPUCommandBuffer()
-//   SDL_WaitAndAcquireGPUSwapchainTexture()  // Only once per frame!
-
-// // BATCH ALL UPLOADS TOGETHER
-// render_upload_all_batches():
-//   total_size = calculate_total_vertex_data_size(batches)
-//   transferBuffer = SDL_CreateGPUTransferBuffer(total_size)
-//   mapped_data = SDL_MapGPUTransferBuffer(transferBuffer)
-  
-//   offset = 0
-//   for batch in batches:
-//     copy_verts_to_address(mapped_data + offset, batch.verts)
-//     batch.buffer_offset = offset  // Remember where this batch's data starts
-//     offset += batch.vert_data_size
-  
-//   SDL_UnmapGPUTransferBuffer(transferBuffer)
-  
-//   // Single copy pass for all data
-//   SDL_BeginGPUCopyPass(renderCmdBuffer)  // Reuse render command buffer
-//   SDL_UploadToGPUBuffer(transferBuffer -> vertex_buffer)
-//   SDL_EndGPUCopyPass()
-//   SDL_ReleaseGPUTransferBuffer(transferBuffer)
-
-
-// // SINGLE RENDER PASS FOR ALL BATCHES
-// render_begin_pass():
-//   SDL_BeginGPURenderPass(renderCmdBuffer, load_op = .clear)  // Only clear once
-//   SDL_BindGPUGraphicsPipeline()  // Bind once if same for all batches
-//   SDL_BindGPUVertexBuffers()     // Bind once - same buffer for all
-
-// // DRAW ALL BATCHES
-// for batch in batches:
-//   if batch.scissor:
-//     SDL_SetGPUScissor(batch.scissor_rect)
-//   else:
-//     SDL_SetGPUScissor(null)  // Disable scissor
-  
-//   SDL_BindGPUFragmentSamplers(batch.texture)
-//   SDL_PushGPUVertexUniformData(batch.uniforms)
-  
-//   SDL_DrawGPUPrimitives(
-//     vertex_count_per_instance,
-//     batch.instance_count,
-//     first_vertex = 0,
-//     first_instance = batch.buffer_offset / sizeof(InstanceData)
-//   )
-
-// // ONCE PER FRAME CLEANUP  
-// render_frame_end():
-//   SDL_EndGPURenderPass()
-//   SDL_SubmitGPUCommandBuffer(renderCmdBuffer)  // Single submission!
-
-render_frame_begin :: proc(ctx: ^RenderContext) {
-	ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
-	assert(ctx.cmdBuf != nil)
+render_frame_begin :: proc(ctx: ^RenderContext) -> bool {
+	if ctx.cmdBuf == nil {
+		ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
+		assert(ctx.cmdBuf != nil)
+	}
 
 	result := sdl.WaitAndAcquireGPUSwapchainTexture(ctx.cmdBuf, ctx.window, &ctx.swapchainTexture, nil, nil)
 	assert(result == true)
 	assert(ctx.swapchainTexture != nil)
+	return true
 }
 
 render_frame_end :: proc(ctx: ^RenderContext) {
@@ -507,25 +393,6 @@ render_end_pass :: proc(ctx: ^RenderContext) {
 	sdl.EndGPURenderPass(ctx.renderPass)
 }
 
-// render_begin :: proc(ctx: ^RenderContext, clearColor: ColorF32 = {0, 0, 0, 1}, clear: bool = false) {
-// 	ctx.cmdBuf = sdl.AcquireGPUCommandBuffer(ctx.gpu)
-// 	assert(ctx.cmdBuf != nil)
-
-// 	swapchainTexture : ^sdl.GPUTexture
-
-// 	result := sdl.WaitAndAcquireGPUSwapchainTexture(ctx.cmdBuf, ctx.window, &swapchainTexture, nil, nil)
-// 	assert(result == true)
-// 	assert(swapchainTexture != nil)
-
-// 	targetInfo: sdl.GPUColorTargetInfo
-// 	targetInfo.texture = swapchainTexture
-// 	targetInfo.clear_color = sdl.FColor(clearColor)
-// 	targetInfo.load_op = clear? .CLEAR : .LOAD
-// 	targetInfo.store_op = .STORE
-
-// 	ctx.renderPass = sdl.BeginGPURenderPass(ctx.cmdBuf, &targetInfo, 1, nil)
-// }
-
 render_set_scissor :: proc(ctx: ^RenderContext, rect: RectI32) {
 	sdlRect := sdl.Rect{x = rect.x, y = rect.y, w = rect.w, h = rect.h}
 	if rect.x == 0 && rect.y == 0 && rect.w == 0 && rect.h == 0 {
@@ -548,9 +415,8 @@ render_draw_rects :: proc(ctx: ^RenderContext, instanceOffs, instanceCount: u32)
 	sdl.DrawGPUPrimitives(ctx.renderPass, 4, instanceCount, 0, instanceOffs)
 }
 
-render_set_sampler_channels :: proc(ctx: ^RenderContext, samplerAlphaChannel, samplerFillChannels : Vec4f) {
-	ctx.uniforms.samplerAlphaChannel = samplerAlphaChannel
-	ctx.uniforms.samplerFillChannels = samplerFillChannels
+render_set_single_channel_texture :: proc(ctx: ^RenderContext, singleChannelTexture: bool) {
+	ctx.uniforms.singleChannelTexture = 1 if singleChannelTexture else 0
 }
 
 render_resize :: proc(ctx: ^RenderContext, w, h: i32) {

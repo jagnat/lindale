@@ -7,9 +7,8 @@
 
 cbuffer UniformBuffer : register(b0, UNIFORM_SPACE) {
 	float4x4 orthoMat;
-	float4 samplerAlphaChannel;
-	float4 samplerFillChannels;
 	float2 dims;
+	uint singleChannelTexture;
 }
 
 Texture2D tex : register(t0, space2);
@@ -85,9 +84,15 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 	float4 sampleColor = float4(1, 1, 1, 1);
 	if (input.params.y < 1) {
 		sampleColor = tex.Sample(sampl, input.uv);
+
+		if (singleChannelTexture == 1) {
+			outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
+		} else {
+			outputColor = input.color * sampleColor;
+		}
 	}
-	float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
-	outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
+	// float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
+	// outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
 	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.params.x);
