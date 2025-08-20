@@ -49,6 +49,14 @@ font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []R
 	return i
 }
 
+font_measure_bounds :: proc(ctx: ^FontState, text: string, x, y: f32) -> RectF32 {
+	ret: RectF32
+	fs.TextBounds(&ctx.fontContext, text, x, y, cast(^[4]f32)(&ret))
+	ret.w -= ret.x
+	ret.h -= ret.y
+	return ret
+}
+
 font_get_atlas :: proc(ctx: ^FontState) -> []byte {
 	return ctx.fontContext.textureData
 }

@@ -11,6 +11,10 @@ RectI32 :: struct {
 	x, y, w, h: i32
 }
 
+RectF32 :: struct {
+	x, y, w, h: f32
+}
+
 ColorU8 :: struct {
 	r, g, b, a: u8
 }

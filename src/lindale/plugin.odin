@@ -93,14 +93,14 @@ plugin_destroy :: proc(plug: ^Plugin) {
 plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
-	render_init_with_handle(plug.render, parentHandle)
+	render_attach_window(plug.render, parentHandle)
 	render_resize(plug.render, 800, 600)
 
 	draw_init(plug.draw)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
-	render_deinit(plug.render)
+	render_detach_window(plug.render)
 }
 
 log_like_tween :: proc(i: int, N: int) -> f32 {

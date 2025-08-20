@@ -12,9 +12,10 @@ import "core:log"
 
 RenderContext :: struct {
 	plugin: ^Plugin,
-	initialized: bool,
+	gpuInitialized: bool,
 	gpu: ^sdl.GPUDevice,
 	pipeline: ^sdl.GPUGraphicsPipeline,
+	swapchainFormat: sdl.GPUTextureFormat,
 	window: ^sdl.Window,
 	instanceBuffer: GraphicsBuffer, // Instance buffer
 	width, height: i32,
@@ -22,6 +23,7 @@ RenderContext :: struct {
 	cmdBuf: ^sdl.GPUCommandBuffer,
 	renderPass: ^sdl.GPURenderPass,
 	swapchainTexture: ^sdl.GPUTexture,
+	vertexShader, fragmentShader: ^sdl.GPUShader,
 	uniforms: UniformBuffer,
 }
 
@@ -61,19 +63,9 @@ RectInstance :: struct #packed {
 	_pad: f32, // Ignored
 }
 
-render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
-
-	if ctx.initialized && ctx.window != nil {
-		sdl.ShowWindow(ctx.window)
-		return
-	}
-
-	// Clean up any existing window first
-	if ctx.window != nil {
-		log.info("lv_attached destroying existing window")
-		sdl.DestroyWindow(ctx.window)
-		ctx.window = nil
-	}
+render_attach_window :: proc(ctx: ^RenderContext, parent: rawptr) {
+	render_detach_window(ctx)
+	render_init_gpu_resources(ctx)
 
 	windowPropId := sdl.CreateProperties()
 	defer sdl.DestroyProperties(windowPropId)
@@ -97,16 +89,99 @@ render_init_with_handle :: proc(ctx: ^RenderContext, parent: rawptr) {
 	// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_MOUSE_GRABBED_BOOLEAN)
 	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_FLAGS_NUMBER, i64(sdl.WINDOW_EXTERNAL))
 
-	window := sdl.CreateWindowWithProperties(windowPropId)
-	if window == nil {
+	ctx.window = sdl.CreateWindowWithProperties(windowPropId)
+	if ctx.window == nil {
 		log.error("Failed to create SDL window")
+		return
 	}
-	ctx.window = window
-	ctx.initialized = true
 
-	render_init(ctx)
+	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
+	assert(result == true)
+
+	format := sdl.GetGPUSwapchainTextureFormat(ctx.gpu, ctx.window)
+	if format != ctx.swapchainFormat {
+		render_init_rect_pipeline(ctx, ctx.vertexShader, ctx.fragmentShader, format)
+	}
 }
 
+render_detach_window :: proc (ctx: ^RenderContext) {
+	if ctx.window != nil {
+		sdl.HideWindow(ctx.window)
+		sdl.ReleaseWindowFromGPUDevice(ctx.gpu, ctx.window)
+		sdl.DestroyWindow(ctx.window)
+		ctx.window = nil
+	}
+}
+
+render_init_gpu_resources :: proc(ctx: ^RenderContext) {
+	if ctx.gpuInitialized do return
+
+	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		shaderFormat = {.SPIRV}
+	} else when ODIN_OS == .Darwin {
+		shaderFormat = {.MSL}
+	}
+	ctx.gpu = sdl.CreateGPUDevice(shaderFormat, ODIN_DEBUG, nil)
+	assert(ctx.gpu != nil)
+
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		vShaderBits := #load("../shaders/vs.spv")
+	} else when ODIN_OS == .Darwin {
+		vShaderBits := #load("../shaders/shader.metal")
+	}
+
+	vertexCreate: sdl.GPUShaderCreateInfo
+	vertexCreate.code_size = uint(len(vShaderBits))
+	vertexCreate.code = &vShaderBits[0]
+	vertexCreate.entrypoint = "VSMain"
+	vertexCreate.format = shaderFormat
+	vertexCreate.stage = .VERTEX
+	vertexCreate.num_uniform_buffers = 1
+	ctx.vertexShader = sdl.CreateGPUShader(ctx.gpu, vertexCreate)
+	assert(ctx.vertexShader != nil)
+
+	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+		pShaderBits := #load("../shaders/ps.spv")
+	} else when ODIN_OS == .Darwin {
+		pShaderBits := #load("../shaders/shader.metal")
+	}
+
+	pixelCreate: sdl.GPUShaderCreateInfo
+	pixelCreate.code_size = uint(len(pShaderBits))
+	pixelCreate.code = &pShaderBits[0]
+	pixelCreate.entrypoint = "PSMain"
+	pixelCreate.format = shaderFormat
+	pixelCreate.stage = .FRAGMENT
+	pixelCreate.num_uniform_buffers = 1
+	pixelCreate.num_samplers = 1
+	ctx.fragmentShader = sdl.CreateGPUShader(ctx.gpu, pixelCreate)
+	assert(ctx.fragmentShader != nil)
+
+	render_init_rect_pipeline(ctx, ctx.vertexShader, ctx.fragmentShader)
+
+	ctx.instanceBuffer = render_create_gpu_buffer(ctx, BUFFER_SIZE, {.VERTEX})
+
+	// Create sampler
+	sci: sdl.GPUSamplerCreateInfo
+	sci.min_filter = .NEAREST
+	sci.mag_filter = .NEAREST
+	sci.mipmap_mode = .NEAREST
+	sci.mip_lod_bias = 0
+	sci.compare_op = .ALWAYS
+	ctx.sampler = sdl.CreateGPUSampler(ctx.gpu, sci)
+	assert(ctx.sampler != nil)
+
+	ctx.gpuInitialized = true
+}
+
+render_cleanup :: proc(ctx: ^RenderContext) {
+	render_detach_window(ctx)
+
+	
+}
+
+@(deprecated = "Keeping temporarily for test host, needs to be removed later")
 render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
 	when ODIN_OS == .Windows || ODIN_OS == .Linux {
@@ -157,7 +232,10 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	defer sdl.ReleaseGPUShader(ctx.gpu, pixelShader)
 	fmt.println("Created pixel shader")
 
-	render_init_rect_pipeline(ctx, vertexShader, pixelShader)
+	format := sdl.GetGPUSwapchainTextureFormat(ctx.gpu, ctx.window)
+	fmt.println("Format: ", format)
+
+	render_init_rect_pipeline(ctx, vertexShader, pixelShader, format)
 
 	ctx.instanceBuffer = render_create_gpu_buffer(ctx, BUFFER_SIZE, {.VERTEX})
 
@@ -176,15 +254,17 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	return ctx
 }
 
-render_deinit :: proc(ctx: ^RenderContext) {
-	if ctx.window != nil {
-		sdl.DestroyWindow(ctx.window)
-		ctx.window = nil
-		ctx.initialized = false
-	}
-}
+DEFAULT_SWAPCHAIN_FORMAT : sdl.GPUTextureFormat : .B8G8R8A8_UNORM
 
-render_init_rect_pipeline :: proc(ctx: ^RenderContext, vertexShader, pixelShader: ^sdl.GPUShader) {
+render_init_rect_pipeline :: proc(
+		ctx: ^RenderContext,
+		vertexShader, pixelShader: ^sdl.GPUShader,
+		swapchainFormat: sdl.GPUTextureFormat = DEFAULT_SWAPCHAIN_FORMAT) {
+	if ctx.pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(ctx.gpu, ctx.pipeline)
+		ctx.pipeline = nil
+	}
+
 	blendState: sdl.GPUColorTargetBlendState
 	blendState.enable_blend = true
 	blendState.src_color_blendfactor = .SRC_ALPHA
@@ -194,10 +274,10 @@ render_init_rect_pipeline :: proc(ctx: ^RenderContext, vertexShader, pixelShader
 	blendState.dst_alpha_blendfactor = .ZERO
 	blendState.alpha_blend_op = .ADD
 
-	colorFmt := sdl.GetGPUSwapchainTextureFormat(ctx.gpu, ctx.window)
 	desc : sdl.GPUColorTargetDescription
-	desc.format = colorFmt
+	desc.format = swapchainFormat
 	desc.blend_state = blendState
+	ctx.swapchainFormat = swapchainFormat
 
 	pipelineCreate: sdl.GPUGraphicsPipelineCreateInfo
 	pipelineCreate.target_info.num_color_targets = 1
@@ -231,7 +311,6 @@ render_init_rect_pipeline :: proc(ctx: ^RenderContext, vertexShader, pixelShader
 	pipelineCreate.rasterizer_state.front_face = .CLOCKWISE
 	ctx.pipeline = sdl.CreateGPUGraphicsPipeline(ctx.gpu, pipelineCreate)
 	assert(ctx.pipeline != nil)
-	fmt.println("Created GPU pipeline")
 }
 
 render_create_gpu_buffer :: proc(ctx: ^RenderContext, sizeInBytes: u32, usage: sdl.GPUBufferUsageFlags) -> GraphicsBuffer {

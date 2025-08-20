@@ -45,6 +45,7 @@ SimpleUIRect :: struct {
 
 DrawContext :: struct {
 	plugin: ^Plugin,
+	initialized: bool,
 	fontState: FontState,
 	arena: vm.Arena,
 	alloc: mem.Allocator,
@@ -56,6 +57,8 @@ DrawContext :: struct {
 }
 
 draw_init :: proc(ctx: ^DrawContext) {
+	if ctx.initialized do return
+
 	err := vm.arena_init_growing(&ctx.arena)
 	assert(err == .None)
 	ctx.alloc = vm.arena_allocator(&ctx.arena)
@@ -65,6 +68,7 @@ draw_init :: proc(ctx: ^DrawContext) {
 	ctx.fontTexture.data = ctx.fontState.fontContext.textureData
 	
 	font_init(&ctx.fontState)
+	ctx.initialized = true
 }
 
 draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
@@ -309,4 +313,9 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 		ctx.fontTexture.uploaded = false
 		font_reset_dirty_flag(&ctx.fontState)
 	}
+}
+
+draw_measure_text :: proc(ctx: ^DrawContext, text: string) -> Vec2f {
+	rect := font_measure_bounds(&ctx.fontState, text, 0, 0)
+	return {rect.w, rect.h}
 }
