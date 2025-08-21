@@ -76,7 +76,9 @@ render_attach_window :: proc(ctx: ^RenderContext, parent: rawptr) {
 	when ODIN_OS == .Linux do sdl.SetPointerProperty(windowPropId, sdl.PROP_WINDOW_CREATE_X11_EMBED_WINDOW_ID_POINTER, parent)
 
 	// Render API
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+	when ODIN_OS == .Windows {
+		// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_, true)
+	} else when ODIN_OS == .Linux {
 		sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)
 	}
 	when ODIN_OS == .Darwin do sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_METAL_BOOLEAN, true)
@@ -117,7 +119,9 @@ render_init_gpu_resources :: proc(ctx: ^RenderContext) {
 	if ctx.gpuInitialized do return
 
 	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+	when ODIN_OS == .Windows {
+		shaderFormat = {.DXIL}
+	} else when ODIN_OS == .Linux {
 		shaderFormat = {.SPIRV}
 	} else when ODIN_OS == .Darwin {
 		shaderFormat = {.MSL}
@@ -125,10 +129,15 @@ render_init_gpu_resources :: proc(ctx: ^RenderContext) {
 	ctx.gpu = sdl.CreateGPUDevice(shaderFormat, ODIN_DEBUG, nil)
 	assert(ctx.gpu != nil)
 
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+	when ODIN_OS == .Windows {
+		vShaderBits := #load("../shaders/vs.dxil")
+		pShaderBits := #load("../shaders/ps.dxil")
+	} else when ODIN_OS == .Linux {
 		vShaderBits := #load("../shaders/vs.spv")
+		pShaderBits := #load("../shaders/ps.spv")
 	} else when ODIN_OS == .Darwin {
 		vShaderBits := #load("../shaders/shader.metal")
+		pShaderBits := #load("../shaders/shader.metal")
 	}
 
 	vertexCreate: sdl.GPUShaderCreateInfo
@@ -140,12 +149,6 @@ render_init_gpu_resources :: proc(ctx: ^RenderContext) {
 	vertexCreate.num_uniform_buffers = 1
 	ctx.vertexShader = sdl.CreateGPUShader(ctx.gpu, vertexCreate)
 	assert(ctx.vertexShader != nil)
-
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
-		pShaderBits := #load("../shaders/ps.spv")
-	} else when ODIN_OS == .Darwin {
-		pShaderBits := #load("../shaders/shader.metal")
-	}
 
 	pixelCreate: sdl.GPUShaderCreateInfo
 	pixelCreate.code_size = uint(len(pShaderBits))
@@ -177,14 +180,14 @@ render_init_gpu_resources :: proc(ctx: ^RenderContext) {
 
 render_cleanup :: proc(ctx: ^RenderContext) {
 	render_detach_window(ctx)
-
-	
 }
 
 @(deprecated = "Keeping temporarily for test host, needs to be removed later")
 render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	shaderFormat : sdl.GPUShaderFormat = {.SPIRV}
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+	when ODIN_OS == .Windows {
+		shaderFormat = {.DXIL}
+	} else when ODIN_OS == .Linux {
 		shaderFormat = {.SPIRV}
 	} else when ODIN_OS == .Darwin {
 		shaderFormat = {.MSL}
@@ -194,11 +197,15 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 
 	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
 	assert(result == true)
-
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
+	when ODIN_OS == .Windows {
+		vShaderBits := #load("../shaders/vs.dxil")
+		pShaderBits := #load("../shaders/ps.dxil")
+	} else when ODIN_OS == .Linux {
 		vShaderBits := #load("../shaders/vs.spv")
+		pShaderBits := #load("../shaders/ps.spv")
 	} else when ODIN_OS == .Darwin {
 		vShaderBits := #load("../shaders/shader.metal")
+		pShaderBits := #load("../shaders/shader.metal")
 	}
 
 	vertexCreate: sdl.GPUShaderCreateInfo
@@ -212,12 +219,6 @@ render_init :: proc(ctx: ^RenderContext) -> ^RenderContext {
 	assert(vertexShader != nil)
 	defer sdl.ReleaseGPUShader(ctx.gpu, vertexShader)
 	fmt.println("Created vertex shader")
-
-	when ODIN_OS == .Windows || ODIN_OS == .Linux {
-		pShaderBits := #load("../shaders/ps.spv")
-	} else when ODIN_OS == .Darwin {
-		pShaderBits := #load("../shaders/shader.metal")
-	}
 
 	pixelCreate: sdl.GPUShaderCreateInfo
 	pixelCreate.code_size = uint(len(pShaderBits))
@@ -310,6 +311,10 @@ render_init_rect_pipeline :: proc(
 	pipelineCreate.rasterizer_state.fill_mode = .FILL
 	pipelineCreate.rasterizer_state.front_face = .CLOCKWISE
 	ctx.pipeline = sdl.CreateGPUGraphicsPipeline(ctx.gpu, pipelineCreate)
+	if ctx.pipeline == nil {
+		str := sdl.GetError()
+		fmt.println(str)
+	}
 	assert(ctx.pipeline != nil)
 }
 

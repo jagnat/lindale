@@ -14,13 +14,19 @@ cbuffer UniformBuffer : register(b0, UNIFORM_SPACE) {
 Texture2D tex : register(t0, space2);
 SamplerState sampl : register(s0, space2);
 
+#ifdef VULKAN
+    #define LOCATION(n) [[vk::location(n)]]
+#else
+    #define LOCATION(n)
+#endif
+
 struct VSInput {
-	[[vk::location(0)]] float2 pos0 : POSITION0;
-	[[vk::location(1)]] float2 pos1 : POSITION1;
-	[[vk::location(2)]] float2 uv0 : TEXCOORD0;
-	[[vk::location(3)]] float2 uv1 : TEXCOORD1;
-	[[vk::location(4)]] float4 color : COLOR;
-	[[vk::location(5)]] float3 params : PARAMS; // (cornerRad, noTexture, padding)
+	LOCATION(0) float2 pos0 : TEXCOORD0;
+	LOCATION(1) float2 pos1 : TEXCOORD1;
+	LOCATION(2) float2 uv0 : TEXCOORD2;
+	LOCATION(3) float2 uv1 : TEXCOORD3;
+	LOCATION(4) float4 color : TEXCOORD4;
+	LOCATION(5) float3 params : TEXCOORD5; // (cornerRad, noTexture, padding)
 	uint vertexId : SV_VertexID; // TL, BL, TR, BR
 };
 
