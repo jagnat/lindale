@@ -38,10 +38,10 @@
 				"shell_cmd": "build_test_host.bat"
 			},
 			"linux": {
-				"shell_cmd": "sh build.sh"
+				"shell_cmd": "sh build_test_host.sh"
 			},
 			"osx": {
-				"shell_cmd": "sh build.sh"
+				"shell_cmd": "sh build_test_host.sh"
 			}
 		},
 		{
