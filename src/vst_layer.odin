@@ -950,11 +950,12 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		log.info("lv_getSize")
+		rect := view.plugin.viewBounds
 		size^ = vst3.ViewRect{
 			left = 0,
 			top = 0,
-			right = 800,
-			bottom = 600,
+			right = rect.w,
+			bottom = rect.h,
 		}
 		return vst3.kResultOk
 	}
@@ -962,6 +963,8 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		log.info("lv_onSize")
+		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
+		lin.plugin_resize_view(view.plugin, rect)
 		return vst3.kResultOk
 	}
 	lv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
@@ -982,7 +985,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		log.info("lv_canResize")
-		return vst3.kResultFalse
+		return vst3.kResultTrue
 	}
 	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")

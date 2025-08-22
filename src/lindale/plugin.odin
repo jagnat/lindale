@@ -20,6 +20,7 @@ Plugin :: struct {
 	flipColor: bool,
 
 	// Common state
+	viewBounds: RectI32,
 
 	// TODO: DELETE GROSS
 	gross_global_glob: AnalysisTransfer
@@ -83,6 +84,8 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 	if plugin.render != nil do plugin.render.plugin = plugin
 	if plugin.draw != nil do plugin.draw.plugin = plugin
 
+	plugin.viewBounds = RectI32{0, 0, 800, 600}
+
 	return plugin
 }
 
@@ -94,13 +97,18 @@ plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
 	render_attach_window(plug.render, parentHandle)
-	render_resize(plug.render, 800, 600)
+	render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 
 	draw_init(plug.draw)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
 	render_detach_window(plug.render)
+}
+
+plugin_resize_view :: proc(plug: ^Plugin, rect: RectI32) {
+	plug.viewBounds = rect
+	render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 }
 
 log_like_tween :: proc(i: int, N: int) -> f32 {

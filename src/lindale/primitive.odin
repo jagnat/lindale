@@ -44,3 +44,22 @@ decibels_to_linear :: proc(decibels: f64) -> f64 {
 linear_to_decibels :: proc(linear: f64) -> f64 {
 	return 20 * math.log10(linear)
 }
+
+// FNV-1
+string_hash_u64 :: proc(str: string) -> u64 {
+	hash: u64 = 0xcbf29ce484222325
+	for idx in 0..<len(str) {
+		hash *= 0x100000001b3
+		hash ~= u64(str[idx])
+	}
+	return hash
+}
+
+string_hash_u32 :: proc(str: string) -> u32 {
+	hash: u32 = 0x811c9dc5
+	for idx in 0..<len(str) {
+		hash *= 0x01000193
+		hash ~= u32(str[idx])
+	}
+	return hash
+}
