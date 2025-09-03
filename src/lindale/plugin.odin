@@ -16,8 +16,10 @@ Plugin :: struct {
 	// UI / controller state
 	render: ^RenderContext,
 	draw: ^DrawContext,
+	ui: ^UIContext,
 
-	flipColor: bool,
+	// TODO: Better place for this
+	mouse: MouseInput,
 
 	// Common state
 	viewBounds: RectI32,
@@ -36,6 +38,18 @@ PluginApi :: struct {
 	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
 	draw : proc(plug: ^Plugin),
 	process_audio : proc(plug: ^Plugin),
+}
+
+MouseButton :: enum { RMB, LMB }
+
+MouseButtonState :: struct {
+	down, pressed, released: bool
+}
+
+MouseInput :: struct {
+	buttonState: [MouseButton]MouseButtonState,
+	scrollDelta: f32,
+	mouseX, mouseY: f32,
 }
 
 // TODO: HACK for demo, not threadsafe, doesn't support multiple instances
@@ -75,6 +89,9 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 
 		plugin.draw = new(DrawContext)
 		if plugin.draw == nil do error = true
+
+		plugin.ui = new(UIContext)
+		if plugin.draw == nil do error = true
 	}
 	defer if error && plugin.render != nil do free(plugin.render)
 	defer if error && plugin.draw != nil do free(plugin.draw)
@@ -83,6 +100,7 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 
 	if plugin.render != nil do plugin.render.plugin = plugin
 	if plugin.draw != nil do plugin.draw.plugin = plugin
+	if plugin.ui != nil do plugin.ui.plugin = plugin
 
 	plugin.viewBounds = RectI32{0, 0, 800, 600}
 
@@ -100,6 +118,7 @@ plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 
 	draw_init(plug.draw)
+	ui_init(plug.ui)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
@@ -135,8 +154,12 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 
 	@(static) doLog := true
 
+	@(static) alph: u8 = 128
+
+	alph += u8(plug.mouse.scrollDelta)
+
 	draw_clear(plug.draw)
-	draw_set_scissor(plug.draw, RectI32{200, 300, 400, 200})
+	// draw_set_scissor(plug.draw, RectI32{200, 300, 400, 200})
 	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 		val := vec[i]
 		mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
@@ -155,7 +178,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			x - (fft_bin_width / 2), y0,
 			width, height,
 			0, 0, 0, 0,
-			ColorU8{255, 240, 255, u8(alpha * 255)}, width/3
+			ColorU8{255, 240, 255, alph}, width/3
 		}
 		draw_push_rect(plug.draw, rect)
 	}
@@ -169,15 +192,42 @@ plugin_draw :: proc(plug: ^Plugin) {
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
 	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
 
-	choices := [?]ColorF32{{0.117647, 0.117647, 0.117647, 1}, {0.278, 0.216, 0.369, 1}, {0.278, 0.716, 0.369, 1}, {0.278, 0.716, 0.969, 1}}
-	@(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
+	choices := [?]ColorF32{
+		{0.117647, 0.117647, 0.117647, 1},
+		{0.278, 0.216, 0.369, 1},
+		{0.278, 0.716, 0.369, 1},
+		{0.278, 0.716, 0.969, 1}}
+
+	@(static) colorIdx := 0
+	if plug.mouse.buttonState[.RMB].pressed do colorIdx += 1
+	if plug.mouse.buttonState[.LMB].released do colorIdx -= 1
+
+	if colorIdx < 0 do colorIdx = len(choices) - 1
+	if colorIdx >= len(choices) do colorIdx = 0
+
+	// @(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
 	// clearColor := rand.choice(choices[:])
-	if plug.flipColor do clearColor = rand.choice(choices[:])
+	// if plug.flipColor do clearColor = rand.choice(choices[:])
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
 	// clearColor := ColorF32_from_hex(0xff00ffff)
 
+	clearColor := choices[colorIdx]
+
 	draw_remove_scissor(plug.draw)
 	draw_text(plug.draw, "this is a test", 100, 100)
+
+	mouse := plug.mouse
+
+	rect := SimpleUIRect {
+		x = mouse.mouseX,
+		y = mouse.mouseY,
+		width = 100,
+		height = 100,
+		color = ColorU8{255, 255, 255, 255},
+		cornerRad = 0,
+	}
+
+	draw_push_rect(plug.draw, rect)
 
 	draw_set_clear_color(plug.draw, clearColor)
 	draw_submit(plug.draw)

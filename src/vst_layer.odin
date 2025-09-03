@@ -777,10 +777,35 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 
 	event: sdl3.Event
-	view.plugin.flipColor = false
+
+	mouse := &view.plugin.mouse
+
+	for &btn in mouse.buttonState {
+		btn.pressed = false
+		btn.released = false
+	}
+	mouse.scrollDelta = 0
 
 	for sdl3.PollEvent(&event) {
-		log.info("event with type: ", event.type)
+		#partial switch event.type {
+		case .MOUSE_BUTTON_DOWN: fallthrough
+		case .MOUSE_BUTTON_UP:
+			if event.button.button != sdl3.BUTTON_LEFT && event.button.button != sdl3.BUTTON_RIGHT do break
+
+			btn := lin.MouseButton.LMB if event.button.button == sdl3.BUTTON_LEFT else .RMB
+
+			mouse.buttonState[btn].down = event.type == .MOUSE_BUTTON_DOWN
+			if event.type == .MOUSE_BUTTON_DOWN {
+				mouse.buttonState[btn].pressed = true
+			} else {
+				mouse.buttonState[btn].released = true
+			}
+		case .MOUSE_MOTION:
+			mouse.mouseX = event.motion.x
+			mouse.mouseY = event.motion.y
+		case .MOUSE_WHEEL:
+			mouse.scrollDelta = event.wheel.mouse_y
+		}
 	}
 
 	if view.plugin != nil && view.plugin.render != nil {
