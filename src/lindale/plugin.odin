@@ -49,7 +49,7 @@ MouseButtonState :: struct {
 MouseInput :: struct {
 	buttonState: [MouseButton]MouseButtonState,
 	scrollDelta: f32,
-	mouseX, mouseY: f32,
+	pos: Vec2f,
 }
 
 // TODO: HACK for demo, not threadsafe, doesn't support multiple instances
@@ -219,8 +219,8 @@ plugin_draw :: proc(plug: ^Plugin) {
 	mouse := plug.mouse
 
 	rect := SimpleUIRect {
-		x = mouse.mouseX,
-		y = mouse.mouseY,
+		x = mouse.pos.x,
+		y = mouse.pos.y,
 		width = 100,
 		height = 100,
 		color = ColorU8{255, 255, 255, 255},

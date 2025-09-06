@@ -45,6 +45,11 @@ linear_to_decibels :: proc(linear: f64) -> f64 {
 	return 20 * math.log10(linear)
 }
 
+vec2_in_rect :: proc(v: Vec2f, r: RectF32) -> bool {
+	return v.x >= r.x && v.x <= r.x + r.w &&
+		v.y >= r.y && v.y <= r.y + r.h
+}
+
 // FNV-1
 string_hash_u64 :: proc(str: string) -> u64 {
 	hash: u64 = 0xcbf29ce484222325

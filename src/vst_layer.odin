@@ -801,8 +801,8 @@ timer_proc :: proc (timer: ^plat.Timer) {
 				mouse.buttonState[btn].released = true
 			}
 		case .MOUSE_MOTION:
-			mouse.mouseX = event.motion.x
-			mouse.mouseY = event.motion.y
+			mouse.pos.x = event.motion.x
+			mouse.pos.y = event.motion.y
 		case .MOUSE_WHEEL:
 			mouse.scrollDelta = event.wheel.mouse_y
 		}
