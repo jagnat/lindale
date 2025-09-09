@@ -13,7 +13,8 @@ struct VSInput {
 	float2 uv0 [[attribute(2)]];
 	float2 uv1 [[attribute(3)]];
 	float4 color [[attribute(4)]];
-	float3 params [[attribute(5)]]; // (cornerRad, noTexture, padding)
+	float4 borderColor [[attribute(5)]];
+	float4 params [[attribute(6)]]; // (borderWidth, cornerRad, noTexture, padding)
 };
 
 struct VSOutput {
@@ -22,7 +23,8 @@ struct VSOutput {
 	float2 rectPos;
 	float2 halfRectSize [[flat]];
 	float4 color [[flat]];
-	float3 params [[flat]];
+	float4 borderColor [[flat]];
+	float4 params [[flat]];
 };
 
 float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
@@ -63,6 +65,7 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	output.halfRectSize = (input.pos1 - input.pos0) / 2.0;
 	output.rectPos = rectMult * output.halfRectSize;
 	output.color = input.color;
+	output.borderColor = input.borderColor;
 	output.params = input.params;
 
 	return output;
@@ -70,7 +73,9 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
 	float4 outputColor = input.color;
-	float noTexture = input.params.y;
+	float borderWidth = input.params.x;
+	float cornerRad = input.params.y;
+	float noTexture = input.params.z;
 	float4 sampleColor = float4(1.0, 1.0, 1.0, 1.0);
 	if (noTexture < 1) {
 		sampleColor = tex.sample(sampl, input.uv);
@@ -81,13 +86,21 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 			outputColor = input.color * sampleColor;
 		}
 	}
-	// float sampleAlpha = dot(sampleColor, uniformBuffer.samplerAlphaChannel);
-	// outputColor *= float4(sampleColor.rgb * (1.0 - abs(uniformBuffer.samplerAlphaChannel.r)) + uniformBuffer.samplerFillChannels.rgb, sampleAlpha);
 
 	// SDF corners
-	float sdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, input.params.x);
-	float mixFactor = smoothstep(-0.75, 0.75, sdf);
-	outputColor.a *= 1.0 - mixFactor;
+	float outerSdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, cornerRad);
+
+	if (borderWidth > 0.0) {
+		float2 innerHalfSize = max(input.halfRectSize - borderWidth, 0.0);
+		float innerCornerRad = max(cornerRad - borderWidth, 0.0);
+		float innerSdf = rounded_rect_sdf(input.rectPos, innerHalfSize, innerCornerRad);
+
+		float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+		outputColor = mix(outputColor, input.borderColor, borderBlend);
+	}
+
+	float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
+	outputColor.a *= 1.0f - mixFactor;
 
 	return outputColor;
 }

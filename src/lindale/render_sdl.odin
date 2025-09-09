@@ -58,6 +58,10 @@ RectInstance :: struct #packed {
 	uv0: [2]f32, // Top left
 	uv1: [2]f32, // Bottom right
 	color: ColorU8, // rect color
+	borderColor: ColorU8,
+
+	// Params: Vec4
+	borderWidth: f32,
 	cornerRad: f32, // corner radiustc
 	noTexture: f32, // 
 	_pad: f32, // Ignored
@@ -291,17 +295,19 @@ render_init_rect_pipeline :: proc(
 	vbDesc.slot = 0
 	vbDesc.input_rate = .INSTANCE
 	vbDesc.pitch = size_of(RectInstance)
+	#assert(size_of(RectInstance) == 56)
 
 	vertexInputState: sdl.GPUVertexInputState
 
-	vaDesc: [6]sdl.GPUVertexAttribute
+	vaDesc: [7]sdl.GPUVertexAttribute
 	vaDesc[0] = sdl.GPUVertexAttribute{location = 0, offset = 0 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[1] = sdl.GPUVertexAttribute{location = 1, offset = 2 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[2] = sdl.GPUVertexAttribute{location = 2, offset = 4 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[3] = sdl.GPUVertexAttribute{location = 3, offset = 6 * size_of(f32), buffer_slot = 0, format = .FLOAT2}
 	vaDesc[4] = sdl.GPUVertexAttribute{location = 4, offset = 8 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
-	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 9 * size_of(f32), buffer_slot = 0, format = .FLOAT3}
-	vertexInputState.num_vertex_attributes = 6
+	vaDesc[5] = sdl.GPUVertexAttribute{location = 5, offset = 9 * size_of(f32), buffer_slot = 0, format = .UBYTE4_NORM}
+	vaDesc[6] = sdl.GPUVertexAttribute{location = 6, offset = 10 * size_of(f32), buffer_slot = 0, format = .FLOAT4}
+	vertexInputState.num_vertex_attributes = 7
 
 	vertexInputState.num_vertex_buffers = 1
 	vertexInputState.vertex_buffer_descriptions = &vbDesc

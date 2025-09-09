@@ -148,7 +148,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	endX : f32 = 800 - 50
 	startY : f32 = 600 - 50
 	fft_height :: 1000
-	fft_bin_width :: 3
+	fft_bin_width :: 10
 	MIN_FREQ : f32 : 20
 	MAX_FREQ : f32 : 22050
 
@@ -178,7 +178,8 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			x - (fft_bin_width / 2), y0,
 			width, height,
 			0, 0, 0, 0,
-			ColorU8{255, 240, 255, alph}, width/3
+			ColorU8{255, 240, 255, alph}, width/2,
+			ColorU8{12, 0, 12, alph}, 0
 		}
 		draw_push_rect(plug.draw, rect)
 	}
@@ -223,8 +224,10 @@ plugin_draw :: proc(plug: ^Plugin) {
 		y = mouse.pos.y,
 		width = 100,
 		height = 100,
-		color = ColorU8{255, 255, 255, 255},
-		cornerRad = 0,
+		color = DEFAULT_THEME.buttonColor,
+		cornerRad = 20,
+		borderWidth = 3,
+		borderColor = DEFAULT_THEME.borderColor,
 	}
 
 	draw_push_rect(plug.draw, rect)
