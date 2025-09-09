@@ -103,9 +103,7 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 			outputColor = input.color * sampleColor;
 		}
 	}
-	// float sampleAlpha = dot(sampleColor, samplerAlphaChannel);
-	// outputColor *= float4(sampleColor.rgb * (1.0 - abs(samplerAlphaChannel.r)) + samplerFillChannels.rgb, sampleAlpha);
-
+	
 	// SDF corners
 	float outerSdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, cornerRad);
 
