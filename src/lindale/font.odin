@@ -38,6 +38,8 @@ font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []R
 			{quad.s0, quad.t0},
 			{quad.s1, quad.t1},
 			{}, // Color
+			{}, // Border color
+			0, // Border width
 			0, // Corner Radius
 			0, // Not white texture
 			0, // Padding

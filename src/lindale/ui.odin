@@ -1,17 +1,19 @@
 package lindale
 
-MAX_LAYOUT_DEPTH :: 32
+MAX_LAYOUT_DEPTH :: 64
 
 UIContext :: struct {
 	plugin: ^Plugin,
 	windowBounds: RectF32,
 
 	theme: UITheme,
+	mouse: MouseInput,
 
-	hotId: u32,
-	activeId: u32,
+	hoveredId: u32, // If a control has the mouse over it
+	activeId: u32, // If a control is actually being interacted with
 	layoutStack: [MAX_LAYOUT_DEPTH]LayoutConfig,
 	layoutIdx: int,
+	currentLayout: LayoutConfig,
 }
 
 UITheme :: struct {
@@ -45,6 +47,7 @@ LayoutConfig :: struct {
 	direction: LayoutDirection,
 	innerPad: f32,
 	bounds: RectF32,
+	cursor: Vec2f,
 }
 
 DEFAULT_THEME : UITheme : {
@@ -67,4 +70,43 @@ DEFAULT_THEME : UITheme : {
 
 ui_init :: proc(ctx: ^UIContext) {
 	ctx.theme = DEFAULT_THEME
+}
+
+ui_begin_frame :: proc(ctx: ^UIContext) {
+	ctx.mouse = ctx.plugin.mouse
+	ctx.hoveredId = 0
+
+	ctx.layoutIdx = 0
+	ctx.currentLayout = {}
+}
+
+ui_end_frame :: proc(ctx: ^UIContext) {
+	if ctx.mouse.buttonState[.LMB].released {
+		ctx.activeId = 0
+	}
+
+	if ctx.hoveredId == 0 {
+		ctx.activeId = 0
+	}
+}
+
+ui_get_widget_rect :: proc(ctx: ^UIContext, w, h: f32) -> RectF32 {
+	rect := RectF32 {
+		x = ctx.currentLayout.cursor.x,
+		y = ctx.currentLayout.cursor.y,
+		w = w,
+		h = h,
+	}
+
+	if ctx.currentLayout.direction == .HORIZONTAL {
+		ctx.currentLayout.cursor.x += w + ctx.theme.itemSpacing
+	} else {
+		ctx.currentLayout.cursor.y += h + ctx.theme.itemSpacing
+	}
+
+	return rect
+}
+
+ui_begin_panel :: proc(label: string, rect: RectF32) {
+	
 }

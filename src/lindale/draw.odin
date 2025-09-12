@@ -41,6 +41,8 @@ SimpleUIRect :: struct {
 	u, v, uw, vh: f32,
 	color: ColorU8,
 	cornerRad: f32,
+	borderColor: ColorU8,
+	borderWidth: f32,
 }
 
 DrawContext :: struct {
@@ -161,6 +163,8 @@ draw_push_rect :: proc(ctx: ^DrawContext, rect: SimpleUIRect) {
 	instance.color = rect.color
 	instance.cornerRad = rect.cornerRad
 	instance.noTexture = 1
+	instance.borderColor = rect.borderColor
+	instance.borderWidth = rect.borderWidth
 	draw_add_instance_to_batch(ctx, curBatch, instance)
 }
 
@@ -231,7 +235,7 @@ draw_generate_random_rects :: proc(ctx: ^DrawContext) {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			0, 0, 0, 0, // UVs
-			 rand.choice(colors), 20}
+			 rand.choice(colors), 20, {}, 0}
 		draw_push_rect(ctx, rect)
 	}
 }
@@ -247,7 +251,7 @@ draw_generate_random_textured_rects :: proc(ctx: ^DrawContext) {
 		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			u, v, 0.5, 0.5, // UVs
-			rand.choice(colors), 0}
+			rand.choice(colors), 0, {}, 0}
 		draw_push_rect(ctx, rect)
 	}
 }
@@ -265,7 +269,7 @@ draw_generate_random_spheres :: proc(ctx: ^DrawContext) {
 		rect := SimpleUIRect{x, y,
 			2 * rad, 2 * rad,
 			0, 0, 0, 0,
-			rand.choice(colors), rad}
+			rand.choice(colors), rad, {}, 0}
 		draw_push_rect(ctx, rect)
 	}
 }
@@ -282,7 +286,7 @@ draw_generate_random_subpixelrects :: proc(ctx: ^DrawContext) {
 		rect := SimpleUIRect{x, y,
 			1.5, 4.5,
 			0, 0, 0, 0,
-			rand.choice(colors), 0}
+			rand.choice(colors), 0, {}, 0}
 		draw_push_rect(ctx, rect)
 	}
 }
@@ -292,7 +296,7 @@ draw_one_rect :: proc(ctx: ^DrawContext) {
 	rect := SimpleUIRect{200, 200,
 			100, 100, 
 			0, 0, 0, 0,
-			{0, 255, 0, 255}, 0}
+			{0, 255, 0, 255}, 0, {}, 0}
 	draw_push_rect(ctx, rect)
 }
 
