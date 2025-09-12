@@ -8,27 +8,27 @@
 	"build_systems":
 	[
 		{
-			"name": "Build VST3",
+			"name": "Build Plugin",
 			"working_dir": "${project_path}",
 			"windows":
 			{
-				"shell_cmd": "build_vst3.bat"
+				"shell_cmd": "build_plugin.bat"
 			},
 			"osx":
 			{
-				"shell_cmd": "sh ./build_vst3.command"
+				"shell_cmd": "sh ./build_plugin.command"
 			}
 		},
 		{
-			"name": "Build Hotload VST3",
+			"name": "Build Hotload Plugin",
 			"working_dir": "${project_path}",
 			"windows":
 			{
-				"shell_cmd": "build_hotload_vst3.bat"
+				"shell_cmd": "build_hotload_plugin.bat"
 			},
 			"osx":
 			{
-				"shell_cmd": "sh ./build_hotload_vst.command"
+				"shell_cmd": "sh ./build_hotload_plugin.command"
 			}
 		},
 		{
