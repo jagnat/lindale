@@ -45,7 +45,7 @@ linear_to_decibels :: proc(linear: f64) -> f64 {
 	return 20 * math.log10(linear)
 }
 
-vec2_in_rect :: proc(v: Vec2f, r: RectF32) -> bool {
+collide_vec2_rect :: proc(v: Vec2f, r: RectF32) -> bool {
 	return v.x >= r.x && v.x <= r.x + r.w &&
 		v.y >= r.y && v.y <= r.y + r.h
 }

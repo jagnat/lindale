@@ -18,6 +18,7 @@ UIContext :: struct {
 
 UITheme :: struct {
 	bgColor: ColorU8,
+	panelBgColor: ColorU8,
 
 	buttonColor: ColorU8,
 	buttonHoverColor: ColorU8,
@@ -52,6 +53,7 @@ LayoutConfig :: struct {
 
 DEFAULT_THEME : UITheme : {
 	bgColor = {0x3c, 0x3f, 0x41, 0xff},
+	panelBgColor = {0x3c, 0x3f, 0x41, 0xff},
 	buttonColor = {0x4e, 0x50, 0x52, 0xff},
 	buttonHoverColor = {0x55, 0x58, 0x5a, 0xff},
 	buttonActiveColor = {0x5d, 0x5f, 0x62, 0xff},
@@ -107,6 +109,89 @@ ui_get_widget_rect :: proc(ctx: ^UIContext, w, h: f32) -> RectF32 {
 	return rect
 }
 
-ui_begin_panel :: proc(label: string, rect: RectF32) {
-	
+ui_begin_panel :: proc(ctx: ^UIContext, label: string, rect: RectF32) {
+	panelRect := SimpleUIRect {
+		x = rect.x, y = rect.y,
+		width = rect.w, height = rect.h,
+		u = 0, v = 0, uw = 0, vh = 0,
+		color = ctx.theme.panelBgColor,
+		cornerRad = ctx.theme.cornerRadius,
+		borderColor = ctx.theme.borderColor,
+		borderWidth = ctx.theme.borderWidth
+	}
+	draw_push_rect(ctx.plugin.draw, panelRect)
+
+	newLayout := LayoutConfig{
+		direction = .HORIZONTAL,
+		innerPad = ctx.theme.padding,
+		bounds = rect,
+		cursor = {rect.x + ctx.theme.padding, rect.y + ctx.theme.padding}
+	}
+
+	ctx.layoutStack[ctx.layoutIdx] = ctx.currentLayout
+	ctx.layoutIdx += 1
+	ctx.currentLayout = newLayout
+
+	// TODO: Draw label?
+	if len(label) > 0 {
+
+	}
+}
+
+ui_end_panel :: proc(ctx: ^UIContext) {
+	if ctx.layoutIdx > 0 {
+		ctx.currentLayout = ctx.layoutStack[ctx.layoutIdx]
+		ctx.layoutIdx -= 1
+	}
+}
+
+ui_label :: proc(ctx: ^UIContext, text: string) {
+	textSize := draw_measure_text(ctx.plugin.draw, text)
+	rect := ui_get_widget_rect(ctx, textSize.x, textSize.y)
+
+	draw_text(ctx.plugin.draw, text, rect.x, rect.y, ctx.theme.textColor)
+}
+
+ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
+	id := string_hash_u32(label)
+	textSize := draw_measure_text(ctx.plugin.draw, label)
+	padding := ctx.theme.padding
+	rect := ui_get_widget_rect(ctx, textSize.x + 2 * padding, textSize.y + 2 * padding)
+
+	mouseOver := collide_vec2_rect(ctx.mouse.pos, rect)
+
+	if mouseOver {
+		ctx.hoveredId = id
+	}
+
+	clicked := false
+
+	// TODO: Update colors
+	if id == ctx.activeId {
+		if ctx.mouse.buttonState[.LMB].released {
+			clicked = mouseOver
+		}
+	} else if id == ctx.hoveredId {
+
+		if ctx.mouse.buttonState[.LMB].pressed {
+			ctx.activeId = id
+		}
+	}
+
+	buttonRect := SimpleUIRect{
+		x = rect.x, y = rect.y,
+		width = rect.w, height = rect.h,
+		u = 0, v = 0, uw = 0, vh = 0,
+		color = ctx.theme.buttonColor,
+		cornerRad = ctx.theme.cornerRadius,
+		borderColor = ctx.theme.borderColor,
+		borderWidth = ctx.theme.borderWidth,
+	}
+	draw_push_rect(ctx.plugin.draw, buttonRect)
+
+	textX := rect.x + (rect.w - textSize.x) * 0.5
+	textY := rect.y + (rect.h - textSize.y) * 0.5
+	draw_text(ctx.plugin.draw, label, textX, textY, ctx.theme.textColor)
+
+	return clicked
 }
