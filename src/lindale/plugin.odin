@@ -181,7 +181,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 			ColorU8{255, 240, 255, alph}, width/2,
 			ColorU8{12, 0, 12, alph}, 0
 		}
-		draw_push_rect(plug.draw, rect)
+		// draw_push_rect(plug.draw, rect)
 	}
 	doLog = false
 }
@@ -212,10 +212,11 @@ plugin_draw :: proc(plug: ^Plugin) {
 	// clearColor := ColorF32_from_hex(0xca9f85ff)
 	// clearColor := ColorF32_from_hex(0xff00ffff)
 
-	clearColor := choices[colorIdx]
+	// clearColor := choices[colorIdx]
+	clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
 
 	draw_remove_scissor(plug.draw)
-	draw_text(plug.draw, "this is a test", 100, 100)
+	// draw_text(plug.draw, "this is a test", 100, 100)
 
 	mouse := plug.mouse
 
@@ -230,7 +231,17 @@ plugin_draw :: proc(plug: ^Plugin) {
 		borderColor = DEFAULT_THEME.borderColor,
 	}
 
-	draw_push_rect(plug.draw, rect)
+	// draw_push_rect(plug.draw, rect)
+
+	ui_init(plug.ui)
+
+	ui_begin_frame(plug.ui)
+	ui_button(plug.ui, "test_button")
+	ui_button(plug.ui, "TEST")
+	// ui_button(plug.ui, "forecast")
+	f: f32 = 40
+	ui_slider_v(plug.ui, "test", &f, 0, 100, 200)
+	ui_end_frame(plug.ui)
 
 	draw_set_clear_color(plug.draw, clearColor)
 	draw_submit(plug.draw)

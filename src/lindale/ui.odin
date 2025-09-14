@@ -1,5 +1,7 @@
 package lindale
 
+import "core:math/linalg"
+
 MAX_LAYOUT_DEPTH :: 64
 
 UIContext :: struct {
@@ -66,8 +68,8 @@ DEFAULT_THEME : UITheme : {
 
 	padding = 10,
 	itemSpacing = 10,
-	cornerRadius = 5,
-	borderWidth = 1,
+	cornerRadius = 12,
+	borderWidth = 1.5,
 }
 
 ui_init :: proc(ctx: ^UIContext) {
@@ -78,8 +80,18 @@ ui_begin_frame :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse
 	ctx.hoveredId = 0
 
+	frameRect := RectF32 {
+		0, 0,
+		f32(ctx.plugin.render.width), f32(ctx.plugin.render.height)
+	}
+
 	ctx.layoutIdx = 0
-	ctx.currentLayout = {}
+	ctx.currentLayout = LayoutConfig {
+		direction = .HORIZONTAL,
+		innerPad = ctx.theme.padding,
+		bounds = frameRect,
+		cursor = {frameRect.x + ctx.theme.padding, frameRect.y + ctx.theme.padding}
+	}
 }
 
 ui_end_frame :: proc(ctx: ^UIContext) {
@@ -148,6 +160,7 @@ ui_end_panel :: proc(ctx: ^UIContext) {
 ui_label :: proc(ctx: ^UIContext, text: string) {
 	textSize := draw_measure_text(ctx.plugin.draw, text)
 	rect := ui_get_widget_rect(ctx, textSize.x, textSize.y)
+	rect.y += textSize.y / 2
 
 	draw_text(ctx.plugin.draw, text, rect.x, rect.y, ctx.theme.textColor)
 }
@@ -166,13 +179,16 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 
 	clicked := false
 
+	color := ctx.theme.buttonColor
+
 	// TODO: Update colors
 	if id == ctx.activeId {
+		color = ctx.theme.buttonHoverColor
 		if ctx.mouse.buttonState[.LMB].released {
 			clicked = mouseOver
 		}
 	} else if id == ctx.hoveredId {
-
+		color = ctx.theme.buttonActiveColor
 		if ctx.mouse.buttonState[.LMB].pressed {
 			ctx.activeId = id
 		}
@@ -182,7 +198,7 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 		x = rect.x, y = rect.y,
 		width = rect.w, height = rect.h,
 		u = 0, v = 0, uw = 0, vh = 0,
-		color = ctx.theme.buttonColor,
+		color = color,
 		cornerRad = ctx.theme.cornerRadius,
 		borderColor = ctx.theme.borderColor,
 		borderWidth = ctx.theme.borderWidth,
@@ -194,4 +210,70 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	draw_text(ctx.plugin.draw, label, textX, textY, ctx.theme.textColor)
 
 	return clicked
+}
+
+ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, height: f32 = 100) {
+	id := string_hash_u32(label)
+
+	padding := ctx.theme.padding
+
+	slider_width :: 20
+
+	slider_rail_width :: 4
+
+	boundsRect := ui_get_widget_rect(ctx, slider_width, height)
+
+	mouseOver := collide_vec2_rect(ctx.mouse.pos, boundsRect)
+
+	if mouseOver {
+		ctx.hoveredId = id
+	}
+
+	sliderP := (val^ - min) / (max - min)
+
+	sliderY := sliderP * height
+
+	if id == ctx.activeId {
+
+	} else if id == ctx.hoveredId {
+
+	}
+
+	// Draw full rail
+	railRect := SimpleUIRect {
+		x = boundsRect.x + (boundsRect.w / 2) - (slider_rail_width / 2),
+		y = boundsRect.y,
+		width = slider_rail_width,
+		height = height,
+		u = 0, v = 0, uw = 0, vh = 0,
+		color = ctx.theme.sliderTrackColor,
+		cornerRad = 2,
+		borderColor = ctx.theme.borderColor,
+		borderWidth = 0.8,
+	}
+	draw_push_rect(ctx.plugin.draw, railRect)
+
+	// Rail up to slider node
+	enabledRailRect := SimpleUIRect {
+		x = boundsRect.x + (boundsRect.w / 2) - (slider_rail_width / 2),
+		y = boundsRect.y + (height - sliderY),
+		width = slider_rail_width,
+		height = sliderY,
+		u = 0, v = 0, uw = 0, vh = 0,
+		color = ctx.theme.sliderColor,
+		cornerRad = 2,
+	}
+	draw_push_rect(ctx.plugin.draw, enabledRailRect)
+
+	// Slider node rect
+	nodeRect := SimpleUIRect {
+		x = boundsRect.x + (boundsRect.w / 2) - (slider_width / 2),
+		y = boundsRect.y + (height - sliderY) - (slider_width / 2),
+		width = slider_width,
+		height = slider_width,
+		u = 0, v = 0, uw = 0, vh = 0,
+		color = ctx.theme.sliderColor,
+		cornerRad = slider_width / 2,
+	}
+	draw_push_rect(ctx.plugin.draw, nodeRect)
 }

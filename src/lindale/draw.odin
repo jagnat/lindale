@@ -304,12 +304,15 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 	strLen := len(text)
 	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
 
-	counts := font_get_text_quads(&ctx.fontState, text, x, y, buf[:])
+	ascent, _, _ := font_get_vertical_metrics(&ctx.fontState)
+
+	counts := font_get_text_quads(&ctx.fontState, text, x, y + ascent, buf[:])
 
 	draw_set_texture(ctx, &ctx.fontTexture)
 
 	for &rect in buf {
 		rect.color = color
+		// rect.noTexture = 1
 		draw_push_instance(ctx, rect)
 	}
 
@@ -320,6 +323,5 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 }
 
 draw_measure_text :: proc(ctx: ^DrawContext, text: string) -> Vec2f {
-	rect := font_measure_bounds(&ctx.fontState, text, 0, 0)
-	return {rect.w, rect.h}
+	return font_measure_bounds(&ctx.fontState, text)
 }
