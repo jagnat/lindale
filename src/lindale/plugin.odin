@@ -236,10 +236,11 @@ plugin_draw :: proc(plug: ^Plugin) {
 	ui_init(plug.ui)
 
 	ui_begin_frame(plug.ui)
-	ui_button(plug.ui, "test_button")
+	// ui_button(plug.ui, "test_button")
 	ui_button(plug.ui, "TEST")
+	// ui_button(plug.ui, "zqop")
 	// ui_button(plug.ui, "forecast")
-	f: f32 = 40
+	@(static) f: f32 = 40
 	ui_slider_v(plug.ui, "test", &f, 0, 100, 200)
 	ui_end_frame(plug.ui)
 

@@ -99,9 +99,9 @@ ui_end_frame :: proc(ctx: ^UIContext) {
 		ctx.activeId = 0
 	}
 
-	if ctx.hoveredId == 0 {
-		ctx.activeId = 0
-	}
+	// if ctx.hoveredId == 0 {
+	// 	ctx.activeId = 0
+	// }
 }
 
 ui_get_widget_rect :: proc(ctx: ^UIContext, w, h: f32) -> RectF32 {
@@ -183,12 +183,12 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 
 	// TODO: Update colors
 	if id == ctx.activeId {
-		color = ctx.theme.buttonHoverColor
+		color = ctx.theme.buttonActiveColor
 		if ctx.mouse.buttonState[.LMB].released {
 			clicked = mouseOver
 		}
 	} else if id == ctx.hoveredId {
-		color = ctx.theme.buttonActiveColor
+		color = ctx.theme.buttonHoverColor
 		if ctx.mouse.buttonState[.LMB].pressed {
 			ctx.activeId = id
 		}
@@ -213,30 +213,39 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 }
 
 ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, height: f32 = 100) {
-	id := string_hash_u32(label)
-
-	padding := ctx.theme.padding
-
 	slider_width :: 20
-
 	slider_rail_width :: 4
 
+	id := string_hash_u32(label)
+	padding := ctx.theme.padding
+	sliderP := (val^ - min) / (max - min)
+	sliderY := sliderP * height
 	boundsRect := ui_get_widget_rect(ctx, slider_width, height)
-
+	nodeRect := RectF32 {boundsRect.x, 0, slider_width, slider_width}
+	nodeRect.y = boundsRect.y + (height - sliderY - slider_width / 2)
 	mouseOver := collide_vec2_rect(ctx.mouse.pos, boundsRect)
+	mouseOverNode := collide_vec2_rect(ctx.mouse.pos, nodeRect)
 
 	if mouseOver {
 		ctx.hoveredId = id
 	}
 
-	sliderP := (val^ - min) / (max - min)
-
-	sliderY := sliderP * height
+	nodeColor := ctx.theme.sliderColor
 
 	if id == ctx.activeId {
-
+		nodeColor = ctx.theme.sliderActiveColor
+		mouseP := ctx.mouse.pos.y
+		if mouseP < boundsRect.y do mouseP = boundsRect.y
+		if mouseP > boundsRect.y + boundsRect.h do mouseP = boundsRect.y + boundsRect.h
+		mouseP = (height - (mouseP - boundsRect.y)) / height
+		val^ = linalg.lerp(min, max, mouseP)
 	} else if id == ctx.hoveredId {
-
+		if mouseOverNode {
+			nodeColor = ctx.theme.sliderHoverColor
+		}
+		if ctx.mouse.buttonState[.LMB].pressed {
+			ctx.activeId = id
+		}
 	}
 
 	// Draw full rail
@@ -265,15 +274,17 @@ ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, he
 	}
 	draw_push_rect(ctx.plugin.draw, enabledRailRect)
 
-	// Slider node rect
-	nodeRect := SimpleUIRect {
+	// Slider thumb rect
+	thumbRect := SimpleUIRect {
 		x = boundsRect.x + (boundsRect.w / 2) - (slider_width / 2),
 		y = boundsRect.y + (height - sliderY) - (slider_width / 2),
 		width = slider_width,
 		height = slider_width,
 		u = 0, v = 0, uw = 0, vh = 0,
-		color = ctx.theme.sliderColor,
+		color = nodeColor,
 		cornerRad = slider_width / 2,
+		borderColor = ctx.theme.sliderActiveColor,
+		borderWidth = 0.5,
 	}
-	draw_push_rect(ctx.plugin.draw, nodeRect)
+	draw_push_rect(ctx.plugin.draw, thumbRect)
 }
