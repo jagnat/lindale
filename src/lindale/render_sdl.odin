@@ -71,6 +71,9 @@ render_attach_window :: proc(ctx: ^RenderContext, parent: rawptr) {
 	render_detach_window(ctx)
 	render_init_gpu_resources(ctx)
 
+	if ctx.width == 0 do ctx.width = 800
+	if ctx.height == 0 do ctx.height = 600
+
 	windowPropId := sdl.CreateProperties()
 	defer sdl.DestroyProperties(windowPropId)
 
@@ -88,8 +91,8 @@ render_attach_window :: proc(ctx: ^RenderContext, parent: rawptr) {
 	when ODIN_OS == .Darwin do sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_METAL_BOOLEAN, true)
 
 	sdl.SetStringProperty(windowPropId, sdl.PROP_WINDOW_CREATE_TITLE_STRING, "Lindale")
-	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_WIDTH_NUMBER, 800)
-	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_HEIGHT_NUMBER, 600)
+	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_WIDTH_NUMBER, i64(ctx.width))
+	sdl.SetNumberProperty(windowPropId, sdl.PROP_WINDOW_CREATE_HEIGHT_NUMBER, i64(ctx.height))
 
 	// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN, false)
 	// sdl.SetBooleanProperty(windowPropId, sdl.PROP_WINDOW_CREATE_MOUSE_GRABBED_BOOLEAN)
@@ -100,6 +103,8 @@ render_attach_window :: proc(ctx: ^RenderContext, parent: rawptr) {
 		log.error("Failed to create SDL window")
 		return
 	}
+
+	sdl.ShowWindow(ctx.window)
 
 	result := sdl.ClaimWindowForGPUDevice(ctx.gpu, ctx.window)
 	assert(result == true)
@@ -486,7 +491,7 @@ render_set_scissor :: proc(ctx: ^RenderContext, rect: RectI32) {
 		sdlRect.w = ctx.width
 		sdlRect.h = ctx.height
 	}
-	sdl.SetGPUScissor(ctx.renderPass, sdlRect)
+	// sdl.SetGPUScissor(ctx.renderPass, sdlRect)
 }
 
 render_bind_texture :: proc(ctx: ^RenderContext, tex: ^Texture2D) {
