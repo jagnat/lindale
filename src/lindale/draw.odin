@@ -316,9 +316,11 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 		draw_push_instance(ctx, rect)
 	}
 
+	// ctx.fontTexture.uploaded = false
+
 	if font_is_texture_dirty(&ctx.fontState) {
 		ctx.fontTexture.uploaded = false
-		font_reset_dirty_flag(&ctx.fontState)
+		// font_reset_dirty_flag(&ctx.fontState)
 	}
 }
 

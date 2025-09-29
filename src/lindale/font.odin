@@ -2,8 +2,8 @@ package lindale
 
 import "core:fmt"
 import "core:os"
-import stbtt "vendor:stb/truetype"
-import stbi "vendor:stb/image"
+// import stbtt "vendor:stb/truetype"
+// import stbi "vendor:stb/image"
 import fs "vendor:fontstash"
 
 font_NotoSans := #load("../../resources/NotoSans.ttf")
