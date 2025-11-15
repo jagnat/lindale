@@ -26,7 +26,7 @@ import "base:runtime"
 import "core:unicode/utf16"
 import "core:mem"
 
-SMTG_INLINE_UID :: #force_inline proc (l1, l2, l3, l4: u32) -> TUID {
+SMTG_INLINE_UID :: #force_inline proc "contextless" (l1, l2, l3, l4: u32) -> TUID {
 	when ODIN_OS == .Windows {
 		return {
 			(byte)((l1 & 0x000000FF)      ), (byte)((l1 & 0x0000FF00) >>  8),

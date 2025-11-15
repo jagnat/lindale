@@ -947,14 +947,16 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			}
 		}
 
+		// plat.view_create(parent, 800, 600, "TEST")
+
 		lin.plugin_create_view(view.plugin, parent)
 
-		if !plat.timer_running(view.timer) {
-			view.parent = parent
-			plat.timer_start(view.timer)
-		} else {
-			log.info("Timer already running")
-		}
+		// if !plat.timer_running(view.timer) {
+		// 	view.parent = parent
+		// 	plat.timer_start(view.timer)
+		// } else {
+		// 	log.info("Timer already running")
+		// }
 
 		log.info("lv_attached created window")
 		return vst3.kResultOk
@@ -964,9 +966,11 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		log.info("lv_removed")
 
-		if plat.timer_running(view.timer) {
-			plat.timer_stop(view.timer)
-		}
+		// plat.view_destroy()
+
+		// if plat.timer_running(view.timer) {
+		// 	plat.timer_stop(view.timer)
+		// }
 
 		lin.plugin_remove_view(view.plugin)
 

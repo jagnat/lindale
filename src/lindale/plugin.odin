@@ -9,6 +9,8 @@ import "core:math/rand"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
+import plat "../platform_specific"
+
 Plugin :: struct {
 	// Audio processor state
 	audioProcessor: ^AudioProcessorContext,
@@ -20,6 +22,7 @@ Plugin :: struct {
 
 	// TODO: Better place for this
 	mouse: MouseInput,
+	plat: plat.PlatformView,
 
 	// Common state
 	viewBounds: RectI32,
@@ -114,20 +117,23 @@ plugin_destroy :: proc(plug: ^Plugin) {
 plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
-	render_attach_window(plug.render, parentHandle)
-	render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
+	plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
 
-	draw_init(plug.draw)
-	ui_init(plug.ui)
+	// render_attach_window(plug.render, parentHandle)
+	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
+
+	// draw_init(plug.draw)
+	// ui_init(plug.ui)
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
-	render_detach_window(plug.render)
+	// render_detach_window(plug.render)
+	plat.view_destroy(plug.plat)
 }
 
 plugin_resize_view :: proc(plug: ^Plugin, rect: RectI32) {
 	plug.viewBounds = rect
-	render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
+	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 }
 
 log_like_tween :: proc(i: int, N: int) -> f32 {
@@ -158,7 +164,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 
 	alph += u8(plug.mouse.scrollDelta)
 
-	draw_clear(plug.draw)
+	// draw_clear(plug.draw)
 	// draw_set_scissor(plug.draw, RectI32{200, 300, 400, 200})
 	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 		val := vec[i]
@@ -187,6 +193,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
+
 	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
 	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
 	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}

@@ -1,0 +1,5 @@
+package platform
+
+PlatformApi :: struct {
+	
+}
