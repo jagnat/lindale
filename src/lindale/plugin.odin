@@ -9,7 +9,7 @@ import "core:math/rand"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
-import plat "../platform_specific"
+import plat "../platform_api"
 
 Plugin :: struct {
 	// Audio processor state
@@ -20,9 +20,10 @@ Plugin :: struct {
 	draw: ^DrawContext,
 	ui: ^UIContext,
 
+	platform_api: plat.PlatformApi,
+
 	// TODO: Better place for this
 	mouse: MouseInput,
-	plat: plat.PlatformView,
 
 	// Common state
 	viewBounds: RectI32,
@@ -117,7 +118,7 @@ plugin_destroy :: proc(plug: ^Plugin) {
 plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 	if plug.render == nil do return
 
-	plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
+	// plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
 
 	// render_attach_window(plug.render, parentHandle)
 	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
@@ -128,7 +129,7 @@ plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 
 plugin_remove_view :: proc(plug: ^Plugin) {
 	// render_detach_window(plug.render)
-	plat.view_destroy(plug.plat)
+	// plat.view_destroy(plug.plat)
 }
 
 plugin_resize_view :: proc(plug: ^Plugin, rect: RectI32) {

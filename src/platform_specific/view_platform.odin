@@ -3,8 +3,8 @@ package platform_specific
 PlatformView :: rawptr
 
 ViewInterface :: struct {
-	view_create: proc(parent: rawptr, width, height: i32, title: string) -> ^PlatformView,
-	
+	view_create: proc(parent: rawptr, width, height: i32, title: string) -> PlatformView,
+	view_destroy: proc(view: PlatformView),
 }
 
 // Each platform layer provides these procedures

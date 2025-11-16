@@ -790,6 +790,8 @@ LindaleView :: struct {
 	ctx: runtime.Context,
 	parent: rawptr,
 	timer: ^plat.Timer,
+
+	platformView: plat.PlatformView
 }
 
 gross_global_buffer_ptr: ^lin.AnalysisTransfer
@@ -947,9 +949,10 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			}
 		}
 
-		// plat.view_create(parent, 800, 600, "TEST")
+		view.platformView = plat.view_create(parent, 800, 600, "TEST")
 
-		lin.plugin_create_view(view.plugin, parent)
+		// lin.plugin_create_view(view.plugin, parent)
+
 
 		// if !plat.timer_running(view.timer) {
 		// 	view.parent = parent
@@ -966,7 +969,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		log.info("lv_removed")
 
-		// plat.view_destroy()
+		plat.view_destroy(view.platformView)
 
 		// if plat.timer_running(view.timer) {
 		// 	plat.timer_stop(view.timer)

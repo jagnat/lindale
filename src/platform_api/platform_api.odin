@@ -1,4 +1,6 @@
-package platform
+package platform_api
+
+PlatformView :: rawptr
 
 PlatformApi :: struct {
 	
