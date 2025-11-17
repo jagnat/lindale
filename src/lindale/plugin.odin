@@ -128,8 +128,7 @@ plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
 }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
-	// render_detach_window(plug.render)
-	// plat.view_destroy(plug.plat)
+	
 }
 
 plugin_resize_view :: proc(plug: ^Plugin, rect: RectI32) {

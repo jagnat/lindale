@@ -799,8 +799,6 @@ gross_global_buffer_ptr: ^lin.AnalysisTransfer
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 
-	event: sdl3.Event
-
 	mouse := &view.plugin.mouse
 
 	for &btn in mouse.buttonState {
@@ -808,28 +806,6 @@ timer_proc :: proc (timer: ^plat.Timer) {
 		btn.released = false
 	}
 	mouse.scrollDelta = 0
-
-	for sdl3.PollEvent(&event) {
-		#partial switch event.type {
-		case .MOUSE_BUTTON_DOWN: fallthrough
-		case .MOUSE_BUTTON_UP:
-			if event.button.button != sdl3.BUTTON_LEFT && event.button.button != sdl3.BUTTON_RIGHT do break
-
-			btn := lin.MouseButton.LMB if event.button.button == sdl3.BUTTON_LEFT else .RMB
-
-			mouse.buttonState[btn].down = event.type == .MOUSE_BUTTON_DOWN
-			if event.type == .MOUSE_BUTTON_DOWN {
-				mouse.buttonState[btn].pressed = true
-			} else {
-				mouse.buttonState[btn].released = true
-			}
-		case .MOUSE_MOTION:
-			mouse.pos.x = event.motion.x
-			mouse.pos.y = event.motion.y
-		case .MOUSE_WHEEL:
-			mouse.scrollDelta = event.wheel.mouse_y
-		}
-	}
 
 	if view.plugin != nil && view.plugin.render != nil {
 
@@ -845,8 +821,8 @@ timer_proc :: proc (timer: ^plat.Timer) {
 
 		// lin.plugin_do_analysis(view.plugin, &buffer2)
 		// lin.plugin_draw(view.plugin)
-		pluginFactory.api.do_analysis(view.plugin, &buffer2)
-		pluginFactory.api.draw(view.plugin)
+		// pluginFactory.api.do_analysis(view.plugin, &buffer2)
+		// pluginFactory.api.draw(view.plugin)
 
 		free_all(context.temp_allocator)
 	}
@@ -952,7 +928,6 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view.platformView = plat.view_create(parent, 800, 600, "TEST")
 
 		// lin.plugin_create_view(view.plugin, parent)
-
 
 		// if !plat.timer_running(view.timer) {
 		// 	view.parent = parent
