@@ -3,14 +3,17 @@ package platform_specific
 PlatformView :: rawptr
 
 // Each platform layer provides these procedures
-// view_create: proc(parent: rawptr, width, height: i32, title: string) -> ^PlatformView,
-// view_destroy: proc(view: ^PlatformView),
+// view_create :: proc(parent: rawptr, width, height: i32, title: string) -> ^PlatformView,
+// view_destroy :: proc(view: PlatformView),
+// view_get_gpu_device :: proc(view: PlatformView) -> (gpuDevice, gpuDeviceCtx: rawptr)
+// view_get_gpu_swapchain :: proc(view: PlatformView) -> (rawptr, rawptr, rawptr)
+// view_get_size :: proc(view: PlatformView) -> (width, height: int)
+
 // view_set_callbacks: proc(view: ^PlatformView, callbacks: ViewCallbacks)
 // view_set_size: proc(view: ^PlatformView, width, height: i32),
 // view_get_size: proc(view: ^PlatformView) -> (i32, i32),
 // view_invalidate: proc(view: ^IPlatformView, rect: Rect),
 // view_set_cursor: proc(view: ^IPlatformView, cursor: CursorType),
-// view_get_metal_layer: proc(view: ^IPlatformView) -> rawptr,
 
 // Client callbacks
 // ViewCallbacks :: struct {

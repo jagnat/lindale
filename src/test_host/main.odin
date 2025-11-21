@@ -61,12 +61,12 @@ main :: proc() {
 	}
 }
 
-init :: proc() -> (^lin.RenderContext, ^lin.DrawContext) {
+init :: proc() -> (^lin.SdlRenderContext, ^lin.DrawContext) {
 	result := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO)
 	assert(result == true)
 
 	plugin := new(lin.Plugin)
-	ctx := new(lin.RenderContext)
+	ctx := new(lin.SdlRenderContext)
 	drawCtx := new(lin.DrawContext)
 	ctx.plugin = plugin
 	drawCtx.plugin = plugin

@@ -9,18 +9,19 @@ import "core:math/rand"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
-import plat "../platform_api"
+import plat "../platform_data"
 
 Plugin :: struct {
 	// Audio processor state
 	audioProcessor: ^AudioProcessorContext,
 
 	// UI / controller state
-	render: ^RenderContext,
+	render: ^SdlRenderContext,
 	draw: ^DrawContext,
 	ui: ^UIContext,
+	sokolRender: SokolRenderState,
 
-	platform_api: plat.PlatformApi,
+	platformData: plat.PlatformData,
 
 	// TODO: Better place for this
 	mouse: MouseInput,
@@ -88,7 +89,7 @@ plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
 	defer if error && plugin.audioProcessor != nil do free(plugin.audioProcessor)
 
 	if .Controller in components {
-		plugin.render = new(RenderContext)
+		plugin.render = new(SdlRenderContext)
 		if plugin.render == nil do error = true
 
 		plugin.draw = new(DrawContext)
@@ -115,17 +116,21 @@ plugin_destroy :: proc(plug: ^Plugin) {
 
 }
 
-plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
-	if plug.render == nil do return
-
-	// plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
-
-	// render_attach_window(plug.render, parentHandle)
-	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
-
-	// draw_init(plug.draw)
-	// ui_init(plug.ui)
+plugin_attach_view :: proc(plug: ^Plugin) {
+	rs_init(plug)
 }
+
+// plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
+// 	if plug.render == nil do return
+
+// 	// plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
+
+// 	// render_attach_window(plug.render, parentHandle)
+// 	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
+
+// 	// draw_init(plug.draw)
+// 	// ui_init(plug.ui)
+// }
 
 plugin_remove_view :: proc(plug: ^Plugin) {
 	
@@ -193,66 +198,60 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
+	rs_frame(plug)
+	// choices := [?]ColorF32{
+	// 	{0.117647, 0.117647, 0.117647, 1},
+	// 	{0.278, 0.216, 0.369, 1},
+	// 	{0.278, 0.716, 0.369, 1},
+	// 	{0.278, 0.716, 0.969, 1}}
 
-	// clearColor: ColorF32 = {0.117647, 0.117647, 0.117647, 1} // grey
-	// clearColor: ColorF32 = {0.278, 0.216, 0.369, 1} // purple
-	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
-	// clearColor: ColorF32 = {0.278, 0.716, 0.369, 1}
-	// clearColor: ColorF32 = {0.278, 0.716, 0.969, 1}
+	// @(static) colorIdx := 0
+	// if plug.mouse.buttonState[.RMB].pressed do colorIdx += 1
+	// if plug.mouse.buttonState[.LMB].released do colorIdx -= 1
 
-	choices := [?]ColorF32{
-		{0.117647, 0.117647, 0.117647, 1},
-		{0.278, 0.216, 0.369, 1},
-		{0.278, 0.716, 0.369, 1},
-		{0.278, 0.716, 0.969, 1}}
+	// if colorIdx < 0 do colorIdx = len(choices) - 1
+	// if colorIdx >= len(choices) do colorIdx = 0
 
-	@(static) colorIdx := 0
-	if plug.mouse.buttonState[.RMB].pressed do colorIdx += 1
-	if plug.mouse.buttonState[.LMB].released do colorIdx -= 1
+	// // @(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
+	// // clearColor := rand.choice(choices[:])
+	// // if plug.flipColor do clearColor = rand.choice(choices[:])
+	// // clearColor := ColorF32_from_hex(0xca9f85ff)
+	// // clearColor := ColorF32_from_hex(0xff00ffff)
 
-	if colorIdx < 0 do colorIdx = len(choices) - 1
-	if colorIdx >= len(choices) do colorIdx = 0
+	// // clearColor := choices[colorIdx]
+	// clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
 
-	// @(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
-	// clearColor := rand.choice(choices[:])
-	// if plug.flipColor do clearColor = rand.choice(choices[:])
-	// clearColor := ColorF32_from_hex(0xca9f85ff)
-	// clearColor := ColorF32_from_hex(0xff00ffff)
+	// // draw_remove_scissor(plug.draw)
+	// // draw_text(plug.draw, "this is a test", 100, 100)
 
-	// clearColor := choices[colorIdx]
-	clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
+	// mouse := plug.mouse
 
-	draw_remove_scissor(plug.draw)
-	// draw_text(plug.draw, "this is a test", 100, 100)
+	// rect := SimpleUIRect {
+	// 	x = mouse.pos.x,
+	// 	y = mouse.pos.y,
+	// 	width = 100,
+	// 	height = 100,
+	// 	color = DEFAULT_THEME.buttonColor,
+	// 	cornerRad = 20,
+	// 	borderWidth = 3,
+	// 	borderColor = DEFAULT_THEME.borderColor,
+	// }
 
-	mouse := plug.mouse
+	// // draw_push_rect(plug.draw, rect)
 
-	rect := SimpleUIRect {
-		x = mouse.pos.x,
-		y = mouse.pos.y,
-		width = 100,
-		height = 100,
-		color = DEFAULT_THEME.buttonColor,
-		cornerRad = 20,
-		borderWidth = 3,
-		borderColor = DEFAULT_THEME.borderColor,
-	}
+	// ui_init(plug.ui)
 
-	// draw_push_rect(plug.draw, rect)
+	// ui_begin_frame(plug.ui)
+	// // ui_button(plug.ui, "test_button")
+	// ui_button(plug.ui, "TEST")
+	// // ui_button(plug.ui, "zqop")
+	// // ui_button(plug.ui, "forecast")
+	// @(static) f: f32 = 40
+	// ui_slider_v(plug.ui, "test", &f, 0, 100, 200)
+	// ui_end_frame(plug.ui)
 
-	ui_init(plug.ui)
-
-	ui_begin_frame(plug.ui)
-	// ui_button(plug.ui, "test_button")
-	ui_button(plug.ui, "TEST")
-	// ui_button(plug.ui, "zqop")
-	// ui_button(plug.ui, "forecast")
-	@(static) f: f32 = 40
-	ui_slider_v(plug.ui, "test", &f, 0, 100, 200)
-	ui_end_frame(plug.ui)
-
-	draw_set_clear_color(plug.draw, clearColor)
-	draw_submit(plug.draw)
+	// draw_set_clear_color(plug.draw, clearColor)
+	// draw_submit(plug.draw)
 }
 
 plugin_process_audio :: proc(plug: ^Plugin) {

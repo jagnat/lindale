@@ -586,6 +586,8 @@ createLindaleController :: proc () -> ^LindaleController {
 
 	controller.plugin = lin.plugin_init({.Controller})
 
+	// Set platform API functions
+
 	return controller
 
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
@@ -799,13 +801,18 @@ gross_global_buffer_ptr: ^lin.AnalysisTransfer
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 
-	mouse := &view.plugin.mouse
+	// mouse := &view.plugin.mouse
 
-	for &btn in mouse.buttonState {
-		btn.pressed = false
-		btn.released = false
-	}
-	mouse.scrollDelta = 0
+	// for &btn in mouse.buttonState {
+	// 	btn.pressed = false
+	// 	btn.released = false
+	// }
+	// mouse.scrollDelta = 0
+
+	view.plugin.platformData.swapchain = plat.view_get_gpu_swapchain(view.platformView)
+	view.plugin.platformData.width, view.plugin.platformData.height = plat.view_get_size(view.platformView)
+
+	lin.plugin_draw(view.plugin)
 
 	if view.plugin != nil && view.plugin.render != nil {
 
@@ -926,15 +933,17 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		}
 
 		view.platformView = plat.view_create(parent, 800, 600, "TEST")
+		platformData := &view.plugin.platformData
+		platformData.graphicsDevice, platformData.graphicsDeviceCtx = plat.view_get_gpu_device(view.platformView)
 
-		// lin.plugin_create_view(view.plugin, parent)
+		lin.plugin_attach_view(view.plugin)
 
-		// if !plat.timer_running(view.timer) {
-		// 	view.parent = parent
-		// 	plat.timer_start(view.timer)
-		// } else {
-		// 	log.info("Timer already running")
-		// }
+		if !plat.timer_running(view.timer) {
+			view.parent = parent
+			plat.timer_start(view.timer)
+		} else {
+			log.info("Timer already running")
+		}
 
 		log.info("lv_attached created window")
 		return vst3.kResultOk
@@ -946,9 +955,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 		plat.view_destroy(view.platformView)
 
-		// if plat.timer_running(view.timer) {
-		// 	plat.timer_stop(view.timer)
-		// }
+		if plat.timer_running(view.timer) {
+			plat.timer_stop(view.timer)
+		}
 
 		lin.plugin_remove_view(view.plugin)
 
