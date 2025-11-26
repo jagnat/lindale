@@ -66,9 +66,8 @@ rs_init :: proc(plug: ^Plugin) {
 	sg.setup(desc)
 
 	vertices: []RectInstance = {
-		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {255, 0, 0, 255}},
-		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {0, 255, 0, 255}},
-		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {0, 0, 255, 255}},
+		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {255, 0, 0, 255}, cornerRad = 0.04,},
+		RectInstance{pos0 = {0.6, 0.6}, pos1 = {0.9, 0.9}, color = {100, 255, 0, 255}, cornerRad = 0.01,},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
@@ -101,6 +100,9 @@ rs_init :: proc(plug: ^Plugin) {
 			attrs = attrs
 		},
 		primitive_type = .TRIANGLE_STRIP,
+	}
+	pd.layout.buffers[0] = sg.Vertex_Buffer_Layout_State{
+		step_func = .PER_INSTANCE
 	}
 	plug.sokolRender.pip = sg.make_pipeline(pd)
 }
@@ -135,7 +137,7 @@ rs_frame :: proc(plug: ^Plugin) {
 	sg.begin_pass(pass)
 	sg.apply_pipeline(plug.sokolRender.pip)
 	sg.apply_bindings(plug.sokolRender.bind)
-	sg.draw(0, 3, 1)
+	sg.draw(0, 4, 2)
 	sg.end_pass()
 	sg.commit()
 }
