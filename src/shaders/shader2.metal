@@ -4,25 +4,28 @@
 
 using namespace metal;
 
-struct vs_in {
-	float4 position [[attribute(0)]];
-	float4 color [[attribute(1)]];
+struct VSInput {
+	float2 pos0 [[attribute(0)]];
+	float2 pos1 [[attribute(1)]];
+	float2 uv0 [[attribute(2)]];
+	float2 uv1 [[attribute(3)]];
+	float4 color [[attribute(4)]];
+	float4 borderColor [[attribute(5)]];
+	float4 params [[attribute(6)]]; // (borderWidth, cornerRad, noTexture, padding)
 };
-struct vs_out {
+
+struct VSOutput {
 	float4 position [[position]];
 	float4 color [[user(usr0)]];
 };
-vertex vs_out vs_shader(vs_in in [[stage_in]]) {
-	vs_out out;
-	out.position = in.position;
+
+vertex VSOutput vs_shader(VSInput in [[stage_in]], uint vertexId [[vertex_id]]) {
+	VSOutput out;
+	out.position = float4(in.pos0, 0, 1);
 	out.color = in.color;
 	return out;
 }
 
-struct fs_in {
-  float4 color [[user(usr0)]];
-};
-
-fragment float4 ps_shader(fs_in in [[stage_in]]) {
+fragment float4 ps_shader(VSOutput in [[stage_in]]) {
   return in.color;
 }

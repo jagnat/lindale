@@ -65,12 +65,17 @@ rs_init :: proc(plug: ^Plugin) {
 	}
 	sg.setup(desc)
 
-	vertices: []f32 = {
-		// positions         colors
-		-0.5,  0.5, 0.5,     1.0, 0.0, 0.0, 1.0,
-		 0.5,  0.5, 0.5,     0.0, 1.0, 0.0, 1.0,
-		 0.5, -0.5, 0.5,     0.0, 0.0, 1.0, 1.0,
-		-0.5, -0.5, 0.5,     1.0, 1.0, 0.0, 1.0,
+	// vertices: []f32 = {
+	// 	// positions         colors
+	// 	-0.5,  0.5, 0.5,     1.0, 0.0, 0.0, 1.0,
+	// 	 0.5,  0.5, 0.5,     0.0, 1.0, 0.0, 1.0,
+	// 	 0.5, -0.5, 0.5,     0.0, 0.0, 1.0, 1.0,
+	// 	-0.5, -0.5, 0.5,     1.0, 1.0, 0.0, 1.0,
+	// }
+	vertices: []RectInstance = {
+		RectInstance{pos0 = {-0.5, 0.5}, color = {255, 0, 0, 255}},
+		RectInstance{pos0 = {0.5, 0.5}, color = {0, 255, 0, 255}},
+		RectInstance{pos0 = {0.5, -0.5}, color = {0, 0, 255, 255}},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
@@ -89,8 +94,16 @@ rs_init :: proc(plug: ^Plugin) {
 	}
 	shd := sg.make_shader(sd)
 	attrs: [16]sg.Vertex_Attr_State = {}
-	attrs[0] = sg.Vertex_Attr_State { offset = 0, format = .FLOAT3, }
-	attrs[1] = sg.Vertex_Attr_State { offset = 12, format = .FLOAT4 }
+	attrs[0] = sg.Vertex_Attr_State {offset = 0 * size_of(f32), format = .FLOAT2}
+	attrs[1] = sg.Vertex_Attr_State {offset = 2 * size_of(f32), format = .FLOAT2}
+	attrs[2] = sg.Vertex_Attr_State {offset = 4 * size_of(f32), format = .FLOAT2}
+	attrs[3] = sg.Vertex_Attr_State {offset = 6 * size_of(f32), format = .FLOAT2}
+	attrs[4] = sg.Vertex_Attr_State {offset = 8 * size_of(f32), format = .UBYTE4N}
+	attrs[5] = sg.Vertex_Attr_State {offset = 9 * size_of(f32), format = .UBYTE4N}
+	attrs[6] = sg.Vertex_Attr_State {offset = 10 * size_of(f32), format = .FLOAT4}
+
+	// attrs[0] = sg.Vertex_Attr_State { offset = 0, format = .FLOAT3, }
+	// attrs[1] = sg.Vertex_Attr_State { offset = 12, format = .FLOAT4 }
 
 	pd := sg.Pipeline_Desc {
 		shader = shd,
@@ -109,6 +122,11 @@ rs_frame :: proc(plug: ^Plugin) {
 		ms.current_drawable = plug.platformData.swapchain.swapchainArg0
 		ms.depth_stencil_texture = plug.platformData.swapchain.swapchainArg1
 		ms.msaa_color_texture = plug.platformData.swapchain.swapchainArg2
+	}
+	plug.sokolRender.passAction.colors[0] = sg.Color_Attachment_Action{
+		load_action = .CLEAR,
+		store_action = .DEFAULT,
+		clear_value = sg.Color{0.141, 0.137, 0.106, 1}
 	}
 	pass := sg.Pass {
 		action = plug.sokolRender.passAction,
