@@ -65,17 +65,10 @@ rs_init :: proc(plug: ^Plugin) {
 	}
 	sg.setup(desc)
 
-	// vertices: []f32 = {
-	// 	// positions         colors
-	// 	-0.5,  0.5, 0.5,     1.0, 0.0, 0.0, 1.0,
-	// 	 0.5,  0.5, 0.5,     0.0, 1.0, 0.0, 1.0,
-	// 	 0.5, -0.5, 0.5,     0.0, 0.0, 1.0, 1.0,
-	// 	-0.5, -0.5, 0.5,     1.0, 1.0, 0.0, 1.0,
-	// }
 	vertices: []RectInstance = {
-		RectInstance{pos0 = {-0.5, 0.5}, color = {255, 0, 0, 255}},
-		RectInstance{pos0 = {0.5, 0.5}, color = {0, 255, 0, 255}},
-		RectInstance{pos0 = {0.5, -0.5}, color = {0, 0, 255, 255}},
+		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {255, 0, 0, 255}},
+		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {0, 255, 0, 255}},
+		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {0, 0, 255, 255}},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
@@ -102,14 +95,12 @@ rs_init :: proc(plug: ^Plugin) {
 	attrs[5] = sg.Vertex_Attr_State {offset = 9 * size_of(f32), format = .UBYTE4N}
 	attrs[6] = sg.Vertex_Attr_State {offset = 10 * size_of(f32), format = .FLOAT4}
 
-	// attrs[0] = sg.Vertex_Attr_State { offset = 0, format = .FLOAT3, }
-	// attrs[1] = sg.Vertex_Attr_State { offset = 12, format = .FLOAT4 }
-
 	pd := sg.Pipeline_Desc {
 		shader = shd,
 		layout = sg.Vertex_Layout_State {
 			attrs = attrs
-		}
+		},
+		primitive_type = .TRIANGLE_STRIP,
 	}
 	plug.sokolRender.pip = sg.make_pipeline(pd)
 }

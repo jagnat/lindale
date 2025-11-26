@@ -19,10 +19,25 @@ struct VSOutput {
 	float4 color [[user(usr0)]];
 };
 
-vertex VSOutput vs_shader(VSInput in [[stage_in]], uint vertexId [[vertex_id]]) {
+vertex VSOutput vs_shader(VSInput input [[stage_in]], uint vertexId [[vertex_id]]) {
 	VSOutput out;
-	out.position = float4(in.pos0, 0, 1);
-	out.color = in.color;
+
+	float2 posToPick = input.pos0;
+	float2 uvToPick = input.uv0;
+	float2 rectMult = float2(-1, -1);
+	if (vertexId & 1) {
+		posToPick.y = input.pos1.y;
+		uvToPick.y = input.uv1.y;
+		rectMult.y = 1;
+	}
+	if ((vertexId >> 1) & 1) {
+		posToPick.x = input.pos1.x;
+		uvToPick.x = input.uv1.x;
+		rectMult.x = 1;
+	}
+
+	out.position = float4(posToPick, 0, 1);
+	out.color = input.color;
 	return out;
 }
 
