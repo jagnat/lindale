@@ -3,6 +3,7 @@ package lindale
 import "base:runtime"
 import "core:slice"
 import "core:fmt"
+import "core:math/linalg"
 
 import sg "shared:sokol/gfx"
 
@@ -15,6 +16,14 @@ SokolRenderState :: struct {
 
 	initialized: bool,
 	ctx: runtime.Context
+}
+
+VertexUniforms :: struct {
+	projMatrix: linalg.Matrix4x4f32
+}
+
+PixelUniforms :: struct {
+
 }
 
 rs_sokol_log_proc :: proc "c" (
@@ -66,8 +75,8 @@ rs_init :: proc(plug: ^Plugin) {
 	sg.setup(desc)
 
 	vertices: []RectInstance = {
-		RectInstance{pos0 = {-0.5, -0.5}, pos1 = {0.5, 0.5}, color = {255, 0, 0, 255}, cornerRad = 0.04,},
-		RectInstance{pos0 = {0.6, 0.6}, pos1 = {0.9, 0.9}, color = {100, 255, 0, 255}, cornerRad = 0.01,},
+		RectInstance{pos0 = {10, 10}, pos1 = {200, 200}, color = {255, 0, 0, 255}, cornerRad = 40,},
+		RectInstance{pos0 = {600, 600}, pos1 = {700, 700}, color = {100, 255, 0, 255}, cornerRad = 20,},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
@@ -82,7 +91,11 @@ rs_init :: proc(plug: ^Plugin) {
 		fragment_func = sg.Shader_Function {
 			source = shaderBits,
 			entry = "ps_shader"
-		}
+		},
+	}
+	sd.uniform_blocks[0] = sg.Shader_Uniform_Block {
+		stage = .VERTEX,
+		size = size_of(VertexUniforms),
 	}
 	shd := sg.make_shader(sd)
 	attrs: [16]sg.Vertex_Attr_State = {}
@@ -103,6 +116,17 @@ rs_init :: proc(plug: ^Plugin) {
 	}
 	pd.layout.buffers[0] = sg.Vertex_Buffer_Layout_State{
 		step_func = .PER_INSTANCE
+	}
+	pd.colors[0] = sg.Color_Target_State {
+		blend = sg.Blend_State {
+			enabled = true,
+			src_factor_rgb = .SRC_ALPHA,
+			dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+			op_rgb = .ADD,
+			src_factor_alpha = .ONE,
+			dst_factor_alpha = .ZERO,
+			op_alpha = .ADD,
+		}
 	}
 	plug.sokolRender.pip = sg.make_pipeline(pd)
 }
@@ -134,9 +158,13 @@ rs_frame :: proc(plug: ^Plugin) {
 			gl = gs,
 		},
 	}
+	uniforms := VertexUniforms {
+		projMatrix = linalg.matrix_ortho3d_f32(0, f32(plug.platformData.width), f32(plug.platformData.height), 0, -1, 1)
+	}
 	sg.begin_pass(pass)
 	sg.apply_pipeline(plug.sokolRender.pip)
 	sg.apply_bindings(plug.sokolRender.bind)
+	sg.apply_uniforms(0, sg.Range{&uniforms, size_of(uniforms)})
 	sg.draw(0, 4, 2)
 	sg.end_pass()
 	sg.commit()

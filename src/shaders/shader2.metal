@@ -4,6 +4,10 @@
 
 using namespace metal;
 
+struct VertexUniforms {
+	float4x4 projMatrix;
+};
+
 struct VSInput {
 	float2 pos0 [[attribute(0)]];
 	float2 pos1 [[attribute(1)]];
@@ -30,7 +34,10 @@ float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
 
-vertex VSOutput vs_shader(VSInput input [[stage_in]], uint vertexId [[vertex_id]]) {
+vertex VSOutput vs_shader(
+	VSInput input [[stage_in]],
+	constant VertexUniforms &uniformBuffer [[buffer(0)]],
+	uint vertexId [[vertex_id]]) {
 	VSOutput output;
 
 	float2 posToPick = input.pos0;
@@ -47,7 +54,7 @@ vertex VSOutput vs_shader(VSInput input [[stage_in]], uint vertexId [[vertex_id]
 		rectMult.x = 1;
 	}
 
-	output.pos = /*uniformBuffer.orthoMat * */ float4(posToPick, 0.0, 1.0);
+	output.pos = uniformBuffer.projMatrix * float4(posToPick, 0.0, 1.0);
 	output.uv = uvToPick;
 	output.halfRectSize = (input.pos1 - input.pos0) / 2.0;
 	output.rectPos = rectMult * output.halfRectSize;
