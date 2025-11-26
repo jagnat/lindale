@@ -1,6 +1,8 @@
 package lindale
 
+import "base:runtime"
 import "core:slice"
+import "core:fmt"
 
 import sg "shared:sokol/gfx"
 
@@ -10,10 +12,40 @@ SokolRenderState :: struct {
 	passAction: sg.Pass_Action,
 	pip: sg.Pipeline,
 	bind: sg.Bindings,
+
+	initialized: bool,
+	ctx: runtime.Context
+}
+
+rs_sokol_log_proc :: proc "c" (
+		tag: cstring,
+		log_level: u32,
+		log_item: u32,
+		message: cstring,
+		line_nr: u32,
+		filename:cstring,
+		userData: rawptr) {
+	plug: ^Plugin = cast(^Plugin)userData
+	context = plug.sokolRender.ctx
+	fmt.printfln("[SOKOL] tag: %s log_level: %d log_item: %d msg: %s line_no: %d filename: %s",
+		tag, log_level, log_item, message, line_nr, filename)
+}
+
+@(private)
+range_from_slice :: proc "contextless" (a: $T/[]$E) -> sg.Range {
+		return sg.Range {&a[0], uint(slice.size(a)) }
 }
 
 rs_init :: proc(plug: ^Plugin) {
+	if plug.sokolRender.initialized do return
+
+	plug.sokolRender.ctx = context
+
 	desc: sg.Desc
+	desc.logger = sg.Logger{
+		func = rs_sokol_log_proc,
+		user_data = rawptr(plug),
+	}
 	env := sg.Environment {}
 	when ODIN_OS == .Windows {
 
@@ -43,64 +75,22 @@ rs_init :: proc(plug: ^Plugin) {
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
 
-// 	Shader_Desc :: struct {
-//     _ : u32,
-//     vertex_func : Shader_Function,
-//     fragment_func : Shader_Function,
-//     compute_func : Shader_Function,
-//     attrs : [16]Shader_Vertex_Attr,
-//     uniform_blocks : [8]Shader_Uniform_Block,
-//     views : [32]Shader_View,
-//     samplers : [12]Shader_Sampler,
-//     texture_sampler_pairs : [32]Shader_Texture_Sampler_Pair,
-//     mtl_threads_per_threadgroup : Mtl_Shader_Threads_Per_Threadgroup,
-//     label : cstring,
-//     _ : u32,
-// }
+	shaderBits : cstring = #load("../shaders/shader2.metal")
 
 	sd := sg.Shader_Desc {
 		vertex_func = sg.Shader_Function {
-			source = 
-			`#include <metal_stdlib>
-			using namespace metal;
-			struct vs_in {
-			  float4 position [[attribute(0)]];
-			  float4 color [[attribute(1)]];
-			};
-			struct vs_out {
-			  float4 position [[position]];
-			  float4 color [[user(usr0)]];
-			};
-			vertex vs_out _main(vs_in in [[stage_in]]) {
-			  vs_out out;
-			  out.position = in.position;
-			  out.color = in.color;
-			  return out;
-			}`
+			source = shaderBits,
+			entry = "vs_shader",
 		},
 		fragment_func = sg.Shader_Function {
-			source = 
-			`#include <metal_stdlib>
-			#include <simd/simd.h>
-			using namespace metal;
-			struct fs_in {
-			  float4 color [[user(usr0)]];
-			};
-			fragment float4 _main(fs_in in [[stage_in]]) {
-			  return in.color;
-			};`
+			source = shaderBits,
+			entry = "ps_shader"
 		}
 	}
 	shd := sg.make_shader(sd)
 	attrs: [16]sg.Vertex_Attr_State = {}
-	attrs[0] = sg.Vertex_Attr_State {
-		offset = 0,
-		format = .FLOAT3,
-	}
-	attrs[1] = sg.Vertex_Attr_State {
-		offset = 12,
-		format = .FLOAT4
-	}
+	attrs[0] = sg.Vertex_Attr_State { offset = 0, format = .FLOAT3, }
+	attrs[1] = sg.Vertex_Attr_State { offset = 12, format = .FLOAT4 }
 
 	pd := sg.Pipeline_Desc {
 		shader = shd,
@@ -140,27 +130,3 @@ rs_frame :: proc(plug: ^Plugin) {
 	sg.end_pass()
 	sg.commit()
 }
-
-// static void frame(void) {
-//     sg_begin_pass(&(sg_pass){ .action = state.pass_action, .swapchain = osx_swapchain() });
-//     sg_apply_pipeline(state.pip);
-//     sg_apply_bindings(&state.bind);
-//     sg_draw(0, 3, 1);
-//     sg_end_pass();
-//     sg_commit();
-// }
-
-// sg_swapchain osx_swapchain(void) {
-//     return (sg_swapchain) {
-//         .width = (int) [mtk_view drawableSize].width,
-//         .height = (int) [mtk_view drawableSize].height,
-//         .sample_count = sample_count,
-//         .color_format = SG_PIXELFORMAT_BGRA8,
-//         .depth_format = depth_format,
-//         .metal = {
-//             .current_drawable = (__bridge const void*) [mtk_view currentDrawable],
-//             .depth_stencil_texture = (__bridge const void*) [mtk_view depthStencilTexture],
-//             .msaa_color_texture = (__bridge const void*) [mtk_view multisampleColorTexture],
-//         }
-//     };
-// }
