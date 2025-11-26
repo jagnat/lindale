@@ -75,7 +75,7 @@ rs_init :: proc(plug: ^Plugin) {
 	sg.setup(desc)
 
 	vertices: []RectInstance = {
-		RectInstance{pos0 = {10, 10}, pos1 = {200, 200}, color = {255, 0, 0, 255}, cornerRad = 40,},
+		RectInstance{pos0 = {10, 10}, pos1 = {200, 200}, color = {30, 30, 30, 255}, borderColor = {220, 200, 200, 255}, borderWidth = 3, cornerRad = 10,},
 		RectInstance{pos0 = {600, 600}, pos1 = {700, 700}, color = {100, 255, 0, 255}, cornerRad = 20,},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
