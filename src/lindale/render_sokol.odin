@@ -75,11 +75,34 @@ rs_init :: proc(plug: ^Plugin) {
 	sg.setup(desc)
 
 	vertices: []RectInstance = {
-		RectInstance{pos0 = {10, 10}, pos1 = {200, 200}, color = {30, 30, 30, 255}, borderColor = {220, 200, 200, 255}, borderWidth = 3, cornerRad = 10,},
+		RectInstance{pos0 = {10, 10}, pos1 = {200, 200}, uv0 = {0, 0}, uv1 = {1, 1}, color = {255, 255, 255, 255}, borderColor = {220, 200, 200, 255}, borderWidth = 3, cornerRad = 10,},
 		RectInstance{pos0 = {600, 600}, pos1 = {700, 700}, color = {100, 255, 0, 255}, cornerRad = 20,},
 	}
 	bd := sg.Buffer_Desc{data = sg.Range{&vertices[0], uint(slice.size(vertices))}}
 	plug.sokolRender.bind.vertex_buffers[0] = sg.make_buffer(bd)
+
+	pixels := []u32 {
+		0xFFFFFFFF, 0xFF00AA00, 0xFFFFFFFF, 0xFF00AA00,
+		0xFF00AA00, 0xFFFFFFFF, 0xFF00AA00, 0xFFFFFFFF,
+		0xFFFFFFFF, 0xFF00AA00, 0xFFFFFFFF, 0xFF00AA00,
+		0xFF00AA00, 0xFFFFFFFF, 0xFF00AA00, 0xFFFFFFFF,
+	}
+	img_desc := sg.Image_Desc {
+		width = 4,
+		height = 4,
+	}
+	img_desc.data.mip_levels[0] = range_from_slice(pixels)
+
+	plug.sokolRender.bind.views[0] = sg.make_view(sg.View_Desc {
+		texture = sg.Texture_View_Desc {
+			image = sg.make_image(img_desc)
+		}
+	})
+
+	plug.sokolRender.bind.samplers[0] = sg.make_sampler(sg.Sampler_Desc {
+		min_filter = .NEAREST,
+		mag_filter = .NEAREST,
+	})
 
 	shaderBits : cstring = #load("../shaders/shader2.metal")
 
@@ -96,6 +119,21 @@ rs_init :: proc(plug: ^Plugin) {
 	sd.uniform_blocks[0] = sg.Shader_Uniform_Block {
 		stage = .VERTEX,
 		size = size_of(VertexUniforms),
+	}
+	sd.views[0].texture = sg.Shader_Texture_View {
+		stage = .FRAGMENT,
+		hlsl_register_t_n = 0,
+		msl_texture_n = 0,
+	}
+	sd.samplers[0] = sg.Shader_Sampler {
+		stage = .FRAGMENT,
+		hlsl_register_s_n = 0,
+		msl_sampler_n = 0,
+	}
+	sd.texture_sampler_pairs[0] = sg.Shader_Texture_Sampler_Pair {
+		stage = .FRAGMENT,
+		view_slot = 0,
+		sampler_slot = 0,
 	}
 	shd := sg.make_shader(sd)
 	attrs: [16]sg.Vertex_Attr_State = {}

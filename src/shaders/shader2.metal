@@ -64,21 +64,24 @@ vertex VSOutput vs_shader(
 	return output;
 }
 
-fragment float4 ps_shader(VSOutput input [[stage_in]]) {
+fragment float4 ps_shader(
+	VSOutput input [[stage_in]],
+	texture2d<float> tex [[texture(0)]],
+	sampler sampl [[sampler(0)]]) {
 	float4 outputColor = input.color;
 	float borderWidth = input.params.x;
 	float cornerRad = input.params.y;
 	float noTexture = input.params.z;
 	float4 sampleColor = float4(1.0, 1.0, 1.0, 1.0);
-	// if (noTexture < 1) {
-	// 	sampleColor = tex.sample(sampl, input.uv);
+	if (noTexture < 1) {
+		sampleColor = tex.sample(sampl, input.uv);
 
-	// 	if (uniformBuffer.singleChannelTexture == 1) {
-	// 		outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
-	// 	} else {
-	// 		outputColor = input.color * sampleColor;
-	// 	}
-	// }
+		// if (uniformBuffer.singleChannelTexture == 1) {
+		// 	outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
+		// } else {
+			outputColor = input.color * sampleColor;
+		// }
+	}
 
 	// SDF corners
 	float outerSdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, cornerRad);
