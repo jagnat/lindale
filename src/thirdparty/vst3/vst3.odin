@@ -1,22 +1,9 @@
 //-----------------------------------------------------------------------------
 // VST3 Plugin Data Formats
-// Copyright (c) 2025 Jagi Natarajan
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
-//
-// VST is a trademark of Steinberg Media Technologies GmbH, registered in
-// Europe and other countries.
+// This file interfaces with the VST3 SDK
+// VST3 SDK Copyright (c) 2024, Steinberg Media Technologies GmbH
+// Licensed under MIT License
+// See: https://github.com/steinbergmedia/vst3sdk
 //-----------------------------------------------------------------------------
 
 package vst3

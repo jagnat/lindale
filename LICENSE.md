@@ -1,18 +1,7 @@
-This repository contains code under multiple licenses.
+Copyright © 2025 Jagi Natarajan
 
-- Files `src/vst_layer.odin` and `src/thirdparty/vst3/vst3.odin` are licensed
-  under the GNU General Public License, version 3.0 (GPL-3.0).
-  A copy of the GPL-3.0 license is included in LICENSE.GPL.
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-- All other files in this repository are licensed under the MIT License,
-  unless otherwise noted. A copy of the MIT license is included in LICENSE.MIT.
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-Usage notes:
-------------
-- When the GPL-3.0 licensed files are combined with the MIT-licensed files
-  to form a single program or binary, the result is governed by GPL-3.0.
-
-- The MIT-licensed files remain under the MIT License and may be reused
-  independently, without the GPL-3.0 licensed files, under MIT terms only.
-
-Please consult the individual license texts for the precise terms.
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
