@@ -12,10 +12,8 @@ import "base:intrinsics"
 
 import api "../platform_api"
 
-// Embedded shader source
 shader_source := #load("../shaders/shader.metal")
 
-// Internal texture storage
 TextureSlot :: struct {
 	texture: ^MTL.Texture,
 	width: u32,
@@ -31,15 +29,13 @@ MetalRenderer :: struct {
 	commandQueue: ^MTL.CommandQueue,
 	pipeline: ^MTL.RenderPipelineState,
 
-	// Instance buffer - one large buffer for all instances
+	// One large buffer for all instances
 	instanceBuffer: ^MTL.Buffer,
 	instanceCapacity: u32,
 
-	// Uniform buffer
 	uniformBuffer: ^MTL.Buffer,
 	uniforms: api.UniformBuffer,
 
-	// Texture storage
 	textures: [api.MAX_TEXTURES]TextureSlot,
 	nextTextureSlot: u32,
 	sampler: ^MTL.SamplerState,
@@ -49,14 +45,14 @@ MetalRenderer :: struct {
 	renderEncoder: ^MTL.RenderCommandEncoder,
 	currentDrawable: ^CA.MetalDrawable,
 
-	// Dimensions (logical = points for UI, physical = actual pixels)
+	// logical = points for UI, physical = actual pixels
 	logicalWidth: i32,
 	logicalHeight: i32,
 	scaleFactor: f32,
 	physicalWidth: i32,
 	physicalHeight: i32,
 
-	// White texture for solid color rendering
+	// For solid color rendering
 	whiteTexture: api.TextureHandle,
 }
 
@@ -93,7 +89,7 @@ LindaleMtkView_acceptsFirstResponder :: proc (self: ^LindaleMtkView, _cmd: rawpt
 
 @(objc_type=LindaleMtkView, objc_implement, objc_selector="mouseDown:")
 LindaleMtkView_mouseDown :: proc (self: ^LindaleMtkView, _cmd: rawptr, event: ^F.Event) {
-	// Handle mouse input if needed
+	// TODO: Handle mouse input
 }
 
 @(objc_type=LindaleMtkView, objc_implement=false, objc_is_class_method=true)
@@ -106,9 +102,7 @@ LindaleMtkView_makeBackingLayer :: proc(self: ^LindaleMtkView) -> ^CA.MetalLayer
 	return CA.MetalLayer.layer()
 }
 
-//------------------------------------------------------------------------------
-// View/Renderer lifecycle
-//------------------------------------------------------------------------------
+// Renderer lifecycle
 
 renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	frame := F.Rect{
@@ -128,7 +122,6 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	renderer.physicalWidth = width
 	renderer.physicalHeight = height
 
-	// Create the view
 	lindaleView := LindaleMtkView.alloc()->initWithFrameAndContext(frame, device, context)
 	lindaleView->setColorPixelFormat(.BGRA8Unorm_sRGB)
 	lindaleView->setDepthStencilPixelFormat(.Invalid)
@@ -143,20 +136,18 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 
 	renderer.view = lindaleView
 
-	// Create command queue
 	renderer.commandQueue = device->newCommandQueue()
 	if renderer.commandQueue == nil {
 		free(renderer)
 		return nil
 	}
 
-	// Create pipeline
 	if !create_pipeline(renderer) {
 		free(renderer)
 		return nil
 	}
 
-	// Create instance buffer (1MB)
+	// 1MB instance buffer
 	instanceBufferSize := F.UInteger(api.MAX_INSTANCES * size_of(api.RectInstance))
 	renderer.instanceBuffer = device->newBufferWithLength(instanceBufferSize, {.StorageModeManaged})
 	if renderer.instanceBuffer == nil {
@@ -165,14 +156,12 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 	renderer.instanceCapacity = api.MAX_INSTANCES
 
-	// Create uniform buffer
 	renderer.uniformBuffer = device->newBufferWithLength(size_of(api.UniformBuffer), {.StorageModeManaged})
 	if renderer.uniformBuffer == nil {
 		free(renderer)
 		return nil
 	}
 
-	// Create sampler
 	samplerDesc := F.new(MTL.SamplerDescriptor)
 	defer F.release(samplerDesc)
 	samplerDesc->setMinFilter(.Nearest)
@@ -198,7 +187,6 @@ renderer_destroy :: proc(r: api.Renderer) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 
-	// Release textures
 	for &slot in renderer.textures {
 		if slot.inUse && slot.texture != nil {
 			F.release(cast(^F.Object)slot.texture)
@@ -266,9 +254,7 @@ renderer_get_size :: proc(r: api.Renderer) -> api.RendererSize {
 	}
 }
 
-//------------------------------------------------------------------------------
 // Texture management
-//------------------------------------------------------------------------------
 
 renderer_create_texture :: proc(r: api.Renderer, width, height: u32, format: api.PixelFormat) -> api.TextureHandle {
 	renderer := cast(^MetalRenderer)r
@@ -288,7 +274,6 @@ create_texture_internal :: proc(renderer: ^MetalRenderer, width, height: u32, fo
 	}
 	if slot == 0 do return api.INVALID_TEXTURE
 
-	// Create texture descriptor
 	desc := F.new(MTL.TextureDescriptor)
 	defer F.release(desc)
 	desc->setTextureType(.Type2D)
@@ -364,9 +349,7 @@ renderer_get_white_texture :: proc(r: api.Renderer) -> api.TextureHandle {
 	return renderer.whiteTexture
 }
 
-//------------------------------------------------------------------------------
 // Frame rendering
-//------------------------------------------------------------------------------
 
 renderer_begin_frame :: proc(r: api.Renderer) -> bool {
 	renderer := cast(^MetalRenderer)r
@@ -439,7 +422,7 @@ renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
 	renderer.renderEncoder = renderer.commandBuffer->renderCommandEncoderWithDescriptor(passDesc)
 	renderer.renderEncoder->setRenderPipelineState(renderer.pipeline)
 
-	// Set viewport (physical pixels)
+	// Physical pixels
 	viewport := MTL.Viewport{
 		originX = 0,
 		originY = 0,
@@ -490,17 +473,14 @@ renderer_draw :: proc(r: api.Renderer, cmd: api.DrawCommand) {
 		renderer.renderEncoder->setScissorRect(scissorRect)
 	}
 
-	// Update uniform for single channel texture flag
 	renderer.uniforms.singleChannelTexture = cmd.singleChannelTexture ? 1 : 0
 
-	// Upload uniforms
 	uniformPtr := renderer.uniformBuffer->contentsAsSlice([]api.UniformBuffer)
 	uniformPtr[0] = renderer.uniforms
 	renderer.uniformBuffer->didModifyRange(F.Range{0, size_of(api.UniformBuffer)})
 	renderer.renderEncoder->setVertexBuffer(renderer.uniformBuffer, 0, 0)
 	renderer.renderEncoder->setFragmentBuffer(renderer.uniformBuffer, 0, 0)
 
-	// Bind texture
 	textureHandle := cmd.texture
 	if textureHandle == api.INVALID_TEXTURE {
 		textureHandle = renderer.whiteTexture
@@ -514,14 +494,11 @@ renderer_draw :: proc(r: api.Renderer, cmd: api.DrawCommand) {
 		}
 	}
 
-	// Draw instances
 	// 4 vertices per instance (triangle strip quad), starting at the instance offset
 	renderer.renderEncoder->drawPrimitivesWithInstances(.TriangleStrip, 0, 4, F.UInteger(cmd.instanceCount), F.UInteger(cmd.instanceOffset))
 }
 
-//------------------------------------------------------------------------------
 // Pipeline creation
-//------------------------------------------------------------------------------
 
 @(private)
 create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
@@ -586,7 +563,6 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	vertexDesc->layouts()->object(1)->setStepFunction(.PerInstance)
 	vertexDesc->layouts()->object(1)->setStepRate(1)
 
-	// Create pipeline descriptor
 	pipelineDesc := F.new(MTL.RenderPipelineDescriptor)
 	defer F.release(pipelineDesc)
 
