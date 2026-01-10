@@ -52,7 +52,15 @@ Use the `.bat` equivalents:
 - Always indent code with tabs, not spaces.
 - Remember that this is Odin. Not C, not Golang.
 - Prioritize putting more code into existing files over creating new files.
-- Do not over-comment code files. Keep comments terse and simple. Absolutely no use of big spacer comments. Comments should have minimal punctuation.
+
+### Comments
+
+- Never comment what the next line obviously does. No "Create X" before creating X, no "Release textures" before releasing textures.
+- Remove comments that just restate variable/field names. If the field is `uniformBuffer`, don't comment "Uniform buffer".
+- Keep only non-obvious clarifying info. Good: `// 1MB instance buffer` or `// physical pixels`. Bad: `// Create instance buffer (1MB)`.
+- Section headers should be simple: `// Renderer lifecycle`. No decorated boxes or separator lines.
+- Use `// TODO:` for incomplete work, not vague phrases like "if needed".
+- Minimal punctuation. No periods at end of comments unless multiple sentences.
 
 ## Architecture
 
