@@ -9,7 +9,7 @@ import "core:math/rand"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
-import plat "../platform_data"
+import plat "../platform_api"
 
 Plugin :: struct {
 	// Audio processor state
@@ -19,9 +19,6 @@ Plugin :: struct {
 	render: ^SdlRenderContext,
 	draw: ^DrawContext,
 	ui: ^UIContext,
-	sokolRender: SokolRenderState,
-
-	platformData: plat.PlatformData,
 
 	// TODO: Better place for this
 	mouse: MouseInput,
@@ -117,7 +114,6 @@ plugin_destroy :: proc(plug: ^Plugin) {
 }
 
 plugin_attach_view :: proc(plug: ^Plugin) {
-	rs_init(plug)
 }
 
 // plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
@@ -198,7 +194,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
-	rs_frame(plug)
+	// rs_frame(plug)
 	// choices := [?]ColorF32{
 	// 	{0.117647, 0.117647, 0.117647, 1},
 	// 	{0.278, 0.216, 0.369, 1},

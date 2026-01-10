@@ -5,6 +5,7 @@ struct UniformBuffer {
 	float4x4 orthoMat;
 	float2 dims;
 	uint singleChannelTexture;
+	uint _pad;
 };
 
 struct VSInput {

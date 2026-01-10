@@ -1,27 +1,29 @@
 package platform_specific
 
-PlatformView :: rawptr
+import api "../platform_api"
 
-// Each platform layer provides these procedures
-// view_create :: proc(parent: rawptr, width, height: i32, title: string) -> ^PlatformView,
-// view_destroy :: proc(view: PlatformView),
-// view_get_gpu_device :: proc(view: PlatformView) -> (gpuDevice, gpuDeviceCtx: rawptr)
-// view_get_gpu_swapchain :: proc(view: PlatformView) -> (rawptr, rawptr, rawptr)
-// view_get_size :: proc(view: PlatformView) -> (width, height: int)
+// Re-export the Renderer type for convenience
+Renderer :: api.Renderer
 
-// view_set_callbacks: proc(view: ^PlatformView, callbacks: ViewCallbacks)
-// view_set_size: proc(view: ^PlatformView, width, height: i32),
-// view_get_size: proc(view: ^PlatformView) -> (i32, i32),
-// view_invalidate: proc(view: ^IPlatformView, rect: Rect),
-// view_set_cursor: proc(view: ^IPlatformView, cursor: CursorType),
-
-// Client callbacks
-// ViewCallbacks :: struct {
-// 	on_mouse_down: proc(pos: Point, button: MouseButton, mods: Modifiers),
-// 	on_mouse_up: proc(pos: Point, button: MouseButton, mods: Modifiers),
-// 	on_mouse_move: proc(pos: Point, mods: Modifiers),
-// 	on_key_down: proc(key: VirtualKey, char: rune, mods: Modifiers),
-// 	on_key_up: proc(key: VirtualKey, char: rune, mods: Modifiers),
-// 	on_resize: proc(width, height: i32),
-// 	user_data: rawptr,
-// }
+// Platform-specific renderer interface
+// Each platform (Darwin, Windows, Linux) must implement these procedures:
+//
+// Lifecycle:
+//   renderer_create     :: proc(parent: rawptr, width, height: i32) -> api.Renderer
+//   renderer_destroy    :: proc(r: api.Renderer)
+//   renderer_resize     :: proc(r: api.Renderer, width, height: i32)
+//   renderer_get_size   :: proc(r: api.Renderer) -> api.RendererSize
+//
+// Texture management:
+//   renderer_create_texture   :: proc(r: api.Renderer, width, height: u32, format: api.PixelFormat) -> api.TextureHandle
+//   renderer_destroy_texture  :: proc(r: api.Renderer, handle: api.TextureHandle)
+//   renderer_upload_texture   :: proc(r: api.Renderer, handle: api.TextureHandle, pixels: []u8)
+//   renderer_get_white_texture :: proc(r: api.Renderer) -> api.TextureHandle
+//
+// Frame rendering:
+//   renderer_begin_frame      :: proc(r: api.Renderer) -> bool
+//   renderer_end_frame        :: proc(r: api.Renderer)33
+//   renderer_upload_instances :: proc(r: api.Renderer, instances: []api.RectInstance)
+//   renderer_begin_pass       :: proc(r: api.Renderer, clearColor: api.ColorF32)
+//   renderer_end_pass         :: proc(r: api.Renderer)
+//   renderer_draw             :: proc(r: api.Renderer, cmd: api.DrawCommand)

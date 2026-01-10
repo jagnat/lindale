@@ -1,22 +1,9 @@
 //-----------------------------------------------------------------------------
 // VST3 Plugin Implementation Layer
-// Copyright (c) 2025 Jagi Natarajan
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
-//
-// VST is a trademark of Steinberg Media Technologies GmbH, registered in
-// Europe and other countries.
+// This file interfaces with the VST3 SDK
+// VST3 SDK Copyright (c) 2024, Steinberg Media Technologies GmbH
+// Licensed under MIT License
+// See: https://github.com/steinbergmedia/vst3sdk
 //-----------------------------------------------------------------------------
 
 package platform
@@ -41,6 +28,7 @@ import "vendor:sdl3"
 
 import lin "lindale"
 import plat "platform_specific"
+import api "platform_api"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -793,46 +781,73 @@ LindaleView :: struct {
 	parent: rawptr,
 	timer: ^plat.Timer,
 
-	platformView: plat.PlatformView
+	renderer: api.Renderer
 }
 
 gross_global_buffer_ptr: ^lin.AnalysisTransfer
 
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
+	if view.renderer == nil do return
 
-	// mouse := &view.plugin.mouse
-
-	// for &btn in mouse.buttonState {
-	// 	btn.pressed = false
-	// 	btn.released = false
-	// }
-	// mouse.scrollDelta = 0
-
-	view.plugin.platformData.swapchain = plat.view_get_gpu_swapchain(view.platformView)
-	view.plugin.platformData.width, view.plugin.platformData.height = plat.view_get_size(view.platformView)
-
-	lin.plugin_draw(view.plugin)
-
-	if view.plugin != nil && view.plugin.render != nil {
-
-		buffer2: lin.AnalysisTransfer
-
-		if gross_global_buffer_ptr != nil {
-
-			// Re-linearize
-			firstLen := lin.ANALYSIS_BUFFER_SIZE - gross_global_buffer_ptr.writeIndex
-			copy(buffer2.buf[:firstLen], gross_global_buffer_ptr.buf[gross_global_buffer_ptr.writeIndex:])
-			copy(buffer2.buf[firstLen:], gross_global_buffer_ptr.buf[:gross_global_buffer_ptr.writeIndex])
-		}
-
-		// lin.plugin_do_analysis(view.plugin, &buffer2)
-		// lin.plugin_draw(view.plugin)
-		// pluginFactory.api.do_analysis(view.plugin, &buffer2)
-		// pluginFactory.api.draw(view.plugin)
-
-		free_all(context.temp_allocator)
+	// Test rectangles with different borders and corner radii
+	testRects := []api.RectInstance{
+		// Red rectangle: no border, small corner radius
+		{
+			pos0 = {0, 0},
+			pos1 = {250, 150},
+			uv0 = {0, 0},
+			uv1 = {1, 1},
+			color = {255, 80, 80, 255},
+			borderColor = {0, 0, 0, 0},
+			borderWidth = 0,
+			cornerRad = 10,
+			noTexture = 1,
+		},
+		// Green rectangle: thick white border, medium corner radius
+		{
+			pos0 = {300, 50},
+			pos1 = {500, 200},
+			uv0 = {0, 0},
+			uv1 = {1, 1},
+			color = {80, 200, 80, 255},
+			borderColor = {255, 255, 255, 255},
+			borderWidth = 4,
+			cornerRad = 20,
+			noTexture = 1,
+		},
+		// Blue rectangle: thin yellow border, large corner radius (pill shape)
+		{
+			pos0 = {550, 100},
+			pos1 = {750, 180},
+			uv0 = {0, 0},
+			uv1 = {1, 1},
+			color = {80, 120, 220, 255},
+			borderColor = {255, 220, 50, 255},
+			borderWidth = 2,
+			cornerRad = 40,
+			noTexture = 1,
+		},
 	}
+
+	if !plat.renderer_begin_frame(view.renderer) do return
+
+	plat.renderer_upload_instances(view.renderer, testRects)
+
+	clearColor := api.ColorF32{0.12, 0.12, 0.14, 1.0}
+	plat.renderer_begin_pass(view.renderer, clearColor)
+
+	drawCmd := api.DrawCommand{
+		instanceOffset = 0,
+		instanceCount = u32(len(testRects)),
+		texture = api.INVALID_TEXTURE,
+		singleChannelTexture = false,
+		scissor = {},
+	}
+	plat.renderer_draw(view.renderer, drawCmd)
+
+	plat.renderer_end_pass(view.renderer)
+	plat.renderer_end_frame(view.renderer)
 }
 
 createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult {
@@ -932,9 +947,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			}
 		}
 
-		view.platformView = plat.view_create(parent, 800, 600, "TEST")
-		platformData := &view.plugin.platformData
-		platformData.graphicsDevice, platformData.graphicsDeviceCtx = plat.view_get_gpu_device(view.platformView)
+		view.renderer = plat.renderer_create(parent, 800, 600)
 
 		lin.plugin_attach_view(view.plugin)
 
@@ -953,7 +966,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		log.info("lv_removed")
 
-		plat.view_destroy(view.platformView)
+		plat.renderer_destroy(view.renderer)
 
 		if plat.timer_running(view.timer) {
 			plat.timer_stop(view.timer)
