@@ -12,22 +12,20 @@ import dit "../thirdparty/uFFT_DIT"
 import plat "../platform_api"
 
 Plugin :: struct {
-	// Audio processor state
+	// Platform-provided (survive hot-reload)
+	platform: ^plat.PlatformApi,
+	renderer: plat.Renderer,
+	fontAtlas: plat.TextureHandle,
+
 	audioProcessor: ^AudioProcessorContext,
 
-	// UI / controller state
-	render: ^SdlRenderContext,
+	// Hot-loaded (reinit on reload)
 	draw: ^DrawContext,
 	ui: ^UIContext,
 
-	// TODO: Better place for this
-	mouse: MouseInput,
-
-	// Common state
 	viewBounds: RectI32,
-
-	// TODO: DELETE GROSS
-	gross_global_glob: AnalysisTransfer
+	mouse: MouseInput,
+	gross_global_glob: AnalysisTransfer,
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -40,6 +38,19 @@ PluginApi :: struct {
 	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
 	draw : proc(plug: ^Plugin),
 	process_audio : proc(plug: ^Plugin),
+	view_attached : proc(plug: ^Plugin),
+	view_removed : proc(plug: ^Plugin),
+	view_resized : proc(plug: ^Plugin, rect: RectI32),
+}
+
+
+fallbackApi :: PluginApi {
+	plugin_do_analysis,
+	plugin_draw,
+	plugin_process_audio,
+	plugin_view_attached,
+	plugin_view_removed,
+	plugin_view_resized,
 }
 
 MouseButton :: enum { RMB, LMB }
@@ -66,73 +77,54 @@ HOT_DLL :: #config(HOT_DLL, false)
 when HOT_DLL {
 	@(export) GetPluginApi :: proc() -> PluginApi {
 		return PluginApi{
-			do_analysis = plugin_do_analysis,
-			draw = plugin_draw,
-			process_audio = plugin_process_audio,
+			plugin_do_analysis,
+			plugin_draw,
+			plugin_process_audio,
+			plugin_view_attached,
+			plugin_view_removed,
+			plugin_view_resized,
 		}
 	}
 }
 
-plugin_init :: proc(components: PluginComponentSet) -> ^Plugin {
-	plugin := new(Plugin)
-	if plugin == nil do return nil
-	error := false
-	defer if error do free(plugin)
-
+// @(private)
+plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
 	if .Audio in components {
-		plugin.audioProcessor = new(AudioProcessorContext)
-		if plugin.audioProcessor == nil do error = true
+		if plugin.audioProcessor == nil {
+			plugin.audioProcessor = new(AudioProcessorContext)
+		}
 	}
-	defer if error && plugin.audioProcessor != nil do free(plugin.audioProcessor)
 
 	if .Controller in components {
-		plugin.render = new(SdlRenderContext)
-		if plugin.render == nil do error = true
-
-		plugin.draw = new(DrawContext)
-		if plugin.draw == nil do error = true
-
-		plugin.ui = new(UIContext)
-		if plugin.draw == nil do error = true
+		if plugin.draw == nil {
+			plugin.draw = new(DrawContext)
+			plugin.draw.plugin = plugin
+		}
+		if plugin.ui == nil {
+			plugin.ui = new(UIContext)
+			plugin.ui.plugin = plugin
+		}
 	}
-	defer if error && plugin.render != nil do free(plugin.render)
-	defer if error && plugin.draw != nil do free(plugin.draw)
-
-	if error do return nil
-
-	if plugin.render != nil do plugin.render.plugin = plugin
-	if plugin.draw != nil do plugin.draw.plugin = plugin
-	if plugin.ui != nil do plugin.ui.plugin = plugin
-
-	plugin.viewBounds = RectI32{0, 0, 800, 600}
-
-	return plugin
 }
 
+@(private)
 plugin_destroy :: proc(plug: ^Plugin) {
 
 }
 
-plugin_attach_view :: proc(plug: ^Plugin) {
+@(private)
+plugin_view_attached :: proc(plug: ^Plugin) {
 }
 
-// plugin_create_view :: proc(plug: ^Plugin, parentHandle: rawptr) {
-// 	if plug.render == nil do return
-
-// 	// plug.plat = plat.view_create(parentHandle, plug.viewBounds.w, plug.viewBounds.h, "test")
-
-// 	// render_attach_window(plug.render, parentHandle)
-// 	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
-
-// 	// draw_init(plug.draw)
-// 	// ui_init(plug.ui)
-// }
-
-plugin_remove_view :: proc(plug: ^Plugin) {
-	
+@(private)
+plugin_view_removed :: proc(plug: ^Plugin) {
+	if plug.draw != nil {
+		font_invalidate_texture(&plug.draw.fontState)
+	}
 }
 
-plugin_resize_view :: proc(plug: ^Plugin, rect: RectI32) {
+@(private)
+plugin_view_resized :: proc(plug: ^Plugin, rect: RectI32) {
 	plug.viewBounds = rect
 	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 }
@@ -141,6 +133,7 @@ log_like_tween :: proc(i: int, N: int) -> f32 {
 	return math.pow_f32(f32(i) / f32(N), 0.3)
 }
 
+@(private)
 plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	vec: [ANALYSIS_BUFFER_SIZE]complex64
 
@@ -193,63 +186,34 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 	doLog = false
 }
 
+// @(private)
 plugin_draw :: proc(plug: ^Plugin) {
-	// rs_frame(plug)
-	// choices := [?]ColorF32{
-	// 	{0.117647, 0.117647, 0.117647, 1},
-	// 	{0.278, 0.216, 0.369, 1},
-	// 	{0.278, 0.716, 0.369, 1},
-	// 	{0.278, 0.716, 0.969, 1}}
+	if plug.draw == nil do return
 
-	// @(static) colorIdx := 0
-	// if plug.mouse.buttonState[.RMB].pressed do colorIdx += 1
-	// if plug.mouse.buttonState[.LMB].released do colorIdx -= 1
+	draw_init(plug.draw)
+	draw_clear(plug.draw)
+	draw_set_clear_color(plug.draw, {0.12, 0.12, 0.14, 1.0})
 
-	// if colorIdx < 0 do colorIdx = len(choices) - 1
-	// if colorIdx >= len(choices) do colorIdx = 0
+	rect := SimpleUIRect{
+		x = 50,
+		y = 50,
+		width = 200,
+		height = 100,
+		color = {100, 0, 255, 255},
+		cornerRad = 10,
+		borderWidth = 2,
+		borderColor = {255, 255, 255, 255},
+	}
+	draw_push_rect(plug.draw, rect)
 
-	// // @(static) clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
-	// // clearColor := rand.choice(choices[:])
-	// // if plug.flipColor do clearColor = rand.choice(choices[:])
-	// // clearColor := ColorF32_from_hex(0xca9f85ff)
-	// // clearColor := ColorF32_from_hex(0xff00ffff)
+	draw_text(plug.draw, "Hello Lindale! 111", 50, 200)
 
-	// // clearColor := choices[colorIdx]
-	// clearColor := ColorF32{0.117647, 0.117647, 0.117647, 1}
+	// draw_push_rect(plug.draw, SimpleUIRect{x = 200, })
 
-	// // draw_remove_scissor(plug.draw)
-	// // draw_text(plug.draw, "this is a test", 100, 100)
-
-	// mouse := plug.mouse
-
-	// rect := SimpleUIRect {
-	// 	x = mouse.pos.x,
-	// 	y = mouse.pos.y,
-	// 	width = 100,
-	// 	height = 100,
-	// 	color = DEFAULT_THEME.buttonColor,
-	// 	cornerRad = 20,
-	// 	borderWidth = 3,
-	// 	borderColor = DEFAULT_THEME.borderColor,
-	// }
-
-	// // draw_push_rect(plug.draw, rect)
-
-	// ui_init(plug.ui)
-
-	// ui_begin_frame(plug.ui)
-	// // ui_button(plug.ui, "test_button")
-	// ui_button(plug.ui, "TEST")
-	// // ui_button(plug.ui, "zqop")
-	// // ui_button(plug.ui, "forecast")
-	// @(static) f: f32 = 40
-	// ui_slider_v(plug.ui, "test", &f, 0, 100, 200)
-	// ui_end_frame(plug.ui)
-
-	// draw_set_clear_color(plug.draw, clearColor)
-	// draw_submit(plug.draw)
+	draw_submit(plug.draw)
 }
 
+@(private)
 plugin_process_audio :: proc(plug: ^Plugin) {
 	audioContext := plug.audioProcessor
 	if audioContext == nil do return

@@ -80,9 +80,10 @@ ui_begin_frame :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse
 	ctx.hoveredId = 0
 
+	size := ctx.plugin.platform.get_size(ctx.plugin.renderer)
 	frameRect := RectF32 {
 		0, 0,
-		f32(ctx.plugin.render.width), f32(ctx.plugin.render.height)
+		f32(size.logicalWidth), f32(size.logicalHeight)
 	}
 
 	ctx.layoutIdx = 0

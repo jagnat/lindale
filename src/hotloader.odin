@@ -82,20 +82,24 @@ hotload_init :: proc() {
 
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
-		do_analysis = buffer_do_analysis,
-		draw = buffer_draw,
-		process_audio = buffer_process_audio
+		buffer_do_analysis,
+		buffer_draw,
+		buffer_process_audio,
+		buffer_view_attached,
+		buffer_view_removed,
+		buffer_view_resized,
 	}
 
 	return api
 
 	buffer_do_analysis :: proc(plug: ^lin.Plugin, transfer: ^lin.AnalysisTransfer) {
 		when !HOT_DLL {
-			lin.plugin_do_analysis(plug, transfer)
+			// lin.plugin_do_analysis(plug, transfer)
+			lin.fallbackApi.do_analysis(plug, transfer)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].do_analysis == nil {
-				lin.plugin_do_analysis(plug, transfer)
+				lin.fallbackApi.do_analysis(plug, transfer)
 			} else {
 				ctx.apis[idx].do_analysis(plug, transfer)
 			}
@@ -103,11 +107,11 @@ hotload_api :: proc() -> lin.PluginApi {
 	}
 	buffer_draw :: proc(plug: ^lin.Plugin) {
 		when !HOT_DLL {
-			lin.plugin_draw(plug)
+			lin.fallbackApi.draw(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
-				lin.plugin_draw(plug)
+				lin.fallbackApi.draw(plug)
 			} else {
 				ctx.apis[idx].draw(plug)
 			}
@@ -115,13 +119,49 @@ hotload_api :: proc() -> lin.PluginApi {
 	}
 	buffer_process_audio :: proc(plug: ^lin.Plugin) {
 		when !HOT_DLL {
-			lin.plugin_process_audio(plug)
+			lin.fallbackApi.process_audio(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
-				lin.plugin_process_audio(plug)
+				lin.fallbackApi.process_audio(plug)
 			} else {
 				ctx.apis[idx].process_audio(plug)
+			}
+		}
+	}
+	buffer_view_attached :: proc(plug: ^lin.Plugin) {
+		when !HOT_DLL {
+			lin.fallbackApi.view_attached(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+				lin.fallbackApi.view_attached(plug)
+			} else {
+				ctx.apis[idx].view_attached(plug)
+			}
+		}
+	}
+	buffer_view_removed :: proc(plug: ^lin.Plugin) {
+		when !HOT_DLL {
+			lin.fallbackApi.view_removed(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+				lin.fallbackApi.view_removed(plug)
+			} else {
+				ctx.apis[idx].view_removed(plug)
+			}
+		}
+	}
+	buffer_view_resized :: proc(plug: ^lin.Plugin, rect: lin.RectI32) {
+		when !HOT_DLL {
+			lin.fallbackApi.view_resized(plug, rect)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+				lin.fallbackApi.view_resized(plug, rect)
+			} else {
+				ctx.apis[idx].view_resized(plug, rect)
 			}
 		}
 	}

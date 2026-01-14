@@ -60,6 +60,8 @@ font_measure_bounds :: proc(ctx: ^FontState, text: string) -> Vec2f {
 }
 
 font_get_vertical_metrics :: proc(ctx: ^FontState) -> (ascender, descender, lineHeight: f32) {
+	state := fs.__getState(&ctx.fontContext)
+	state.size = 22
 	ascender, descender, lineHeight = fs.VerticalMetrics(&ctx.fontContext)
 	return
 }
@@ -75,6 +77,10 @@ font_is_texture_dirty :: proc(ctx: ^FontState) -> bool {
 
 font_reset_dirty_flag :: proc(ctx: ^FontState) {
 	fs.__dirtyRectReset(&ctx.fontContext)
+}
+
+font_invalidate_texture :: proc(ctx: ^FontState) {
+	ctx.fontContext.dirtyRect = {0, 0, f32(FONT_ATLAS_SIZE), f32(FONT_ATLAS_SIZE)}
 }
 
 __fs_resize :: proc(data: rawptr, w, h: int) {

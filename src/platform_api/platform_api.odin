@@ -80,3 +80,18 @@ RendererSize :: struct {
 	physicalWidth: i32,  // Actual drawable pixels
 	physicalHeight: i32, // Actual drawable pixels
 }
+
+// Platform vtable for hot-loaded code
+PlatformApi :: struct {
+	create_texture:    proc(r: Renderer, width, height: u32, format: PixelFormat) -> TextureHandle,
+	destroy_texture:   proc(r: Renderer, handle: TextureHandle),
+	upload_texture:    proc(r: Renderer, handle: TextureHandle, pixels: []u8),
+	get_white_texture: proc(r: Renderer) -> TextureHandle,
+	get_size:          proc(r: Renderer) -> RendererSize,
+	begin_frame:       proc(r: Renderer) -> bool,
+	end_frame:         proc(r: Renderer),
+	upload_instances:  proc(r: Renderer, instances: []RectInstance),
+	begin_pass:        proc(r: Renderer, clearColor: ColorF32),
+	end_pass:          proc(r: Renderer),
+	draw:              proc(r: Renderer, cmd: DrawCommand),
+}

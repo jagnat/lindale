@@ -93,9 +93,8 @@ LindaleProcessor :: struct {
 	// connectionPointVtable: vst3.IConnectionPointVtbl,
 	refCount: u32,
 
-	plugin: ^lin.Plugin,
+	plugin: lin.Plugin,
 
-	// controllerConnection: ^vst3.IConnectionPoint,
 	hostContext: ^vst3.FUnknown,
 
 	// Context
@@ -157,7 +156,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = get_mutex_logger(.Processor)
 
-	processor.plugin = lin.plugin_init({.Audio})
+	lin.plugin_init(&processor.plugin, {.Audio})
 
 	for i in lin.ParamID {
 		processor.params.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
@@ -463,7 +462,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 
 		// Invoke hot-loaded audio process function
-		pluginFactory.api.process_audio(processor.plugin)
+		pluginFactory.api.process_audio(&processor.plugin)
 
 		return vst3.kResultOk
 	}
@@ -516,9 +515,9 @@ LindaleController :: struct {
 
 	refCount: u32,
 
-	plugin: ^lin.Plugin,
+	plugin: lin.Plugin,
+	platformApi: api.PlatformApi,
 
-	// Context
 	paramState: lin.ParamState,
 	ctx: runtime.Context,
 	view: LindaleView,
@@ -572,9 +571,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller.paramState.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
 	}
 
-	controller.plugin = lin.plugin_init({.Controller})
-
-	// Set platform API functions
+	controller.plugin.viewBounds = {0, 0, 800, 600}
 
 	return controller
 
@@ -721,7 +718,7 @@ createLindaleController :: proc () -> ^LindaleController {
 			return nil
 		}
 		log.info("createView: Editor opened")
-		createLindaleView(&controller.view, controller.plugin)
+		createLindaleView(&controller.view, &controller.plugin)
 		return &controller.view.pluginView
 	}
 
@@ -781,7 +778,7 @@ LindaleView :: struct {
 	parent: rawptr,
 	timer: ^plat.Timer,
 
-	renderer: api.Renderer
+	renderer: api.Renderer,
 }
 
 gross_global_buffer_ptr: ^lin.AnalysisTransfer
@@ -790,64 +787,11 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 	if view.renderer == nil do return
 
-	// Test rectangles with different borders and corner radii
-	testRects := []api.RectInstance{
-		// Red rectangle: no border, small corner radius
-		{
-			pos0 = {0, 0},
-			pos1 = {250, 150},
-			uv0 = {0, 0},
-			uv1 = {1, 1},
-			color = {255, 80, 80, 255},
-			borderColor = {0, 0, 0, 0},
-			borderWidth = 0,
-			cornerRad = 10,
-			noTexture = 1,
-		},
-		// Green rectangle: thick white border, medium corner radius
-		{
-			pos0 = {300, 50},
-			pos1 = {500, 200},
-			uv0 = {0, 0},
-			uv1 = {1, 1},
-			color = {80, 200, 80, 255},
-			borderColor = {255, 255, 255, 255},
-			borderWidth = 4,
-			cornerRad = 20,
-			noTexture = 1,
-		},
-		// Blue rectangle: thin yellow border, large corner radius (pill shape)
-		{
-			pos0 = {550, 100},
-			pos1 = {750, 180},
-			uv0 = {0, 0},
-			uv1 = {1, 1},
-			color = {80, 120, 220, 255},
-			borderColor = {255, 220, 50, 255},
-			borderWidth = 2,
-			cornerRad = 40,
-			noTexture = 1,
-		},
-	}
+	// lin.plugin_draw(view.plugin)
+	pluginFactory.api.draw(view.plugin)
 
-	if !plat.renderer_begin_frame(view.renderer) do return
 
-	plat.renderer_upload_instances(view.renderer, testRects)
-
-	clearColor := api.ColorF32{0.12, 0.12, 0.14, 1.0}
-	plat.renderer_begin_pass(view.renderer, clearColor)
-
-	drawCmd := api.DrawCommand{
-		instanceOffset = 0,
-		instanceCount = u32(len(testRects)),
-		texture = api.INVALID_TEXTURE,
-		singleChannelTexture = false,
-		scissor = {},
-	}
-	plat.renderer_draw(view.renderer, drawCmd)
-
-	plat.renderer_end_pass(view.renderer)
-	plat.renderer_end_frame(view.renderer)
+	free_all(context.temp_allocator)
 }
 
 createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult {
@@ -947,9 +891,30 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			}
 		}
 
-		view.renderer = plat.renderer_create(parent, 800, 600)
+		controller := container_of(view, LindaleController, "view")
 
-		lin.plugin_attach_view(view.plugin)
+		view.renderer = plat.renderer_create(parent, 800, 600)
+		plat.renderer_resize(view.renderer, 800, 600)
+
+		controller.platformApi = api.PlatformApi{
+			create_texture = plat.renderer_create_texture,
+			destroy_texture = plat.renderer_destroy_texture,
+			upload_texture = plat.renderer_upload_texture,
+			get_white_texture = plat.renderer_get_white_texture,
+			get_size = plat.renderer_get_size,
+			begin_frame = plat.renderer_begin_frame,
+			end_frame = plat.renderer_end_frame,
+			upload_instances = plat.renderer_upload_instances,
+			begin_pass = plat.renderer_begin_pass,
+			end_pass = plat.renderer_end_pass,
+			draw = plat.renderer_draw,
+		}
+		view.plugin.platform = &controller.platformApi
+		view.plugin.renderer = view.renderer
+
+		view.plugin.fontAtlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
+
+		lin.plugin_init(view.plugin, {.Controller})
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent
@@ -972,7 +937,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			plat.timer_stop(view.timer)
 		}
 
-		lin.plugin_remove_view(view.plugin)
+		pluginFactory.api.view_removed(view.plugin)
 
 		return vst3.kResultOk
 	}
@@ -1014,7 +979,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
 		log.info("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
-		lin.plugin_resize_view(view.plugin, rect)
+		pluginFactory.api.view_resized(view.plugin, rect)
 		return vst3.kResultOk
 	}
 	lv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {

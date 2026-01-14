@@ -28,7 +28,7 @@ Use this during development to quickly rebuild just the audio/UI logic that gets
 ```bash
 ./build_test_host.sh
 ```
-Builds and runs a standalone SDL3 window for testing rendering without loading the VST3 plugin.
+Standalone test host (currently not functional after SDL renderer removal).
 
 ### Windows
 
@@ -39,13 +39,9 @@ Use the `.bat` equivalents:
 
 ### Setup
 
-1. Symlink `out/Lindale.vst3` into your system VST3 folder:
-   - **Mac:** `~/Library/Audio/Plug-Ins/VST3`
-   - **Windows:** `C:\Program Files\Common Files\VST3`
-
-2. Optionally symlink `out/hot` into the SDL3 preferences folder for hot-reload development:
-   - **Mac:** `~/Library/Application Support/user/Lindale`
-   - **Windows:** `%APPDATA%\user\Lindale`
+Symlink `out/Lindale.vst3` into your system VST3 folder:
+- **Mac:** `~/Library/Audio/Plug-Ins/VST3`
+- **Windows:** `C:\Program Files\Common Files\VST3`
 
 ## Style Guidelines
 
@@ -86,32 +82,41 @@ The hot-reload system (`src/hotloader.odin`) works by:
 
 The plugin is split into two VST3 components:
 
-1. **LindaleProcessor** (`vst_layer.odin:84-508`): Audio processing component
+1. **LindaleProcessor** (`vst_layer.odin:85`): Audio processing component
    - Implements `IComponent` and `IAudioProcessor` interfaces
    - Runs on the audio thread
    - Manages parameter changes and audio buffer routing
-   - Owns the `AudioProcessorContext`
+   - Owns `Plugin` instance with audio processing state
 
-2. **LindaleController** (`vst_layer.odin:510-770`): UI/controller component
+2. **LindaleController** (`vst_layer.odin:510`): UI/controller component
    - Implements `IEditController` and `IEditController2` interfaces
    - Runs on the UI thread
    - Manages parameter state and the plugin view
-   - Owns the `LindaleView` for rendering
+   - Owns `Plugin` instance and `PlatformApi` vtable
 
-3. **LindaleView** (`vst_layer.odin:772-1030`): Platform view implementation
+3. **LindaleView** (`vst_layer.odin:770`): Platform view implementation
    - Implements `IPlugView` interface
-   - Creates platform-specific child windows using `platform_specific/view_platform_*.odin`
+   - Creates platform-specific renderer in `lv_attached`
    - Runs a timer to drive the render loop at 30ms intervals
+   - Timer calls `plugin_draw` which uses the platform vtable
 
 ### Plugin State
 
-The `Plugin` struct (`src/lindale/plugin.odin:14-34`) contains:
-- `audioProcessor`: Audio processing state (owned by Processor)
-- `render`, `draw`, `ui`: Rendering contexts (owned by Controller)
-- `viewBounds`: Window dimensions
-- `mouse`: Mouse input state
+The `Plugin` struct (`src/lindale/plugin.odin:14-29`) is allocated by the static VST layer and survives hot-reloads. Fields are categorized:
 
-**Thread Safety Note:** The current architecture has a non-threadsafe hack (`gross_global_glob`) for transferring audio analysis data from the audio thread to the UI thread. This is acknowledged as temporary.
+**Platform-provided (survive hot-reload):**
+- `platform`: Vtable for renderer calls from hot-loaded code
+- `renderer`: Opaque handle to platform-specific renderer
+- `fontAtlas`: Persistent font texture handle
+
+**Hot-loaded (reset on reload):**
+- `draw`: Drawing context with batching system
+- `ui`: UI widget state
+- `audioProcessor`: Audio processing state
+
+Hot-loaded fields are zeroed by static layer on DLL unload, then reallocated by `plugin_init` after new DLL loads.
+
+**Thread Safety Note:** The current architecture has a non-threadsafe hack (`gross_global_glob`) for transferring audio analysis data from the audio thread to the UI thread.
 
 ### Parameter System
 
@@ -140,16 +145,21 @@ To modify audio processing behavior:
 
 SDF rounded rectangle renderer with instanced rendering. Supports borders, corner radii, and textures.
 
+**Platform API Vtable** (`src/platform_api/platform_api.odin`):
+The `PlatformApi` struct contains all renderer function pointers. Static layer populates this vtable with platform-specific implementations and passes it to hot-loaded code. This allows renderer calls from lindale without linking to platform-specific code.
+
+**Draw System** (`src/lindale/draw.odin`):
+High-level drawing API that batches rectangles and text into draw calls. `draw_submit` flattens batches and issues `DrawCommand`s via the platform vtable. Font rendering uses fontstash with a persistent texture atlas.
+
 **Shared types** (`src/platform_api/platform_api.odin`):
 - `RectInstance`: 56-byte per-instance data (pos, uv, color, border, corner radius)
 - `TextureHandle`: Opaque handle to GPU texture
-- `DrawCommand`: Specifies instance range, texture, and scissor for a draw call
+- `DrawCommand`: Batch of instances with texture and scissor
 - `RendererSize`: Logical size (points for UI), physical size (pixels), scale factor
+- `PlatformApi`: Vtable with renderer function pointers
 
-**Renderer interface** (`src/platform_specific/view_platform.odin` documents the full interface):
-- Lifecycle: `renderer_create`, `renderer_destroy`, `renderer_resize`, `renderer_get_size`
-- Textures: `renderer_create_texture`, `renderer_destroy_texture`, `renderer_upload_texture`
-- Rendering: `renderer_begin_frame`, `renderer_end_frame`, `renderer_upload_instances`, `renderer_begin_pass`, `renderer_end_pass`, `renderer_draw`
+**Renderer interface** (`src/platform_specific/view_platform.odin`):
+Documents the renderer procedures each platform must implement. See file for full list.
 
 **Platform implementations**:
 - `src/platform_specific/view_platform_darwin.odin`: Metal renderer for macOS
@@ -171,12 +181,14 @@ UI code works in logical coordinates (points). The renderer handles DPI scaling 
 ```
 src/
 ├── lindale/              # Hot-reloadable plugin code
-│   ├── plugin.odin       # Core plugin logic and PluginApi
+│   ├── plugin.odin       # Core plugin state and PluginApi
 │   ├── audio_processor.odin  # Audio processing context
 │   ├── parameters.odin   # Parameter definitions and conversions
-│   ├── draw.odin         # Drawing primitive batching
-│   └── ui.odin           # UI widgets
-├── platform_api/         # Shared types (RectInstance, TextureHandle, etc.)
+│   ├── draw.odin         # Drawing primitive batching and submission
+│   ├── font.odin         # Font rendering with fontstash
+│   ├── ui.odin           # UI widgets
+│   └── primitive.odin    # Type re-exports and utilities
+├── platform_api/         # Shared types and PlatformApi vtable
 ├── platform_specific/    # Platform renderers and OS integration
 │   ├── view_platform.odin          # Renderer interface docs
 │   ├── view_platform_darwin.odin   # Metal renderer (Mac)
@@ -184,7 +196,6 @@ src/
 ├── shaders/              # GPU shaders
 │   └── shader.metal      # SDF rect shader
 ├── thirdparty/           # Third-party code (VST3 SDK, FFT, etc.)
-├── test_host/            # Standalone test application
 ├── vst_layer.odin        # VST3 interface implementation
 ├── hotloader.odin        # Hot-reload system
 └── logger*.odin          # Thread-safe logging
@@ -212,6 +223,8 @@ src/
 ## Important Implementation Details
 
 - **HOT_DLL Config:** When `HOT_DLL=true`, the plugin exports a `GetPluginApi()` function that returns function pointers for hot-reloadable code.
+- **Platform API Initialization:** The static layer creates the renderer, populates `PlatformApi` vtable with function pointers, creates the font atlas texture, then calls `plugin_init`. See `vst_layer.odin:lv_attached` for initialization flow.
+- **Hot-Reload Lifecycle:** Static layer zeros `plugin.draw` and `plugin.ui` fields after DLL unload. After loading new DLL, calls `plugin_init` which reallocates these fields. Platform-provided fields (`platform`, `renderer`, `fontAtlas`) remain valid throughout.
 - **Container_of Pattern:** The VST3 layer uses a `container_of` pattern to convert from VST3 interface pointers back to the containing structs.
 - **Reference Counting:** Each VST3 component manages its own reference count. When count reaches 0, the component is freed.
 - **Context Management:** Each component stores its own Odin context with appropriate loggers for thread-safe logging.

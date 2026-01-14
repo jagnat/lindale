@@ -1,6 +1,7 @@
 package platform_specific
 
 import "base:runtime"
+import "core:fmt"
 import "core:math/linalg"
 
 import F "core:sys/darwin/Foundation"
@@ -167,8 +168,8 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	samplerDesc->setMinFilter(.Nearest)
 	samplerDesc->setMagFilter(.Nearest)
 	samplerDesc->setMipFilter(.NotMipmapped)
-	samplerDesc->setSAddressMode(.ClampToEdge)
-	samplerDesc->setTAddressMode(.ClampToEdge)
+	samplerDesc->setSAddressMode(.Repeat)
+	samplerDesc->setTAddressMode(.Repeat)
 	renderer.sampler = device->newSamplerState(samplerDesc)
 
 	// Create 1x1 white texture for solid color rendering

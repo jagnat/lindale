@@ -20,7 +20,8 @@ RectDrawChunk :: struct {
 
 RectDrawBatchParams :: struct {
 	scissor: RectI32,
-	texture: ^Texture2D,
+	texture: TextureHandle,
+	singleChannelTexture: bool,
 }
 
 RectDrawBatch :: struct {
@@ -54,7 +55,6 @@ DrawContext :: struct {
 	batchesFirst: ^RectDrawBatch,
 	batchesLast: ^RectDrawBatch,
 	totalInstanceCount: u32,
-	fontTexture: Texture2D,
 	clearColor: ColorF32,
 }
 
@@ -66,9 +66,6 @@ draw_init :: proc(ctx: ^DrawContext) {
 	ctx.alloc = vm.arena_allocator(&ctx.arena)
 	ctx.clearColor = {0, 0, 0, 1}
 
-	ctx.fontTexture = render_create_texture(ctx.plugin.render, 1, .R8_UNORM, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
-	ctx.fontTexture.data = ctx.fontState.fontContext.textureData
-	
 	font_init(&ctx.fontState)
 	ctx.initialized = true
 }
@@ -80,7 +77,8 @@ draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
 draw_default_params :: proc(ctx: ^DrawContext) -> RectDrawBatchParams {
 	return RectDrawBatchParams{
 		scissor = {0, 0, 0, 0},
-		texture = &ctx.fontTexture,
+		texture = ctx.plugin.fontAtlas,
+		singleChannelTexture = true,
 	}
 }
 
@@ -119,16 +117,18 @@ draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, ins
 	ctx.totalInstanceCount += 1
 }
 
-draw_set_texture :: proc(ctx: ^DrawContext, texture: ^Texture2D) {
+draw_set_texture :: proc(ctx: ^DrawContext, texture: TextureHandle, singleChannel := false) {
 	curBatch := draw_get_current_batch(ctx)
 
 	if curBatch.params.texture == texture || curBatch.totalInstanceCount == 0 {
 		curBatch.params.texture = texture
+		curBatch.params.singleChannelTexture = singleChannel
 		return
 	}
 
 	params := curBatch.params
 	params.texture = texture
+	params.singleChannelTexture = singleChannel
 
 	draw_create_new_batch(ctx, params)
 }
@@ -181,49 +181,44 @@ draw_clear :: proc(ctx: ^DrawContext) {
 }
 
 draw_submit :: proc(ctx: ^DrawContext) {
-	if ctx.batchesFirst == nil do return // nothing to do
+	if ctx.batchesFirst == nil do return
 
-	ready := render_frame_begin(ctx.plugin.render)
-	if !ready do return
+	p := ctx.plugin.platform
+	r := ctx.plugin.renderer
 
-	// Upload textures
-	render_upload_texture(ctx.plugin.render, &ctx.fontTexture, ctx.fontState.fontContext.textureData)
+	if !p.begin_frame(r) do return
 
-	// Upload instances
-	uploadCtx := render_begin_instance_upload(ctx.plugin.render, u32(ctx.totalInstanceCount))
-	curBatch := ctx.batchesFirst
-	fill := uploadCtx.instanceFill
+	if font_is_texture_dirty(&ctx.fontState) {
+		p.upload_texture(r, ctx.plugin.fontAtlas, font_get_atlas(&ctx.fontState))
+		font_reset_dirty_flag(&ctx.fontState)
+	}
+
+	instances := make([]RectInstance, ctx.totalInstanceCount, context.temp_allocator)
 	idx: u32 = 0
-	for curBatch != nil {
-		curChunk := curBatch.chunkFirst
-		for curChunk != nil {
-			copy(fill[idx:idx+curChunk.instanceCount], curChunk.instancePool[:curChunk.instanceCount])
-			idx += curChunk.instanceCount
-			curChunk = curChunk.next
+	for batch := ctx.batchesFirst; batch != nil; batch = batch.next {
+		for chunk := batch.chunkFirst; chunk != nil; chunk = chunk.next {
+			copy(instances[idx:], chunk.instancePool[:chunk.instanceCount])
+			idx += chunk.instanceCount
 		}
-		curBatch = curBatch.next
 	}
-	assert(idx == ctx.totalInstanceCount)
-	render_end_instance_upload(ctx.plugin.render, uploadCtx)
+	p.upload_instances(r, instances)
 
-	// Draw
-	render_begin_pass(ctx.plugin.render, ctx.clearColor)
+	p.begin_pass(r, ctx.clearColor)
 
-	curBatch = ctx.batchesFirst
-	batchOffs: u32 = 0
-	for curBatch != nil {
-		// set scissor, texture, uniforms
-		render_set_scissor(ctx.plugin.render, curBatch.params.scissor)
-		render_bind_texture(ctx.plugin.render, &ctx.fontTexture)
-
-		render_draw_rects(ctx.plugin.render, batchOffs, curBatch.totalInstanceCount)
-		batchOffs += curBatch.totalInstanceCount
-		curBatch = curBatch.next
+	offset: u32 = 0
+	for batch := ctx.batchesFirst; batch != nil; batch = batch.next {
+		p.draw(r, DrawCommand{
+			instanceOffset = offset,
+			instanceCount = batch.totalInstanceCount,
+			texture = batch.params.texture,
+			singleChannelTexture = batch.params.singleChannelTexture,
+			scissor = batch.params.scissor,
+		})
+		offset += batch.totalInstanceCount
 	}
 
-	render_end_pass(ctx.plugin.render)
-
-	render_frame_end(ctx.plugin.render)
+	p.end_pass(r)
+	p.end_frame(r)
 }
 
 draw_generate_random_rects :: proc(ctx: ^DrawContext) {
@@ -308,17 +303,11 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 
 	counts := font_get_text_quads(&ctx.fontState, text, x, y + ascent, buf[:])
 
-	draw_set_texture(ctx, &ctx.fontTexture)
+	draw_set_texture(ctx, ctx.plugin.fontAtlas, true)
 
 	for &rect in buf {
 		rect.color = color
-		// rect.noTexture = 1
 		draw_push_instance(ctx, rect)
-	}
-
-	if font_is_texture_dirty(&ctx.fontState) {
-		ctx.fontTexture.uploaded = false
-		font_reset_dirty_flag(&ctx.fontState)
 	}
 }
 

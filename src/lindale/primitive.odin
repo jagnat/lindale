@@ -1,25 +1,19 @@
 package lindale
 
-import "core:math/linalg"
 import "core:math"
+import api "../platform_api"
 
-Vec2f :: linalg.Vector2f32
-Vec4f :: linalg.Vector4f32
-Mat4f :: linalg.Matrix4x4f32
-
-RectI32 :: struct {
-	x, y, w, h: i32
-}
-
-RectF32 :: struct {
-	x, y, w, h: f32
-}
-
-ColorU8 :: struct {
-	r, g, b, a: u8
-}
-
-ColorF32 :: [4]f32
+// Re-export common types from platform_api
+Vec2f :: api.Vec2f
+Vec4f :: api.Vec4f
+Mat4f :: api.Mat4f
+RectI32 :: api.RectI32
+RectF32 :: api.RectF32
+ColorU8 :: api.ColorU8
+ColorF32 :: api.ColorF32
+RectInstance :: api.RectInstance
+TextureHandle :: api.TextureHandle
+DrawCommand :: api.DrawCommand
 
 ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
 	r := f32((hex >> 24) & 0xFF) / 255.0
