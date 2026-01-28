@@ -58,17 +58,17 @@ DrawContext :: struct {
 	clearColor: ColorF32,
 }
 
-draw_init :: proc(ctx: ^DrawContext) {
-	if ctx.initialized do return
+// draw_init :: proc(ctx: ^DrawContext) {
+// 	if ctx.initialized do return
 
-	err := vm.arena_init_growing(&ctx.arena)
-	assert(err == .None)
-	ctx.alloc = vm.arena_allocator(&ctx.arena)
-	ctx.clearColor = {0, 0, 0, 1}
+// 	err := vm.arena_init_growing(&ctx.arena)
+// 	assert(err == .None)
+// 	ctx.alloc = vm.arena_allocator(&ctx.arena)
+// 	ctx.clearColor = {0, 0, 0, 1}
 
-	font_init(&ctx.fontState)
-	ctx.initialized = true
-}
+// 	font_init(&ctx.fontState)
+// 	ctx.initialized = true
+// }
 
 draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
 	ctx.clearColor = color

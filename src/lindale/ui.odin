@@ -72,9 +72,9 @@ DEFAULT_THEME : UITheme : {
 	borderWidth = 1.5,
 }
 
-ui_init :: proc(ctx: ^UIContext) {
-	ctx.theme = DEFAULT_THEME
-}
+// ui_init :: proc(ctx: ^UIContext) {
+// 	ctx.theme = DEFAULT_THEME
+// }
 
 ui_begin_frame :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse

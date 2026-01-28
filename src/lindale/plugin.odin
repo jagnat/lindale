@@ -6,20 +6,19 @@ import "core:log"
 import "core:math/linalg"
 import "core:math"
 import "core:math/rand"
+import vm "core:mem/virtual"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
 import plat "../platform_api"
 
 Plugin :: struct {
-	// Platform-provided (survive hot-reload)
 	platform: ^plat.PlatformApi,
 	renderer: plat.Renderer,
 	fontAtlas: plat.TextureHandle,
 
 	audioProcessor: ^AudioProcessorContext,
 
-	// Hot-loaded (reinit on reload)
 	draw: ^DrawContext,
 	ui: ^UIContext,
 
@@ -42,7 +41,6 @@ PluginApi :: struct {
 	view_removed : proc(plug: ^Plugin),
 	view_resized : proc(plug: ^Plugin, rect: RectI32),
 }
-
 
 fallbackApi :: PluginApi {
 	plugin_do_analysis,
@@ -99,10 +97,18 @@ plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
 		if plugin.draw == nil {
 			plugin.draw = new(DrawContext)
 			plugin.draw.plugin = plugin
+			err := vm.arena_init_growing(&plugin.draw.arena)
+			assert(err == .None)
+			plugin.draw.alloc = vm.arena_allocator(&plugin.draw.arena)
+			plugin.draw.clearColor = {0, 0, 0, 1}
+
+			font_init(&plugin.draw.fontState)
+			plugin.draw.initialized = true
 		}
 		if plugin.ui == nil {
 			plugin.ui = new(UIContext)
 			plugin.ui.plugin = plugin
+			plugin.ui.theme = DEFAULT_THEME
 		}
 	}
 }
@@ -190,7 +196,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 plugin_draw :: proc(plug: ^Plugin) {
 	if plug.draw == nil do return
 
-	draw_init(plug.draw)
+	// draw_init(plug.draw)
 	draw_clear(plug.draw)
 	draw_set_clear_color(plug.draw, {0.12, 0.12, 0.14, 1.0})
 
@@ -199,14 +205,14 @@ plugin_draw :: proc(plug: ^Plugin) {
 		y = 50,
 		width = 200,
 		height = 100,
-		color = {100, 0, 255, 255},
+		color = {200, 144, 0, 255},
 		cornerRad = 10,
 		borderWidth = 2,
-		borderColor = {255, 255, 255, 255},
+		borderColor = {0, 255, 0, 255},
 	}
 	draw_push_rect(plug.draw, rect)
 
-	draw_text(plug.draw, "Hello Lindale! 111", 50, 200)
+	draw_text(plug.draw, "Hello Lindaoale! 222", 50, 200)
 
 	// draw_push_rect(plug.draw, SimpleUIRect{x = 200, })
 

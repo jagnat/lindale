@@ -573,6 +573,8 @@ createLindaleController :: proc () -> ^LindaleController {
 
 	controller.plugin.viewBounds = {0, 0, 800, 600}
 
+	lin.plugin_init(&controller.plugin, {.Controller})
+
 	return controller
 
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
@@ -913,8 +915,6 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view.plugin.renderer = view.renderer
 
 		view.plugin.fontAtlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
-
-		lin.plugin_init(view.plugin, {.Controller})
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent
