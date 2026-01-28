@@ -22,8 +22,8 @@ log_init :: proc(log_folder: string) {
 	// Timestamp file prefix
 	timestampBuf: [32]u8
 	now := time.now()
-	time.to_string_yyyy_mm_dd(now, timestampBuf[:])
-	time.to_string_hms(now, timestampBuf[11:])
+	_ = time.to_string_yyyy_mm_dd(now, timestampBuf[:])
+	_ = time.to_string_hms(now, timestampBuf[11:])
 	timestampBuf[10] = '_' // Separator between date and time
 	timestampBuf[13] = '-'
 	timestampBuf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
