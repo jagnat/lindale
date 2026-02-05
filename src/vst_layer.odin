@@ -38,10 +38,11 @@ LindalePluginFactory :: struct {
 	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
 	ctx: runtime.Context,
-	api: lin.PluginApi,
+	// api: lin.PluginApi,
 }
 
 pluginFactory: LindalePluginFactory
+pluginApi: lin.PluginApi
 
 when ODIN_OS == .Darwin {
 	@export bundleEntry :: proc "system" (bundleRef: rawptr) -> c.bool {
@@ -462,7 +463,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 
 		// Invoke hot-loaded audio process function
-		pluginFactory.api.process_audio(&processor.plugin)
+		pluginApi.process_audio(&processor.plugin)
 
 		return vst3.kResultOk
 	}
@@ -789,9 +790,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 	if view.renderer == nil do return
 
-	// lin.plugin_draw(view.plugin)
-	pluginFactory.api.draw(view.plugin)
-
+	pluginApi.draw(view.plugin)
 
 	free_all(context.temp_allocator)
 }
@@ -937,7 +936,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			plat.timer_stop(view.timer)
 		}
 
-		pluginFactory.api.view_removed(view.plugin)
+		pluginApi.view_removed(view.plugin)
 
 		return vst3.kResultOk
 	}
@@ -979,7 +978,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		context = view.ctx
 		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
 		log.info("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
-		pluginFactory.api.view_resized(view.plugin, rect)
+		pluginApi.view_resized(view.plugin, rect)
 		return vst3.kResultOk
 	}
 	lv_onFocus :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
@@ -1254,7 +1253,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		pluginFactory.vtablePtr.lpVtbl = &pluginFactory.vtable
 
 		pluginFactory.ctx = context
-		pluginFactory.api = hotload_api()
+		pluginApi = hotload_api()
 		pluginFactory.initialized = true
 	}
 

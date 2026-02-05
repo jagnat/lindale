@@ -1,6 +1,7 @@
 package lindale
 
 import "core:math/linalg"
+import "core:log"
 
 MAX_LAYOUT_DEPTH :: 64
 
@@ -171,6 +172,8 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	textSize := draw_measure_text(ctx.plugin.draw, label)
 	padding := ctx.theme.padding
 	rect := ui_get_widget_rect(ctx, textSize.x + 2 * padding, textSize.y + 2 * padding)
+
+	// log.info("BTN bounds", rect)
 
 	mouseOver := collide_vec2_rect(ctx.mouse.pos, rect)
 

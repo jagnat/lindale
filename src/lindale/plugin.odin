@@ -21,9 +21,9 @@ Plugin :: struct {
 
 	draw: ^DrawContext,
 	ui: ^UIContext,
+	mouse: MouseInput,
 
 	viewBounds: RectI32,
-	mouse: MouseInput,
 	gross_global_glob: AnalysisTransfer,
 }
 
@@ -31,24 +31,6 @@ PluginComponentSet :: bit_set[PluginComponent]
 PluginComponent :: enum {
 	Audio,
 	Controller,
-}
-
-PluginApi :: struct {
-	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
-	draw : proc(plug: ^Plugin),
-	process_audio : proc(plug: ^Plugin),
-	view_attached : proc(plug: ^Plugin),
-	view_removed : proc(plug: ^Plugin),
-	view_resized : proc(plug: ^Plugin, rect: RectI32),
-}
-
-fallbackApi :: PluginApi {
-	plugin_do_analysis,
-	plugin_draw,
-	plugin_process_audio,
-	plugin_view_attached,
-	plugin_view_removed,
-	plugin_view_resized,
 }
 
 MouseButton :: enum { RMB, LMB }
@@ -63,6 +45,24 @@ MouseInput :: struct {
 	pos: Vec2f,
 }
 
+PluginApi :: struct {
+	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
+	draw : proc(plug: ^Plugin),
+	process_audio : proc(plug: ^Plugin),
+	view_attached : proc(plug: ^Plugin),
+	view_removed : proc(plug: ^Plugin),
+	view_resized : proc(plug: ^Plugin, rect: RectI32),
+}
+
+fallbackApi :: PluginApi {
+	do_analysis = plugin_do_analysis,
+	draw = plugin_draw,
+	process_audio = plugin_process_audio,
+	view_attached = plugin_view_attached,
+	view_removed = plugin_view_removed,
+	view_resized = plugin_view_resized,
+}
+
 // TODO: HACK for demo, not threadsafe, doesn't support multiple instances
 ANALYSIS_BUFFER_SIZE :: 2048
 AnalysisTransfer :: struct {
@@ -74,13 +74,13 @@ HOT_DLL :: #config(HOT_DLL, false)
 
 when HOT_DLL {
 	@(export) GetPluginApi :: proc() -> PluginApi {
-		return PluginApi{
-			plugin_do_analysis,
-			plugin_draw,
-			plugin_process_audio,
-			plugin_view_attached,
-			plugin_view_removed,
-			plugin_view_resized,
+		return PluginApi {
+			do_analysis = plugin_do_analysis,
+			draw = plugin_draw,
+			process_audio = plugin_process_audio,
+			view_attached = plugin_view_attached,
+			view_removed = plugin_view_removed,
+			view_resized = plugin_view_resized,
 		}
 	}
 }
@@ -120,6 +120,7 @@ plugin_destroy :: proc(plug: ^Plugin) {
 
 @(private)
 plugin_view_attached :: proc(plug: ^Plugin) {
+	
 }
 
 @(private)
@@ -196,25 +197,32 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 plugin_draw :: proc(plug: ^Plugin) {
 	if plug.draw == nil do return
 
-	// draw_init(plug.draw)
-	draw_clear(plug.draw)
-	draw_set_clear_color(plug.draw, {0.12, 0.12, 0.14, 1.0})
+	@(static) frame : i64 = 0
 
-	rect := SimpleUIRect{
-		x = 50,
-		y = 50,
-		width = 200,
+	draw_clear(plug.draw)
+	draw_set_clear_color(plug.draw, {0.08, 0.08, 0.1, 1.0})
+
+	x : f32 = 0.0
+	y : f32 = 0.0
+
+	rect := SimpleUIRect {
+		x = x, y = y,
+		width = 100,
 		height = 100,
-		color = {200, 144, 0, 255},
+		color = {200, 144, 200, 255},
 		cornerRad = 10,
 		borderWidth = 2,
-		borderColor = {0, 255, 0, 255},
+		borderColor = {255, 255, 255, 255},
 	}
+
+	frame = frame + 1
+
 	draw_push_rect(plug.draw, rect)
 
-	draw_text(plug.draw, "Hello Lindaoale! 222", 50, 200)
+	txtBuf: [10]u8
+	num := fmt.bprintf(txtBuf[:], "%d", frame)
 
-	// draw_push_rect(plug.draw, SimpleUIRect{x = 200, })
+	draw_text(plug.draw, num, x + 10, y + 10)
 
 	draw_submit(plug.draw)
 }

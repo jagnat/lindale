@@ -2,11 +2,11 @@ package platform_specific
 
 import "base:runtime"
 import "core:fmt"
+import "core:log"
 import "core:math/linalg"
 
 import F "core:sys/darwin/Foundation"
 import MTL "vendor:darwin/Metal"
-import MTK "vendor:darwin/MetalKit"
 import CA "vendor:darwin/QuartzCore"
 
 import "base:intrinsics"
@@ -25,7 +25,8 @@ TextureSlot :: struct {
 
 // Metal renderer state - coupled with the view
 MetalRenderer :: struct {
-	view: ^LindaleMtkView,
+	view: ^LindaleMetalView,
+	layer: ^CA.MetalLayer,
 	device: ^MTL.Device,
 	commandQueue: ^MTL.CommandQueue,
 	pipeline: ^MTL.RenderPipelineState,
@@ -57,49 +58,68 @@ MetalRenderer :: struct {
 	whiteTexture: api.TextureHandle,
 }
 
-// Objective-C view implementation
+// NSView subclass with CAMetalLayer
 @(objc_implement,
-	objc_class            = "LindaleNSView",
-	objc_superclass       = MTK.View,
-	objc_ivar             = LindaleMtkView_Var,
-	objc_context_provider = LindaleMtkView_get_context,
+	objc_class            = "LindaleMetalView",
+	objc_superclass       = F.View,
+	objc_ivar             = LindaleMetalView_Var,
+	objc_context_provider = LindaleMetalView_get_context,
 )
-LindaleMtkView :: struct {
-	using _: MTK.View,
+LindaleMetalView :: struct {
+	using _: F.View,
 }
 
-LindaleMtkView_Var :: struct {
+LindaleMetalView_Var :: struct {
 	ctx: runtime.Context,
+	plugin: rawptr,
+	renderer: rawptr,
 }
 
-LindaleMtkView_get_context :: proc "c" (self: ^LindaleMtkView_Var) -> runtime.Context {
+LindaleMetalView_get_context :: proc "c" (self: ^LindaleMetalView_Var) -> runtime.Context {
 	return self.ctx
 }
 
-@(objc_type=LindaleMtkView, objc_name="initWithFrameAndContext")
-LindaleMtkView_initWithFrameAndContext :: proc "c" (self: ^LindaleMtkView, frame: F.Rect, dev: ^MTL.Device, ctx: runtime.Context) -> ^LindaleMtkView {
-	self->initWithFrame(frame, dev)
+@(objc_type=LindaleMetalView, objc_name="initWithFrameAndContext")
+LindaleMetalView_initWithFrameAndContext :: proc "c" (self: ^LindaleMetalView, frame: F.Rect, ctx: runtime.Context) -> ^LindaleMetalView {
+	intrinsics.objc_send(nil, self, "initWithFrame:", frame)
 	self.ctx = ctx
+	self.plugin = nil
+	self.renderer = nil
 	return self
 }
 
-@(objc_type=LindaleMtkView, objc_implement)
-LindaleMtkView_acceptsFirstResponder :: proc (self: ^LindaleMtkView, _cmd: rawptr) -> F.BOOL {
+@(objc_type=LindaleMetalView, objc_implement)
+LindaleMetalView_acceptsFirstResponder :: proc (self: ^LindaleMetalView, _cmd: rawptr) -> F.BOOL {
 	return true
 }
 
-@(objc_type=LindaleMtkView, objc_implement, objc_selector="mouseDown:")
-LindaleMtkView_mouseDown :: proc (self: ^LindaleMtkView, _cmd: rawptr, event: ^F.Event) {
-	// TODO: Handle mouse input
+@(objc_type=LindaleMetalView, objc_implement)
+LindaleMetalView_wantsUpdateLayer :: proc (self: ^LindaleMetalView, _cmd: rawptr) -> F.BOOL {
+	return true
 }
 
-@(objc_type=LindaleMtkView, objc_implement=false, objc_is_class_method=true)
-LindaleMtkView_alloc :: proc "c" () -> ^LindaleMtkView {
-	return intrinsics.objc_send(^LindaleMtkView, LindaleMtkView, "alloc")
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDown:")
+LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
+
 }
 
-@(objc_type=LindaleMtkView, objc_name="makeBackingLayer")
-LindaleMtkView_makeBackingLayer :: proc(self: ^LindaleMtkView) -> ^CA.MetalLayer {
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseUp:")
+LindaleMetalView_mouseUp :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
+
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDragged:")
+LindaleMetalView_mouseDragged :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
+
+}
+
+@(objc_type=LindaleMetalView, objc_implement=false, objc_is_class_method=true)
+LindaleMetalView_alloc :: proc "c" () -> ^LindaleMetalView {
+	return intrinsics.objc_send(^LindaleMetalView, LindaleMetalView, "alloc")
+}
+
+@(objc_type=LindaleMetalView, objc_implement)
+LindaleMetalView_makeBackingLayer :: proc(self: ^LindaleMetalView, _cmd: rawptr) -> ^CA.MetalLayer {
 	return CA.MetalLayer.layer()
 }
 
@@ -116,26 +136,28 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 
 	renderer := new(MetalRenderer)
 	renderer.device = device
-	// Dimensions will be set properly in renderer_begin_pass when we have actual drawable size
 	renderer.logicalWidth = width
 	renderer.logicalHeight = height
-	renderer.scaleFactor = 1.0 // Will be updated when window is available
+	renderer.scaleFactor = 1.0
 	renderer.physicalWidth = width
 	renderer.physicalHeight = height
 
-	lindaleView := LindaleMtkView.alloc()->initWithFrameAndContext(frame, device, context)
-	lindaleView->setColorPixelFormat(.BGRA8Unorm_sRGB)
-	lindaleView->setDepthStencilPixelFormat(.Invalid)
-	lindaleView->setSampleCount(1)
-	lindaleView->setPaused(true)
-	lindaleView->setEnableSetNeedsDisplay(false)
+	view := LindaleMetalView.alloc()->initWithFrameAndContext(frame, context)
+	intrinsics.objc_send(nil, view, "setWantsLayer:", bool(true))
+
+	// Get the CAMetalLayer created by makeBackingLayer
+	layer := cast(^CA.MetalLayer)view->layer()
+	layer->setDevice(device)
+	layer->setPixelFormat(.BGRA8Unorm_sRGB)
+	layer->setFramebufferOnly(true)
 
 	if parent != nil {
 		parentView := cast(^F.View)(parent)
-		F.View_addSubview(parentView, lindaleView)
+		F.View_addSubview(parentView, view)
 	}
 
-	renderer.view = lindaleView
+	renderer.view = view
+	renderer.layer = layer
 
 	renderer.commandQueue = device->newCommandQueue()
 	if renderer.commandQueue == nil {
@@ -356,8 +378,10 @@ renderer_begin_frame :: proc(r: api.Renderer) -> bool {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return false
 
-	renderer.currentDrawable = renderer.view->currentDrawable()
-	if renderer.currentDrawable == nil do return false
+	renderer.currentDrawable = renderer.layer->nextDrawable()
+	if renderer.currentDrawable == nil {
+		return false
+	}
 
 	renderer.commandBuffer = renderer.commandQueue->commandBuffer()
 	if renderer.commandBuffer == nil do return false
@@ -377,6 +401,8 @@ renderer_end_frame :: proc(r: api.Renderer) {
 	renderer.commandBuffer->commit()
 	renderer.commandBuffer = nil
 	renderer.currentDrawable = nil
+
+	CA.Transaction.flush()
 }
 
 renderer_upload_instances :: proc(r: api.Renderer, instances: []api.RectInstance) {
@@ -398,7 +424,7 @@ renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
 	if renderer.currentDrawable == nil do return
 
 	// Update dimensions from actual drawable size and scale factor
-	drawableSize := renderer.view->drawableSize()
+	drawableSize := renderer.layer->drawableSize()
 	physicalWidth := i32(drawableSize.width)
 	physicalHeight := i32(drawableSize.height)
 	scaleFactor := get_backing_scale_factor(renderer)

@@ -82,12 +82,12 @@ hotload_init :: proc() {
 
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
-		buffer_do_analysis,
-		buffer_draw,
-		buffer_process_audio,
-		buffer_view_attached,
-		buffer_view_removed,
-		buffer_view_resized,
+		do_analysis = buffer_do_analysis,
+		draw = buffer_draw,
+		process_audio = buffer_process_audio,
+		view_attached = buffer_view_attached,
+		view_removed = buffer_view_removed,
+		view_resized = buffer_view_resized,
 	}
 
 	return api

@@ -21,9 +21,25 @@ ColorU8 :: struct {
 
 ColorF32 :: [4]f32
 
+KeyModifierSet :: bit_set[KeyModifiers]
+KeyModifiers :: enum {
+	Shift,
+	Ctrl,
+	Alt,
+}
+
+MouseWheel :: struct {
+	dx, dy: f32,
+}
+
+MouseEvent :: struct {
+	position: Vec2f,
+	modifiers: KeyModifierSet,
+	mouseDownPos: Vec2f, // Used for tracking held
+}
+
 // Instance data for SDF rounded rectangles.
 // Must match vertex shader input format
-// Total size: 56 bytes
 RectInstance :: struct #packed {
 	pos0: [2]f32,         // Top left corner
 	pos1: [2]f32,         // Bottom right corner
