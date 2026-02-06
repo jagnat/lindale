@@ -1,6 +1,8 @@
 package platform_specific
 
+import "base:runtime"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:math/linalg"
 
@@ -13,6 +15,12 @@ import api "../platform_api"
 
 shader_source := #load("../shaders/shader.hlsl", string)
 
+@(private="file")
+window_class_atom: win.ATOM
+
+@(private="file")
+arrow_cursor: win.HCURSOR
+
 TextureSlot :: struct {
 	texture: ^d3d11.ITexture2D,
 	srv: ^d3d11.IShaderResourceView,
@@ -23,7 +31,8 @@ TextureSlot :: struct {
 }
 
 DX11Renderer :: struct {
-	hwnd: win.HWND,
+	hwnd: win.HWND,        // Our child window
+	parentHwnd: win.HWND,  // DAW's parent window
 	device: ^d3d11.IDevice,
 	deviceContext: ^d3d11.IDeviceContext,
 	swapChain: ^dxgi.ISwapChain,
@@ -55,23 +64,77 @@ DX11Renderer :: struct {
 	physicalHeight: i32,
 
 	whiteTexture: api.TextureHandle,
+
+	mouse: ^api.MouseState,
+	ctx: runtime.Context,
 }
 
 // Renderer lifecycle
 
+@(private)
+register_window_class :: proc() {
+	if window_class_atom != 0 do return
+
+	hInstance := win.HINSTANCE(win.GetModuleHandleW(nil))
+	arrow_cursor = win.LoadCursorW(nil, transmute(win.LPCWSTR)uintptr(32512))
+	class_name := win.utf8_to_wstring(fmt.tprintf("LindalePlugin_%x\x00", hInstance))
+
+	wcex := win.WNDCLASSEXW{
+		cbSize = size_of(win.WNDCLASSEXW),
+		lpfnWndProc = lindale_wndproc,
+		hInstance = hInstance,
+		lpszClassName = class_name,
+		hCursor = arrow_cursor,
+	}
+
+	window_class_atom = win.RegisterClassExW(&wcex)
+	log.infof("Registered window class, atom: %d", window_class_atom)
+}
+
 renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
+	log.infof("renderer_create called: parent=%p, size=%dx%d", parent, width, height)
+
 	if parent == nil do return nil
 
-	hwnd := win.HWND(parent)
+	parentHwnd := win.HWND(parent)
 	renderer := new(DX11Renderer)
-	renderer.hwnd = hwnd
+	renderer.parentHwnd = parentHwnd
+	renderer.ctx = context
 
-	dpi := win.GetDpiForWindow(hwnd)
+	register_window_class()
+
+	dpi := win.GetDpiForWindow(parentHwnd)
 	renderer.scaleFactor = f32(dpi) / 96.0
 	renderer.logicalWidth = width
 	renderer.logicalHeight = height
 	renderer.physicalWidth = i32(f32(width) * renderer.scaleFactor)
 	renderer.physicalHeight = i32(f32(height) * renderer.scaleFactor)
+
+	hInstance := win.HINSTANCE(win.GetModuleHandleW(nil))
+
+	renderer.hwnd = win.CreateWindowExW(
+		0,
+		transmute(win.LPCWSTR)uintptr(window_class_atom),
+		nil,
+		win.WS_CHILD | win.WS_VISIBLE,
+		0, 0,
+		renderer.physicalWidth, renderer.physicalHeight,
+		parentHwnd,
+		nil,
+		hInstance,
+		nil,
+	)
+
+	if renderer.hwnd == nil {
+		log.error("Failed to create child window")
+		free(renderer)
+		return nil
+	}
+
+	// Store renderer pointer in window user data so WndProc can find it
+	win.SetWindowLongPtrW(renderer.hwnd, win.GWLP_USERDATA, transmute(win.LONG_PTR)renderer)
+
+	log.infof("Created child HWND: %p, parent: %p, size: %dx%d", renderer.hwnd, parentHwnd, renderer.physicalWidth, renderer.physicalHeight)
 
 	featureLevels := []d3d11.FEATURE_LEVEL{._11_0, ._10_1, ._10_0}
 	deviceFlags: d3d11.CREATE_DEVICE_FLAGS = {}
@@ -133,7 +196,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 		SampleDesc = {Count = 1, Quality = 0},
 		BufferUsage = {.RENDER_TARGET_OUTPUT},
 		BufferCount = 2,
-		OutputWindow = hwnd,
+		OutputWindow = renderer.hwnd,
 		Windowed = true,
 		SwapEffect = .DISCARD,
 	}
@@ -248,6 +311,10 @@ renderer_destroy :: proc(r: api.Renderer) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 
+	if renderer.hwnd != nil {
+		win.DestroyWindow(renderer.hwnd)
+	}
+
 	for &slot in renderer.textures {
 		if slot.inUse {
 			if slot.srv != nil do slot.srv->Release()
@@ -269,6 +336,84 @@ renderer_destroy :: proc(r: api.Renderer) {
 	if renderer.device != nil do renderer.device->Release()
 
 	free(renderer)
+}
+
+renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
+	renderer := cast(^DX11Renderer)r
+	if renderer == nil do return
+
+	renderer.mouse = mouse
+	log.infof("renderer_set_mouse_state: renderer=%p, hwnd=%p, mouse=%p", renderer, renderer.hwnd, mouse)
+}
+
+@(private)
+get_mouse_pos :: #force_inline proc "contextless" (renderer: ^DX11Renderer, lParam: win.LPARAM) -> api.Vec2f {
+	x := win.GET_X_LPARAM(lParam)
+	y := win.GET_Y_LPARAM(lParam)
+	scale := renderer.scaleFactor
+	return {f32(x) / scale, f32(y) / scale}
+}
+
+@(private)
+WM_MOUSEHWHEEL :: 0x020E
+
+@(private)
+lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPARAM, lParam: win.LPARAM) -> win.LRESULT {
+	renderer := transmute(^DX11Renderer)win.GetWindowLongPtrW(hwnd, win.GWLP_USERDATA)
+	if renderer == nil || renderer.mouse == nil {
+		return win.DefWindowProcW(hwnd, msg, wParam, lParam)
+	}
+
+	switch msg {
+	case win.WM_MOUSEMOVE:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+
+	case win.WM_LBUTTONDOWN:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down += {.Left}
+		renderer.mouse.pressed += {.Left}
+
+	case win.WM_LBUTTONUP:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down -= {.Left}
+		renderer.mouse.released += {.Left}
+
+	case win.WM_RBUTTONDOWN:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down += {.Right}
+		renderer.mouse.pressed += {.Right}
+
+	case win.WM_RBUTTONUP:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down -= {.Right}
+		renderer.mouse.released += {.Right}
+
+	case win.WM_MBUTTONDOWN:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down += {.Middle}
+		renderer.mouse.pressed += {.Middle}
+
+	case win.WM_MBUTTONUP:
+		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		renderer.mouse.down -= {.Middle}
+		renderer.mouse.released += {.Middle}
+
+	case win.WM_MOUSEWHEEL:
+		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
+		renderer.mouse.scrollDelta.y += f32(delta) / 120.0
+
+	case WM_MOUSEHWHEEL:
+		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
+		renderer.mouse.scrollDelta.x += f32(delta) / 120.0
+
+	case win.WM_SETCURSOR:
+		if win.LOWORD(u32(lParam)) == win.HTCLIENT {
+			win.SetCursor(arrow_cursor)
+			return 1
+		}
+	}
+
+	return win.DefWindowProcW(hwnd, msg, wParam, lParam)
 }
 
 renderer_resize :: proc(r: api.Renderer, width, height: i32) {
