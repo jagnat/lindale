@@ -10,7 +10,7 @@ UIContext :: struct {
 	windowBounds: RectF32,
 
 	theme: UITheme,
-	mouse: MouseInput,
+	mouse: MouseState,
 
 	hoveredId: u32, // If a control has the mouse over it
 	activeId: u32, // If a control is actually being interacted with
@@ -79,6 +79,9 @@ DEFAULT_THEME : UITheme : {
 
 ui_begin_frame :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse
+	ctx.plugin.mouse.pressed = {}
+	ctx.plugin.mouse.released = {}
+	ctx.plugin.mouse.scrollDelta = {}
 	ctx.hoveredId = 0
 
 	size := ctx.plugin.platform.get_size(ctx.plugin.renderer)
@@ -97,7 +100,7 @@ ui_begin_frame :: proc(ctx: ^UIContext) {
 }
 
 ui_end_frame :: proc(ctx: ^UIContext) {
-	if ctx.mouse.buttonState[.LMB].released {
+	if .Left in ctx.mouse.released {
 		ctx.activeId = 0
 	}
 
@@ -188,12 +191,12 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	// TODO: Update colors
 	if id == ctx.activeId {
 		color = ctx.theme.buttonActiveColor
-		if ctx.mouse.buttonState[.LMB].released {
+		if .Left in ctx.mouse.released {
 			clicked = mouseOver
 		}
 	} else if id == ctx.hoveredId {
 		color = ctx.theme.buttonHoverColor
-		if ctx.mouse.buttonState[.LMB].pressed {
+		if .Left in ctx.mouse.pressed {
 			ctx.activeId = id
 		}
 	}
@@ -247,7 +250,7 @@ ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, he
 		if mouseOverNode {
 			nodeColor = ctx.theme.sliderHoverColor
 		}
-		if ctx.mouse.buttonState[.LMB].pressed {
+		if .Left in ctx.mouse.pressed {
 			ctx.activeId = id
 		}
 	}

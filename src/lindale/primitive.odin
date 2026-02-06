@@ -14,6 +14,8 @@ ColorF32 :: api.ColorF32
 RectInstance :: api.RectInstance
 TextureHandle :: api.TextureHandle
 DrawCommand :: api.DrawCommand
+MouseState :: api.MouseState
+MouseButton :: api.MouseButton
 
 ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
 	r := f32((hex >> 24) & 0xFF) / 255.0

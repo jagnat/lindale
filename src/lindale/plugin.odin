@@ -21,7 +21,7 @@ Plugin :: struct {
 
 	draw: ^DrawContext,
 	ui: ^UIContext,
-	mouse: MouseInput,
+	mouse: plat.MouseState,
 
 	viewBounds: RectI32,
 	gross_global_glob: AnalysisTransfer,
@@ -31,18 +31,6 @@ PluginComponentSet :: bit_set[PluginComponent]
 PluginComponent :: enum {
 	Audio,
 	Controller,
-}
-
-MouseButton :: enum { RMB, LMB }
-
-MouseButtonState :: struct {
-	down, pressed, released: bool
-}
-
-MouseInput :: struct {
-	buttonState: [MouseButton]MouseButtonState,
-	scrollDelta: f32,
-	pos: Vec2f,
 }
 
 PluginApi :: struct {
@@ -163,7 +151,7 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 
 	@(static) alph: u8 = 128
 
-	alph += u8(plug.mouse.scrollDelta)
+	alph += u8(plug.mouse.scrollDelta.y)
 
 	// draw_clear(plug.draw)
 	// draw_set_scissor(plug.draw, RectI32{200, 300, 400, 200})
@@ -204,18 +192,36 @@ plugin_draw :: proc(plug: ^Plugin) {
 
 	x : f32 = 0.0
 	y : f32 = 0.0
+	w : f32 = 100.0
+	h : f32 = 100.0
+
+	hovered := plug.mouse.pos.x >= x && plug.mouse.pos.x <= x + w &&
+		plug.mouse.pos.y >= y && plug.mouse.pos.y <= y + h
+
+	color : ColorU8
+	if hovered && .Left in plug.mouse.down {
+		color = {255, 100, 100, 255}
+	} else if hovered {
+		color = {255, 200, 100, 255}
+	} else {
+		color = {0, 144, 200, 255}
+	}
 
 	rect := SimpleUIRect {
 		x = x, y = y,
-		width = 100,
-		height = 100,
-		color = {200, 144, 200, 255},
+		width = w, height = h,
+		color = color,
 		cornerRad = 10,
 		borderWidth = 2,
 		borderColor = {255, 255, 255, 255},
 	}
 
 	frame = frame + 1
+
+	draw_push_rect(plug.draw, rect)
+
+	rect.x = 700
+	rect.y = 500
 
 	draw_push_rect(plug.draw, rect)
 

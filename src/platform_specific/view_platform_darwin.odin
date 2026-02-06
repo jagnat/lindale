@@ -1,8 +1,6 @@
 package platform_specific
 
 import "base:runtime"
-import "core:fmt"
-import "core:log"
 import "core:math/linalg"
 
 import F "core:sys/darwin/Foundation"
@@ -12,6 +10,10 @@ import CA "vendor:darwin/QuartzCore"
 import "base:intrinsics"
 
 import api "../platform_api"
+
+// Minimal binding for NSTrackingArea (not in Odin's vendor libs)
+@(objc_class="NSTrackingArea")
+NSTrackingArea :: struct { using _: intrinsics.objc_object }
 
 shader_source := #load("../shaders/shader.metal")
 
@@ -71,8 +73,7 @@ LindaleMetalView :: struct {
 
 LindaleMetalView_Var :: struct {
 	ctx: runtime.Context,
-	plugin: rawptr,
-	renderer: rawptr,
+	mouse: ^api.MouseState,
 }
 
 LindaleMetalView_get_context :: proc "c" (self: ^LindaleMetalView_Var) -> runtime.Context {
@@ -83,34 +84,103 @@ LindaleMetalView_get_context :: proc "c" (self: ^LindaleMetalView_Var) -> runtim
 LindaleMetalView_initWithFrameAndContext :: proc "c" (self: ^LindaleMetalView, frame: F.Rect, ctx: runtime.Context) -> ^LindaleMetalView {
 	intrinsics.objc_send(nil, self, "initWithFrame:", frame)
 	self.ctx = ctx
-	self.plugin = nil
-	self.renderer = nil
+	self.mouse = nil
 	return self
 }
 
 @(objc_type=LindaleMetalView, objc_implement)
-LindaleMetalView_acceptsFirstResponder :: proc (self: ^LindaleMetalView, _cmd: rawptr) -> F.BOOL {
+LindaleMetalView_acceptsFirstResponder :: proc (self: ^LindaleMetalView) -> F.BOOL {
 	return true
 }
 
 @(objc_type=LindaleMetalView, objc_implement)
-LindaleMetalView_wantsUpdateLayer :: proc (self: ^LindaleMetalView, _cmd: rawptr) -> F.BOOL {
+LindaleMetalView_wantsUpdateLayer :: proc (self: ^LindaleMetalView) -> F.BOOL {
 	return true
 }
 
-@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDown:")
-LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
+@(objc_type=LindaleMetalView, objc_implement)
+LindaleMetalView_isFlipped :: proc (self: ^LindaleMetalView) -> F.BOOL {
+	return true
+}
 
+@(private)
+view_get_mouse_pos :: proc(view: ^LindaleMetalView, event: ^F.Event) -> api.Vec2f {
+	if event == nil do return view.mouse != nil ? view.mouse.pos : {}
+	loc := intrinsics.objc_send(F.Point, event, "locationInWindow")
+	pt := intrinsics.objc_send(F.Point, view, "convertPoint:fromView:", loc, rawptr(nil))
+	return {f32(pt.x), f32(pt.y)}
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDown:")
+LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+	self.mouse.down += {.Left}
+	self.mouse.pressed += {.Left}
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseUp:")
-LindaleMetalView_mouseUp :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
-
+LindaleMetalView_mouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+	self.mouse.down -= {.Left}
+	self.mouse.released += {.Left}
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDragged:")
-LindaleMetalView_mouseDragged :: proc (self: ^LindaleMetalView, _cmd: rawptr, event: ^F.Event) {
+LindaleMetalView_mouseDragged :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+}
 
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseMoved:")
+LindaleMetalView_mouseMoved :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseDown:")
+LindaleMetalView_rightMouseDown :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+	self.mouse.down += {.Right}
+	self.mouse.pressed += {.Right}
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseUp:")
+LindaleMetalView_rightMouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	self.mouse.pos = view_get_mouse_pos(self, event)
+	self.mouse.down -= {.Right}
+	self.mouse.released += {.Right}
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="scrollWheel:")
+LindaleMetalView_scrollWheel :: proc (self: ^LindaleMetalView, event: ^F.Event) {
+	if self.mouse == nil do return
+	dx := intrinsics.objc_send(F.Float, event, "scrollingDeltaX")
+	dy := intrinsics.objc_send(F.Float, event, "scrollingDeltaY")
+	self.mouse.scrollDelta.x += f32(dx)
+	self.mouse.scrollDelta.y += f32(dy)
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="updateTrackingAreas")
+LindaleMetalView_updateTrackingAreas :: proc (self: ^LindaleMetalView) {
+	// Remove old tracking areas
+	areas := intrinsics.objc_send(^F.Array, self, "trackingAreas")
+	count := intrinsics.objc_send(F.UInteger, areas, "count")
+	for i in 0..<count {
+		area := intrinsics.objc_send(rawptr, areas, "objectAtIndex:", i)
+		intrinsics.objc_send(nil, self, "removeTrackingArea:", area)
+	}
+
+	bounds := intrinsics.objc_send(F.Rect, self, "bounds")
+	// NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingActiveAlways
+	options := F.UInteger(0x01 | 0x02 | 0x20)
+	area := intrinsics.objc_send(^NSTrackingArea, NSTrackingArea, "alloc")
+	trackingArea := intrinsics.objc_send(^NSTrackingArea, area,
+		"initWithRect:options:owner:userInfo:", bounds, options, self, rawptr(nil))
+	intrinsics.objc_send(nil, self, "addTrackingArea:", trackingArea)
 }
 
 @(objc_type=LindaleMetalView, objc_implement=false, objc_is_class_method=true)
@@ -119,7 +189,7 @@ LindaleMetalView_alloc :: proc "c" () -> ^LindaleMetalView {
 }
 
 @(objc_type=LindaleMetalView, objc_implement)
-LindaleMetalView_makeBackingLayer :: proc(self: ^LindaleMetalView, _cmd: rawptr) -> ^CA.MetalLayer {
+LindaleMetalView_makeBackingLayer :: proc(self: ^LindaleMetalView) -> ^CA.MetalLayer {
 	return CA.MetalLayer.layer()
 }
 
@@ -230,6 +300,12 @@ renderer_destroy :: proc(r: api.Renderer) {
 	if renderer.device != nil do F.release(cast(^F.Object)renderer.device)
 
 	free(renderer)
+}
+
+renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
+	renderer := cast(^MetalRenderer)r
+	if renderer == nil do return
+	renderer.view.mouse = mouse
 }
 
 renderer_resize :: proc(r: api.Renderer, width, height: i32) {
@@ -378,6 +454,10 @@ renderer_begin_frame :: proc(r: api.Renderer) -> bool {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return false
 
+	// Set contentsScale before acquiring drawable so it's at native resolution
+	scaleFactor := get_backing_scale_factor(renderer)
+	intrinsics.objc_send(nil, renderer.layer, "setContentsScale:", F.Float(scaleFactor))
+
 	renderer.currentDrawable = renderer.layer->nextDrawable()
 	if renderer.currentDrawable == nil {
 		return false
@@ -423,11 +503,10 @@ renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
 	if renderer == nil do return
 	if renderer.currentDrawable == nil do return
 
-	// Update dimensions from actual drawable size and scale factor
+	scaleFactor := get_backing_scale_factor(renderer)
 	drawableSize := renderer.layer->drawableSize()
 	physicalWidth := i32(drawableSize.width)
 	physicalHeight := i32(drawableSize.height)
-	scaleFactor := get_backing_scale_factor(renderer)
 
 	// Calculate logical size from physical size
 	logicalWidth := i32(f32(physicalWidth) / scaleFactor)

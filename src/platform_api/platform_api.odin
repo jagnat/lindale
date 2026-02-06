@@ -28,14 +28,15 @@ KeyModifiers :: enum {
 	Alt,
 }
 
-MouseWheel :: struct {
-	dx, dy: f32,
-}
+MouseButton :: enum { Left, Right, Middle }
 
-MouseEvent :: struct {
-	position: Vec2f,
-	modifiers: KeyModifierSet,
-	mouseDownPos: Vec2f, // Used for tracking held
+MouseState :: struct {
+	pos:         Vec2f,
+	down:        bit_set[MouseButton],
+	pressed:     bit_set[MouseButton],
+	released:    bit_set[MouseButton],
+	scrollDelta: Vec2f,
+	modifiers:   KeyModifierSet,
 }
 
 // Instance data for SDF rounded rectangles.

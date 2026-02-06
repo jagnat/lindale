@@ -912,6 +912,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		}
 		view.plugin.platform = &controller.platformApi
 		view.plugin.renderer = view.renderer
+		plat.renderer_set_mouse_state(view.renderer, &view.plugin.mouse)
 
 		view.plugin.fontAtlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 
