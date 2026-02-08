@@ -6,6 +6,7 @@ import "core:log"
 import "core:math/linalg"
 import "core:math"
 import "core:math/rand"
+import "core:time"
 import vm "core:mem/virtual"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
@@ -25,6 +26,9 @@ Plugin :: struct {
 
 	viewBounds: RectI32,
 	gross_global_glob: AnalysisTransfer,
+
+	inDraw: bool,
+	lastDrawTime: time.Tick,
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -183,52 +187,49 @@ plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
 
 // @(private)
 plugin_draw :: proc(plug: ^Plugin) {
-	if plug.draw == nil do return
+	if plug.draw == nil || plug.ui == nil do return
 
 	@(static) frame : i64 = 0
+	@(static) gainVal : f32 = 0.5
+	@(static) mixVal : f32 = 0.75
+
+	if plug.inDraw {
+		log.warn("Re-entrant draw detected!")
+		return
+	}
+	plug.inDraw = true
+	defer plug.inDraw = false
+
+	plug.lastDrawTime = time.tick_now()
 
 	draw_clear(plug.draw)
 	draw_set_clear_color(plug.draw, {0.08, 0.08, 0.1, 1.0})
 
-	x : f32 = 0.0
-	y : f32 = 0.0
-	w : f32 = 100.0
-	h : f32 = 100.0
+	ui_begin_frame(plug.ui)
 
-	hovered := plug.mouse.pos.x >= x && plug.mouse.pos.x <= x + w &&
-		plug.mouse.pos.y >= y && plug.mouse.pos.y <= y + h
+	ui_begin_panel(plug.ui, "Controls", RectF32{10, 10, 300, 400})
 
-	color : ColorU8
-	if hovered && .Left in plug.mouse.down {
-		color = {255, 100, 100, 255}
-	} else if hovered {
-		color = {255, 200, 100, 255}
-	} else {
-		color = {0, 144, 200, 255}
+	ui_label(plug.ui, "Lindalë")
+
+	ui_begin_panel(plug.ui, "", RectF32{0, 0, 280, 120})
+	ui_slider_v(plug.ui, "Gain", &gainVal, 0, 1, 100)
+	ui_slider_v(plug.ui, "Mix", &mixVal, 0, 1, 100)
+	ui_end_panel(plug.ui)
+
+	if ui_button(plug.ui, "Reset") {
+		gainVal = 0.5
+		mixVal = 0.75
 	}
 
-	rect := SimpleUIRect {
-		x = x, y = y,
-		width = w, height = h,
-		color = color,
-		cornerRad = 10,
-		borderWidth = 2,
-		borderColor = {255, 255, 255, 255},
-	}
+	ui_end_panel(plug.ui)
+
+	ui_end_frame(plug.ui)
+
+	textBuf: [10]u8
+	num := fmt.bprintf(textBuf[:], "%d", frame)
+	draw_text(plug.draw, num, 300, 300)
 
 	frame = frame + 1
-
-	draw_push_rect(plug.draw, rect)
-
-	rect.x = 700
-	rect.y = 500
-
-	draw_push_rect(plug.draw, rect)
-
-	txtBuf: [10]u8
-	num := fmt.bprintf(txtBuf[:], "%d", frame)
-
-	draw_text(plug.draw, num, x + 10, y + 10)
 
 	draw_submit(plug.draw)
 }

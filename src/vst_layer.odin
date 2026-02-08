@@ -786,8 +786,25 @@ LindaleView :: struct {
 
 gross_global_buffer_ptr: ^lin.AnalysisTransfer
 
+MS_PER_FRAME :: 16
+
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
+	if view.renderer == nil do return
+
+	// Only draw if enough time has passed since last draw (avoid fighting with input callback)
+	MIN_FRAME_INTERVAL :: MS_PER_FRAME * time.Millisecond
+	elapsed := time.tick_since(view.plugin.lastDrawTime)
+	if elapsed < MIN_FRAME_INTERVAL do return
+
+	pluginApi.draw(view.plugin)
+
+	free_all(context.temp_allocator)
+}
+
+repaint_callback :: proc "c" (data: rawptr) {
+	view := cast(^LindaleView)data
+	context = view.ctx
 	if view.renderer == nil do return
 
 	pluginApi.draw(view.plugin)
@@ -817,7 +834,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 	view.pluginView.lpVtbl = &view.pluginViewVtable
 	view.ctx = context
 	view.plugin = plug
-	view.timer = plat.timer_create(30 /* ms */, timer_proc, view)
+	view.timer = plat.timer_create(MS_PER_FRAME, timer_proc, view)
 
 	return vst3.kResultOk
 
@@ -913,6 +930,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view.plugin.platform = &controller.platformApi
 		view.plugin.renderer = view.renderer
 		plat.renderer_set_mouse_state(view.renderer, &view.plugin.mouse)
+		plat.renderer_set_repaint_callback(view.renderer, repaint_callback, view)
 
 		view.plugin.fontAtlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 

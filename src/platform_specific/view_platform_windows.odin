@@ -66,6 +66,8 @@ DX11Renderer :: struct {
 	whiteTexture: api.TextureHandle,
 
 	mouse: ^api.MouseState,
+	onRepaint: proc "c" (rawptr),
+	onRepaintData: rawptr,
 	ctx: runtime.Context,
 }
 
@@ -346,6 +348,13 @@ renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
 	log.infof("renderer_set_mouse_state: renderer=%p, hwnd=%p, mouse=%p", renderer, renderer.hwnd, mouse)
 }
 
+renderer_set_repaint_callback :: proc(r: api.Renderer, callback: proc "c" (rawptr), data: rawptr) {
+	renderer := cast(^DX11Renderer)r
+	if renderer == nil do return
+	renderer.onRepaint = callback
+	renderer.onRepaintData = data
+}
+
 @(private)
 get_mouse_pos :: #force_inline proc "contextless" (renderer: ^DX11Renderer, lParam: win.LPARAM) -> api.Vec2f {
 	x := win.GET_X_LPARAM(lParam)
@@ -367,44 +376,53 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 	switch msg {
 	case win.WM_MOUSEMOVE:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_LBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Left}
 		renderer.mouse.pressed += {.Left}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_LBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Left}
 		renderer.mouse.released += {.Left}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_RBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Right}
 		renderer.mouse.pressed += {.Right}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_RBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Right}
 		renderer.mouse.released += {.Right}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Middle}
 		renderer.mouse.pressed += {.Middle}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Middle}
 		renderer.mouse.released += {.Middle}
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MOUSEWHEEL:
 		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
 		renderer.mouse.scrollDelta.y += f32(delta) / 120.0
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case WM_MOUSEHWHEEL:
 		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
 		renderer.mouse.scrollDelta.x += f32(delta) / 120.0
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_SETCURSOR:
 		if win.LOWORD(u32(lParam)) == win.HTCLIENT {

@@ -157,8 +157,8 @@ ui_begin_panel :: proc(ctx: ^UIContext, label: string, rect: RectF32) {
 
 ui_end_panel :: proc(ctx: ^UIContext) {
 	if ctx.layoutIdx > 0 {
-		ctx.currentLayout = ctx.layoutStack[ctx.layoutIdx]
 		ctx.layoutIdx -= 1
+		ctx.currentLayout = ctx.layoutStack[ctx.layoutIdx]
 	}
 }
 

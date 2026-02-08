@@ -74,6 +74,8 @@ LindaleMetalView :: struct {
 LindaleMetalView_Var :: struct {
 	ctx: runtime.Context,
 	mouse: ^api.MouseState,
+	onRepaint: proc "c" (rawptr),
+	onRepaintData: rawptr,
 }
 
 LindaleMetalView_get_context :: proc "c" (self: ^LindaleMetalView_Var) -> runtime.Context {
@@ -85,6 +87,8 @@ LindaleMetalView_initWithFrameAndContext :: proc "c" (self: ^LindaleMetalView, f
 	intrinsics.objc_send(nil, self, "initWithFrame:", frame)
 	self.ctx = ctx
 	self.mouse = nil
+	self.onRepaint = nil
+	self.onRepaintData = nil
 	return self
 }
 
@@ -117,6 +121,7 @@ LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Left}
 	self.mouse.pressed += {.Left}
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseUp:")
@@ -125,18 +130,21 @@ LindaleMetalView_mouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down -= {.Left}
 	self.mouse.released += {.Left}
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDragged:")
 LindaleMetalView_mouseDragged :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	if self.mouse == nil do return
 	self.mouse.pos = view_get_mouse_pos(self, event)
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseMoved:")
 LindaleMetalView_mouseMoved :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	if self.mouse == nil do return
 	self.mouse.pos = view_get_mouse_pos(self, event)
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseDown:")
@@ -145,6 +153,7 @@ LindaleMetalView_rightMouseDown :: proc (self: ^LindaleMetalView, event: ^F.Even
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Right}
 	self.mouse.pressed += {.Right}
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseUp:")
@@ -153,6 +162,7 @@ LindaleMetalView_rightMouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event)
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down -= {.Right}
 	self.mouse.released += {.Right}
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="scrollWheel:")
@@ -306,6 +316,13 @@ renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 	renderer.view.mouse = mouse
+}
+
+renderer_set_repaint_callback :: proc(r: api.Renderer, callback: proc "c" (rawptr), data: rawptr) {
+	renderer := cast(^MetalRenderer)r
+	if renderer == nil do return
+	renderer.view.onRepaint = callback
+	renderer.view.onRepaintData = data
 }
 
 renderer_resize :: proc(r: api.Renderer, width, height: i32) {
@@ -482,7 +499,7 @@ renderer_end_frame :: proc(r: api.Renderer) {
 	renderer.commandBuffer = nil
 	renderer.currentDrawable = nil
 
-	CA.Transaction.flush()
+	// CA.Transaction.flush()
 }
 
 renderer_upload_instances :: proc(r: api.Renderer, instances: []api.RectInstance) {
