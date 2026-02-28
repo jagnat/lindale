@@ -82,19 +82,19 @@ The hot-reload system (`src/hotloader.odin`) works by:
 
 The plugin is split into two VST3 components:
 
-1. **LindaleProcessor** (`vst_layer.odin:85`): Audio processing component
+1. **LindaleProcessor** (`vst_layer.odin`): Audio processing component
    - Implements `IComponent` and `IAudioProcessor` interfaces
    - Runs on the audio thread
    - Manages parameter changes and audio buffer routing
    - Owns `Plugin` instance with audio processing state
 
-2. **LindaleController** (`vst_layer.odin:510`): UI/controller component
+2. **LindaleController** (`vst_layer.odin`): UI/controller component
    - Implements `IEditController` and `IEditController2` interfaces
    - Runs on the UI thread
    - Manages parameter state and the plugin view
    - Owns `Plugin` instance and `PlatformApi` vtable
 
-3. **LindaleView** (`vst_layer.odin:770`): Platform view implementation
+3. **LindaleView** (`vst_layer.odin`): Platform view implementation
    - Implements `IPlugView` interface
    - Creates platform-specific renderer in `lv_attached`
    - Runs a timer to drive the render loop at 30ms intervals
@@ -102,7 +102,7 @@ The plugin is split into two VST3 components:
 
 ### Plugin State
 
-The `Plugin` struct (`src/lindale/plugin.odin:14-29`) is allocated by the static VST layer and survives hot-reloads. Fields are categorized:
+The `Plugin` struct (`src/lindale/plugin.odin`) is allocated by the static VST layer and survives hot-reloads. Fields are categorized:
 
 **Platform-provided (survive hot-reload):**
 - `platform`: Vtable for renderer calls from hot-loaded code
@@ -131,7 +131,7 @@ The VST3 layer converts between VST3 parameter changes and the plugin's internal
 
 ### Audio Processing
 
-Audio processing happens in `plugin_process_audio` (`src/lindale/plugin.odin:257-300`):
+Audio processing happens in `plugin_process_audio` (`src/lindale/plugin.odin`):
 - Receives audio buffers as `AudioBufferGroup` with either f32 or f64 samples
 - Parameter changes are provided with sample-accurate offsets
 - Currently implements a simple square wave generator for demonstration
@@ -169,37 +169,31 @@ Documents the renderer procedures each platform must implement. See file for ful
 
 UI code works in logical coordinates (points). The renderer handles DPI scaling internally.
 
+### UI Layout System
+
+The UI (`src/lindale/ui.odin`) uses a tree-based layout with three sizing modes, similar to Clay/Flexbox:
+
+- **FIXED**: Explicit size. `{type = .FIXED, value = 200}`
+- **FIT**: Shrink-wrap children (plus padding/gaps), clamped to [min, max]. `{type = .FIT, min = 100, max = 500}`
+- **GROW**: Expand to fill parent's available space, clamped to [min, max]. `{type = .GROW, min = 100, max = 500}`
+
+FIXED is equivalent to FIT where min == max. Size flows **up** for FIT (from children) and **down** for GROW (from parent). GROW children inside a FIT parent contribute their `min` to the FIT calculation.
+
+Each `Component` has independent `sizingHoriz` and `sizingVert` (`AxisSizing`), a `direction` (HORIZONTAL/VERTICAL) for child layout, `child_gaps`, and per-axis `padding`.
+
+**Sizing is multi-pass:**
+1. Bottom-up: `ui_close_component` resolves FIXED and FIT sizes as components are closed
+2. Top-down: `ui_size_grow_components` distributes remaining space to GROW children (both main-axis and cross-axis)
+3. `ui_position_components` places children along the parent's layout direction
+
+Panels (`ui_panel`) accept sizing overrides. Leaf widgets (buttons, sliders) set their own sizing in their constructors.
+
 ### Platform-Specific Code
 
 - `src/platform_api/`: Shared types between platform layer and lindale (avoids circular imports)
 - `src/platform_specific/view_platform.odin`: Renderer interface documentation
 - `src/platform_specific/view_platform_darwin.odin`: macOS Metal implementation
 - `src/platform_specific/timer*.odin`: High-resolution timer for render loop
-
-## Code Organization
-
-```
-src/
-├── lindale/              # Hot-reloadable plugin code
-│   ├── plugin.odin       # Core plugin state and PluginApi
-│   ├── audio_processor.odin  # Audio processing context
-│   ├── parameters.odin   # Parameter definitions and conversions
-│   ├── draw.odin         # Drawing primitive batching and submission
-│   ├── font.odin         # Font rendering with fontstash
-│   ├── ui.odin           # UI widgets
-│   └── primitive.odin    # Type re-exports and utilities
-├── platform_api/         # Shared types and PlatformApi vtable
-├── platform_specific/    # Platform renderers and OS integration
-│   ├── view_platform.odin          # Renderer interface docs
-│   ├── view_platform_darwin.odin   # Metal renderer (Mac)
-│   └── timer*.odin                 # High-resolution timers
-├── shaders/              # GPU shaders
-│   └── shader.metal      # SDF rect shader
-├── thirdparty/           # Third-party code (VST3 SDK, FFT, etc.)
-├── vst_layer.odin        # VST3 interface implementation
-├── hotloader.odin        # Hot-reload system
-└── logger*.odin          # Thread-safe logging
-```
 
 ## Development Workflow
 
