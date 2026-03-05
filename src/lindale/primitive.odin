@@ -1,21 +1,21 @@
 package lindale
 
 import "core:math"
-import api "../platform_api"
+import b "../bridge"
 
 // Re-export common types from platform_api
-Vec2f :: api.Vec2f
-Vec4f :: api.Vec4f
-Mat4f :: api.Mat4f
-RectI32 :: api.RectI32
-RectF32 :: api.RectF32
-ColorU8 :: api.ColorU8
-ColorF32 :: api.ColorF32
-RectInstance :: api.RectInstance
-TextureHandle :: api.TextureHandle
-DrawCommand :: api.DrawCommand
-MouseState :: api.MouseState
-MouseButton :: api.MouseButton
+Vec2f :: b.Vec2f
+Vec4f :: b.Vec4f
+Mat4f :: b.Mat4f
+RectI32 :: b.RectI32
+RectF32 :: b.RectF32
+ColorU8 :: b.ColorU8
+ColorF32 :: b.ColorF32
+RectInstance :: b.RectInstance
+TextureHandle :: b.TextureHandle
+DrawCommand :: b.DrawCommand
+MouseState :: b.MouseState
+MouseButton :: b.MouseButton
 
 ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
 	r := f32((hex >> 24) & 0xFF) / 255.0

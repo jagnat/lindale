@@ -11,18 +11,18 @@ import vm "core:mem/virtual"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
-import plat "../platform_api"
+import b "../bridge"
 
 Plugin :: struct {
-	platform: ^plat.PlatformApi,
-	renderer: plat.Renderer,
-	fontAtlas: plat.TextureHandle,
+	platform: ^b.PlatformApi,
+	renderer: b.Renderer,
+	fontAtlas: b.TextureHandle,
 
 	audioProcessor: ^AudioProcessorContext,
 
 	draw: ^DrawContext,
 	ui: ^UIContext,
-	mouse: plat.MouseState,
+	mouse: b.MouseState,
 
 	viewBounds: RectI32,
 	gross_global_glob: AnalysisTransfer,

@@ -1,0 +1,6 @@
+package bridge
+
+
+HostApi :: struct {
+
+}

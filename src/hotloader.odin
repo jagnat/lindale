@@ -1,12 +1,12 @@
 package platform
 
+// import "core:os"
 import "core:os"
-import "core:os/os2"
 import "core:dynlib"
 import "core:thread"
+import "core:time"
 import "base:intrinsics"
 import "core:log"
-import "core:time"
 import "core:fmt"
 import "core:strings"
 import "core:path/filepath"
@@ -26,7 +26,7 @@ HotloadState :: struct {
 	libs: [NUM_DLLS]dynlib.Library,
 	suffixes: [NUM_DLLS]int,
 	idx: int,
-	dllLastModTime: os.File_Time,
+	dllLastModTime: time.Time,
 	hotload_thread: ^thread.Thread,
 	initialized: bool,
 	dllSuffix: int,
@@ -210,7 +210,7 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 		log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 	}
 
-	err := os2.copy_file(newDllPath, ctx.lindaleHotDll)
+	err := os.copy_file(newDllPath, ctx.lindaleHotDll)
 	if err == nil {
 		log.info("Copied hotloaded dll to", newDllPath)
 		return true
@@ -233,7 +233,7 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 			continue
 		}
 
-		if modificationTime > ctx.dllLastModTime {
+		if time.diff(modificationTime, ctx.dllLastModTime) > 0 {
 			time.sleep(100 * time.Millisecond)
 			if !_load_api() {
 				log.error("Failed to load hotloaded API")

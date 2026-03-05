@@ -28,7 +28,7 @@ import "vendor:sdl3"
 
 import lin "lindale"
 import plat "platform_specific"
-import api "platform_api"
+import "bridge"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
@@ -517,7 +517,7 @@ LindaleController :: struct {
 	refCount: u32,
 
 	plugin: lin.Plugin,
-	platformApi: api.PlatformApi,
+	platformApi: bridge.PlatformApi,
 
 	paramState: lin.ParamState,
 	ctx: runtime.Context,
@@ -781,7 +781,7 @@ LindaleView :: struct {
 	parent: rawptr,
 	timer: ^plat.Timer,
 
-	renderer: api.Renderer,
+	renderer: bridge.Renderer,
 }
 
 gross_global_buffer_ptr: ^lin.AnalysisTransfer
@@ -914,7 +914,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view.renderer = plat.renderer_create(parent, 800, 600)
 		plat.renderer_resize(view.renderer, 800, 600)
 
-		controller.platformApi = api.PlatformApi{
+		controller.platformApi = bridge.PlatformApi{
 			create_texture = plat.renderer_create_texture,
 			destroy_texture = plat.renderer_destroy_texture,
 			upload_texture = plat.renderer_upload_texture,

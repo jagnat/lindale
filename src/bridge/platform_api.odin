@@ -1,4 +1,4 @@
-package platform_api
+package bridge
 
 import "core:math/linalg"
 
@@ -98,7 +98,7 @@ RendererSize :: struct {
 	physicalHeight: i32, // Actual drawable pixels
 }
 
-// Platform vtable for hot-loaded code
+// Platform vtable
 PlatformApi :: struct {
 	create_texture:    proc(r: Renderer, width, height: u32, format: PixelFormat) -> TextureHandle,
 	destroy_texture:   proc(r: Renderer, handle: TextureHandle),

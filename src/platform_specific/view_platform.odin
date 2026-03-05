@@ -1,9 +1,9 @@
 package platform_specific
 
-import api "../platform_api"
+import "../bridge"
 
 // Re-export the Renderer type for convenience
-Renderer :: api.Renderer
+Renderer :: bridge.Renderer
 
 // Platform-specific renderer interface
 // Each platform (Darwin, Windows, Linux) must implement these procedures:

@@ -184,7 +184,7 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 
 				if (hasLog && len(logStr) + logger.logWritePos >= FILE_BUFFER_SIZE) || (shouldFlush && logger.logWritePos > 0) {
 					// Flush buffer to file
-					handle, err := os.open(logger.outputFilename, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0o664)
+					handle, err := os.open(logger.outputFilename, {.Write, .Append, .Create})
 					if err == nil {
 						os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
 						os.close(handle)
@@ -211,7 +211,7 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	// Flush remaining buffer to file
 	for &logger in ctx.logPools {
 		if logger.logWritePos > 0 {
-			handle, err := os.open(logger.outputFilename, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0o664)
+			handle, err := os.open(logger.outputFilename, {.Write, .Create, .Append})
 			if err == nil {
 				os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
 				os.close(handle)
@@ -277,8 +277,8 @@ test_logger :: proc(t: ^testing.T) {
 
 		time.sleep(2 * LOG_FLUSH_TIME)
 
-		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
-		testing.expect(t, ok, "Failed to read log file")
+		content, err := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		testing.expect(t, err == nil, "Failed to read log file")
 		testing.expect(t, strings.contains(string(content), test_msg), "Log file does not contain expected message")
 	}
 
@@ -298,8 +298,8 @@ test_logger :: proc(t: ^testing.T) {
 		time.sleep(2 * LOG_FLUSH_TIME)
 		log.info("This should not be dropped")
 
-		content, ok := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
-		testing.expect(t, ok, "Failed to read log file")
+		content, err := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		testing.expect(t, err == nil, "Failed to read log file")
 		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
 		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
 		testing.expect(t, strings.contains(string(content), "This should not be dropped"), "Post-flushed log not present")
