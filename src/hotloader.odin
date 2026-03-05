@@ -233,7 +233,7 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 			continue
 		}
 
-		if time.diff(modificationTime, ctx.dllLastModTime) > 0 {
+		if time.diff(ctx.dllLastModTime, modificationTime) > 0 {
 			time.sleep(100 * time.Millisecond)
 			if !_load_api() {
 				log.error("Failed to load hotloaded API")
