@@ -11,7 +11,7 @@ import dxgi "vendor:directx/dxgi"
 import d3dc "vendor:directx/d3d_compiler"
 import win "core:sys/windows"
 
-import api "../platform_api"
+import "../bridge"
 
 shader_source := #load("../shaders/shader.hlsl", string)
 
@@ -26,7 +26,7 @@ TextureSlot :: struct {
 	srv: ^d3d11.IShaderResourceView,
 	width: u32,
 	height: u32,
-	format: api.PixelFormat,
+	format: bridge.PixelFormat,
 	inUse: bool,
 }
 
@@ -47,9 +47,9 @@ DX11Renderer :: struct {
 	instanceCapacity: u32,
 
 	uniformBuffer: ^d3d11.IBuffer,
-	uniforms: api.UniformBuffer,
+	uniforms: bridge.UniformBuffer,
 
-	textures: [api.MAX_TEXTURES]TextureSlot,
+	textures: [bridge.MAX_TEXTURES]TextureSlot,
 	nextTextureSlot: u32,
 	sampler: ^d3d11.ISamplerState,
 
@@ -63,9 +63,9 @@ DX11Renderer :: struct {
 	physicalWidth: i32,
 	physicalHeight: i32,
 
-	whiteTexture: api.TextureHandle,
+	whiteTexture: bridge.TextureHandle,
 
-	mouse: ^api.MouseState,
+	mouse: ^bridge.MouseState,
 	onRepaint: proc "c" (rawptr),
 	onRepaintData: rawptr,
 	ctx: runtime.Context,
@@ -93,7 +93,7 @@ register_window_class :: proc() {
 	log.infof("Registered window class, atom: %d", window_class_atom)
 }
 
-renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
+renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	log.infof("renderer_create called: parent=%p, size=%dx%d", parent, width, height)
 
 	if parent == nil do return nil
@@ -211,17 +211,17 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 
 	if !create_render_target_view(renderer) {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
 	if !create_pipeline(renderer) {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
 	// 1MB instance buffer
-	instanceBufferSize := api.MAX_INSTANCES * size_of(api.RectInstance)
+	instanceBufferSize := bridge.MAX_INSTANCES * size_of(bridge.RectInstance)
 	instanceBufferDesc := d3d11.BUFFER_DESC{
 		ByteWidth = u32(instanceBufferSize),
 		Usage = .DYNAMIC,
@@ -230,20 +230,20 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 	hr = renderer.device->CreateBuffer(&instanceBufferDesc, nil, &renderer.instanceBuffer)
 	if hr < 0 {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
-	renderer.instanceCapacity = api.MAX_INSTANCES
+	renderer.instanceCapacity = bridge.MAX_INSTANCES
 
 	uniformBufferDesc := d3d11.BUFFER_DESC{
-		ByteWidth = size_of(api.UniformBuffer),
+		ByteWidth = size_of(bridge.UniformBuffer),
 		Usage = .DYNAMIC,
 		BindFlags = {.CONSTANT_BUFFER},
 		CPUAccessFlags = {.WRITE},
 	}
 	hr = renderer.device->CreateBuffer(&uniformBufferDesc, nil, &renderer.uniformBuffer)
 	if hr < 0 {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
@@ -258,7 +258,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 	hr = renderer.device->CreateSamplerState(&samplerDesc, &renderer.sampler)
 	if hr < 0 {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
@@ -280,7 +280,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 	hr = renderer.device->CreateBlendState(&blendDesc, &renderer.blendState)
 	if hr < 0 {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
@@ -295,7 +295,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 	}
 	hr = renderer.device->CreateRasterizerState(&rasterizerDesc, &renderer.rasterizerState)
 	if hr < 0 {
-		renderer_destroy(api.Renderer(renderer))
+		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
@@ -306,10 +306,10 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> api.Renderer {
 
 	resize_internal(renderer, width, height, renderer.scaleFactor)
 
-	return api.Renderer(renderer)
+	return bridge.Renderer(renderer)
 }
 
-renderer_destroy :: proc(r: api.Renderer) {
+renderer_destroy :: proc(r: bridge.Renderer) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 
@@ -340,7 +340,7 @@ renderer_destroy :: proc(r: api.Renderer) {
 	free(renderer)
 }
 
-renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
+renderer_set_mouse_state :: proc(r: bridge.Renderer, mouse: ^bridge.MouseState) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 
@@ -348,7 +348,7 @@ renderer_set_mouse_state :: proc(r: api.Renderer, mouse: ^api.MouseState) {
 	log.infof("renderer_set_mouse_state: renderer=%p, hwnd=%p, mouse=%p", renderer, renderer.hwnd, mouse)
 }
 
-renderer_set_repaint_callback :: proc(r: api.Renderer, callback: proc "c" (rawptr), data: rawptr) {
+renderer_set_repaint_callback :: proc(r: bridge.Renderer, callback: proc "c" (rawptr), data: rawptr) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	renderer.onRepaint = callback
@@ -356,7 +356,7 @@ renderer_set_repaint_callback :: proc(r: api.Renderer, callback: proc "c" (rawpt
 }
 
 @(private)
-get_mouse_pos :: #force_inline proc "contextless" (renderer: ^DX11Renderer, lParam: win.LPARAM) -> api.Vec2f {
+get_mouse_pos :: #force_inline proc "contextless" (renderer: ^DX11Renderer, lParam: win.LPARAM) -> bridge.Vec2f {
 	x := win.GET_X_LPARAM(lParam)
 	y := win.GET_Y_LPARAM(lParam)
 	scale := renderer.scaleFactor
@@ -434,7 +434,7 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 	return win.DefWindowProcW(hwnd, msg, wParam, lParam)
 }
 
-renderer_resize :: proc(r: api.Renderer, width, height: i32) {
+renderer_resize :: proc(r: bridge.Renderer, width, height: i32) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 
@@ -467,10 +467,10 @@ resize_internal :: proc(renderer: ^DX11Renderer, logicalWidth, logicalHeight: i3
 	renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
 }
 
-renderer_get_size :: proc(r: api.Renderer) -> api.RendererSize {
+renderer_get_size :: proc(r: bridge.Renderer) -> bridge.RendererSize {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return {}
-	return api.RendererSize{
+	return bridge.RendererSize{
 		logicalWidth = renderer.logicalWidth,
 		logicalHeight = renderer.logicalHeight,
 		scaleFactor = renderer.scaleFactor,
@@ -481,22 +481,22 @@ renderer_get_size :: proc(r: api.Renderer) -> api.RendererSize {
 
 // Texture management
 
-renderer_create_texture :: proc(r: api.Renderer, width, height: u32, format: api.PixelFormat) -> api.TextureHandle {
+renderer_create_texture :: proc(r: bridge.Renderer, width, height: u32, format: bridge.PixelFormat) -> bridge.TextureHandle {
 	renderer := cast(^DX11Renderer)r
-	if renderer == nil do return api.INVALID_TEXTURE
+	if renderer == nil do return bridge.INVALID_TEXTURE
 	return create_texture_internal(renderer, width, height, format)
 }
 
 @(private)
-create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, format: api.PixelFormat) -> api.TextureHandle {
+create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, format: bridge.PixelFormat) -> bridge.TextureHandle {
 	slot: u32 = 0
-	for i in 1..<u32(api.MAX_TEXTURES) {
+	for i in 1..<u32(bridge.MAX_TEXTURES) {
 		if !renderer.textures[i].inUse {
 			slot = i
 			break
 		}
 	}
-	if slot == 0 do return api.INVALID_TEXTURE
+	if slot == 0 do return bridge.INVALID_TEXTURE
 
 	dxgiFormat: dxgi.FORMAT
 	switch format {
@@ -520,7 +520,7 @@ create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, for
 
 	texture: ^d3d11.ITexture2D
 	hr := renderer.device->CreateTexture2D(&textureDesc, nil, &texture)
-	if hr < 0 do return api.INVALID_TEXTURE
+	if hr < 0 do return bridge.INVALID_TEXTURE
 
 	srvDesc := d3d11.SHADER_RESOURCE_VIEW_DESC{
 		Format = dxgiFormat,
@@ -532,7 +532,7 @@ create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, for
 	hr = renderer.device->CreateShaderResourceView(texture, &srvDesc, &srv)
 	if hr < 0 {
 		texture->Release()
-		return api.INVALID_TEXTURE
+		return bridge.INVALID_TEXTURE
 	}
 
 	renderer.textures[slot] = TextureSlot{
@@ -544,14 +544,14 @@ create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, for
 		inUse = true,
 	}
 
-	return api.TextureHandle(slot)
+	return bridge.TextureHandle(slot)
 }
 
-renderer_destroy_texture :: proc(r: api.Renderer, handle: api.TextureHandle) {
+renderer_destroy_texture :: proc(r: bridge.Renderer, handle: bridge.TextureHandle) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
-	if handle == api.INVALID_TEXTURE do return
-	if u32(handle) >= api.MAX_TEXTURES do return
+	if handle == bridge.INVALID_TEXTURE do return
+	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
 	if slot.inUse {
@@ -561,16 +561,16 @@ renderer_destroy_texture :: proc(r: api.Renderer, handle: api.TextureHandle) {
 	}
 }
 
-renderer_upload_texture :: proc(r: api.Renderer, handle: api.TextureHandle, pixels: []u8) {
+renderer_upload_texture :: proc(r: bridge.Renderer, handle: bridge.TextureHandle, pixels: []u8) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	upload_texture_internal(renderer, handle, pixels)
 }
 
 @(private)
-upload_texture_internal :: proc(renderer: ^DX11Renderer, handle: api.TextureHandle, pixels: []u8) {
-	if handle == api.INVALID_TEXTURE do return
-	if u32(handle) >= api.MAX_TEXTURES do return
+upload_texture_internal :: proc(renderer: ^DX11Renderer, handle: bridge.TextureHandle, pixels: []u8) {
+	if handle == bridge.INVALID_TEXTURE do return
+	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
 	if !slot.inUse || slot.texture == nil do return
@@ -590,19 +590,19 @@ upload_texture_internal :: proc(renderer: ^DX11Renderer, handle: api.TextureHand
 	renderer.deviceContext->UpdateSubresource(slot.texture, 0, &box, raw_data(pixels), bytesPerRow, 0)
 }
 
-renderer_get_white_texture :: proc(r: api.Renderer) -> api.TextureHandle {
+renderer_get_white_texture :: proc(r: bridge.Renderer) -> bridge.TextureHandle {
 	renderer := cast(^DX11Renderer)r
-	if renderer == nil do return api.INVALID_TEXTURE
+	if renderer == nil do return bridge.INVALID_TEXTURE
 	return renderer.whiteTexture
 }
 
 // Frame rendering
 
-renderer_begin_frame :: proc(r: api.Renderer) -> bool {
+renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 	return true
 }
 
-renderer_end_frame :: proc(r: api.Renderer) {
+renderer_end_frame :: proc(r: bridge.Renderer) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if renderer.swapChain == nil do return
@@ -610,7 +610,7 @@ renderer_end_frame :: proc(r: api.Renderer) {
 	renderer.swapChain->Present(1, {})
 }
 
-renderer_upload_instances :: proc(r: api.Renderer, instances: []api.RectInstance) {
+renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.RectInstance) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
@@ -620,11 +620,11 @@ renderer_upload_instances :: proc(r: api.Renderer, instances: []api.RectInstance
 	hr := renderer.deviceContext->Map(renderer.instanceBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)
 	if hr < 0 do return
 
-	mem.copy(mappedResource.pData, raw_data(instances), len(instances) * size_of(api.RectInstance))
+	mem.copy(mappedResource.pData, raw_data(instances), len(instances) * size_of(bridge.RectInstance))
 	renderer.deviceContext->Unmap(renderer.instanceBuffer, 0)
 }
 
-renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
+renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if renderer.renderTargetView == nil do return
@@ -649,7 +649,7 @@ renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
 	renderer.deviceContext->PSSetShader(renderer.pixelShader, nil, 0)
 	renderer.deviceContext->IASetInputLayout(renderer.inputLayout)
 
-	stride := u32(size_of(api.RectInstance))
+	stride := u32(size_of(bridge.RectInstance))
 	offset: u32 = 0
 	renderer.deviceContext->IASetVertexBuffers(0, 1, &renderer.instanceBuffer, &stride, &offset)
 
@@ -661,11 +661,11 @@ renderer_begin_pass :: proc(r: api.Renderer, clearColor: api.ColorF32) {
 	renderer.deviceContext->RSSetState(renderer.rasterizerState)
 }
 
-renderer_end_pass :: proc(r: api.Renderer) {
+renderer_end_pass :: proc(r: bridge.Renderer) {
 	// Nothing needed for immediate context
 }
 
-renderer_draw :: proc(r: api.Renderer, cmd: api.DrawCommand) {
+renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if cmd.instanceCount == 0 do return
@@ -694,7 +694,7 @@ renderer_draw :: proc(r: api.Renderer, cmd: api.DrawCommand) {
 	mappedResource: d3d11.MAPPED_SUBRESOURCE
 	hr := renderer.deviceContext->Map(renderer.uniformBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)
 	if hr >= 0 {
-		mem.copy(mappedResource.pData, &renderer.uniforms, size_of(api.UniformBuffer))
+		mem.copy(mappedResource.pData, &renderer.uniforms, size_of(bridge.UniformBuffer))
 		renderer.deviceContext->Unmap(renderer.uniformBuffer, 0)
 	}
 
@@ -702,11 +702,11 @@ renderer_draw :: proc(r: api.Renderer, cmd: api.DrawCommand) {
 	renderer.deviceContext->PSSetConstantBuffers(0, 1, &renderer.uniformBuffer)
 
 	textureHandle := cmd.texture
-	if textureHandle == api.INVALID_TEXTURE {
+	if textureHandle == bridge.INVALID_TEXTURE {
 		textureHandle = renderer.whiteTexture
 	}
 
-	if u32(textureHandle) < api.MAX_TEXTURES {
+	if u32(textureHandle) < bridge.MAX_TEXTURES {
 		slot := &renderer.textures[textureHandle]
 		if slot.inUse && slot.srv != nil {
 			renderer.deviceContext->PSSetShaderResources(0, 1, &slot.srv)

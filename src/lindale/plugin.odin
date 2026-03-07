@@ -25,7 +25,6 @@ Plugin :: struct {
 	mouse: b.MouseState,
 
 	viewBounds: RectI32,
-	gross_global_glob: AnalysisTransfer,
 
 	inDraw: bool,
 	lastDrawTime: time.Tick,
@@ -38,28 +37,21 @@ PluginComponent :: enum {
 }
 
 PluginApi :: struct {
-	do_analysis : proc(plug: ^Plugin, transfer: ^AnalysisTransfer),
-	draw : proc(plug: ^Plugin),
 	process_audio : proc(plug: ^Plugin),
+	draw : proc(plug: ^Plugin),
 	view_attached : proc(plug: ^Plugin),
 	view_removed : proc(plug: ^Plugin),
 	view_resized : proc(plug: ^Plugin, rect: RectI32),
+	on_hot_load : proc(plug: ^Plugin),
+	on_hot_unload : proc(plug: ^Plugin),
 }
 
 fallbackApi :: PluginApi {
-	do_analysis = plugin_do_analysis,
-	draw = plugin_draw,
 	process_audio = plugin_process_audio,
+	draw = plugin_draw,
 	view_attached = plugin_view_attached,
 	view_removed = plugin_view_removed,
 	view_resized = plugin_view_resized,
-}
-
-// TODO: HACK for demo, not threadsafe, doesn't support multiple instances
-ANALYSIS_BUFFER_SIZE :: 2048
-AnalysisTransfer :: struct {
-	buf: [ANALYSIS_BUFFER_SIZE]f32,
-	writeIndex: int,
 }
 
 HOT_DLL :: #config(HOT_DLL, false)
@@ -67,9 +59,8 @@ HOT_DLL :: #config(HOT_DLL, false)
 when HOT_DLL {
 	@(export) GetPluginApi :: proc() -> PluginApi {
 		return PluginApi {
-			do_analysis = plugin_do_analysis,
-			draw = plugin_draw,
 			process_audio = plugin_process_audio,
+			draw = plugin_draw,
 			view_attached = plugin_view_attached,
 			view_removed = plugin_view_removed,
 			view_resized = plugin_view_resized,
@@ -125,63 +116,6 @@ plugin_view_removed :: proc(plug: ^Plugin) {
 plugin_view_resized :: proc(plug: ^Plugin, rect: RectI32) {
 	plug.viewBounds = rect
 	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
-}
-
-log_like_tween :: proc(i: int, N: int) -> f32 {
-	return math.pow_f32(f32(i) / f32(N), 0.3)
-}
-
-@(private)
-plugin_do_analysis :: proc(plug: ^Plugin, transfer: ^AnalysisTransfer) {
-	vec: [ANALYSIS_BUFFER_SIZE]complex64
-
-	for val, i in transfer.buf {
-		vec[i] = complex64(val)
-	}
-
-	dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
-
-	// Generate some rectangles corresponding to FFT result
-	startX : f32 = 50
-	endX : f32 = 800 - 50
-	startY : f32 = 600 - 50
-	fft_height :: 1000
-	fft_bin_width :: 10
-	MIN_FREQ : f32 : 20
-	MAX_FREQ : f32 : 22050
-
-	@(static) doLog := true
-
-	@(static) alph: u8 = 128
-
-	alph += u8(plug.mouse.scrollDelta.y)
-
-	// draw_clear(plug.draw)
-	// draw_set_scissor(plug.draw, RectI32{200, 300, 400, 200})
-	for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
-		val := vec[i]
-		mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
-		log2_plus_one := math.log2(mag + 1)
-		log2_1025 := math.log2(f32(1025))
-		adjusted := log2_plus_one / log2_1025
-		height := (adjusted * fft_height) + 5
-		freq := f32(i) * 44100.0 / ANALYSIS_BUFFER_SIZE
-		t := log_like_tween(i, 1024)
-		alpha := 1.0 - t
-		width := max(fft_bin_width * 2 * (1 - 0.8 * t), fft_bin_width)
-		if freq < MIN_FREQ || freq > MAX_FREQ do continue
-		x := linalg.lerp(startX, endX, math.log10(freq / MIN_FREQ) / math.log10(MAX_FREQ / MIN_FREQ))
-		y0 := startY - height
-		rect := SimpleUIRect{
-			x - (fft_bin_width / 2), y0,
-			width, height,
-			0, 0, 0, 0,
-			ColorU8{255, 240, 255, alph}, width/2,
-			ColorU8{12, 0, 12, alph}, 0
-		}
-		// draw_push_rect(plug.draw, rect)
-	}
-	doLog = false
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
@@ -266,10 +200,6 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 				}
 				out := outputBufs[c]
 				out[s] = mix * squareVal + (1 - mix) * inVal
-				if c == 0 {
-					plug.gross_global_glob.buf[plug.gross_global_glob.writeIndex] = out[s]
-					plug.gross_global_glob.writeIndex = (plug.gross_global_glob.writeIndex + 1) % ANALYSIS_BUFFER_SIZE
-				}
 			}
 		}
 	}

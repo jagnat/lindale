@@ -24,8 +24,6 @@ import "core:log"
 import "core:time"
 import "core:sys/windows"
 
-import "vendor:sdl3"
-
 import lin "lindale"
 import plat "platform_specific"
 import "bridge"
@@ -162,8 +160,6 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	for i in lin.ParamID {
 		processor.params.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
 	}
-
-	gross_global_buffer_ptr = &processor.plugin.gross_global_glob
 
 	return processor
 
@@ -784,8 +780,6 @@ LindaleView :: struct {
 	renderer: bridge.Renderer,
 }
 
-gross_global_buffer_ptr: ^lin.AnalysisTransfer
-
 MS_PER_FRAME :: 16
 
 timer_proc :: proc (timer: ^plat.Timer) {
@@ -1247,12 +1241,6 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			context = pluginFactory.ctx
 			log.info("setHostContext")
 			return vst3.kResultOk
-		}
-
-		result := sdl3.Init(sdl3.INIT_VIDEO)
-		if !result {
-			log.error("Failed to initialize SDL: ", sdl3.GetError())
-			return nil
 		}
 
 		pluginFactory.vtable.queryInterface = pf_queryInterface

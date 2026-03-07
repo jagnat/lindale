@@ -1,7 +1,6 @@
 package platform
 
-import "vendor:sdl3"
-import "core:strings"
+import plat "platform_specific"
 
 PlatformConfig :: struct {
 	initialized: bool,
@@ -12,13 +11,11 @@ PlatformConfig :: struct {
 config: PlatformConfig
 
 get_config :: proc() -> ^PlatformConfig {
-
 	if !config.initialized {
 		config = PlatformConfig {
 			initialized = true,
-			runtimeFolderPath = strings.string_from_null_terminated_ptr(sdl3.GetPrefPath("jagi", "Lindale"), 128)
+			runtimeFolderPath = plat.get_pref_path("jagi", "Lindale"),
 		}
 	}
-
 	return &config
 }

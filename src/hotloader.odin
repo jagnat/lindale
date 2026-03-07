@@ -13,8 +13,6 @@ import "core:path/filepath"
 
 import lin "lindale"
 
-import "vendor:sdl3"
-
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
 NUM_DLLS :: 2
@@ -82,7 +80,6 @@ hotload_init :: proc() {
 
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
-		do_analysis = buffer_do_analysis,
 		draw = buffer_draw,
 		process_audio = buffer_process_audio,
 		view_attached = buffer_view_attached,
@@ -92,19 +89,6 @@ hotload_api :: proc() -> lin.PluginApi {
 
 	return api
 
-	buffer_do_analysis :: proc(plug: ^lin.Plugin, transfer: ^lin.AnalysisTransfer) {
-		when !HOT_DLL {
-			// lin.plugin_do_analysis(plug, transfer)
-			lin.fallbackApi.do_analysis(plug, transfer)
-		} else {
-			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].do_analysis == nil {
-				lin.fallbackApi.do_analysis(plug, transfer)
-			} else {
-				ctx.apis[idx].do_analysis(plug, transfer)
-			}
-		}
-	}
 	buffer_draw :: proc(plug: ^lin.Plugin) {
 		when !HOT_DLL {
 			lin.fallbackApi.draw(plug)
