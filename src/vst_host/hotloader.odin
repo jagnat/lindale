@@ -11,7 +11,7 @@ import "core:fmt"
 import "core:strings"
 import "core:path/filepath"
 
-import lin "lindale"
+import lin "../lindale"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 

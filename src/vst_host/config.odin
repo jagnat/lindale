@@ -1,6 +1,6 @@
 package platform
 
-import plat "platform_specific"
+import plat "../platform_specific"
 
 PlatformConfig :: struct {
 	initialized: bool,

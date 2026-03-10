@@ -8,7 +8,6 @@
 
 package platform
 
-import "thirdparty/vst3"
 import "core:c"
 import "core:fmt"
 import "core:strings"
@@ -24,9 +23,11 @@ import "core:log"
 import "core:time"
 import "core:sys/windows"
 
-import lin "lindale"
-import plat "platform_specific"
-import "bridge"
+import "../thirdparty/vst3"
+
+import lin "../lindale"
+import plat "../platform_specific"
+import "../bridge"
 
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
