@@ -98,6 +98,15 @@ RendererSize :: struct {
 	physicalHeight: i32, // Actual drawable pixels
 }
 
+// Plugin header allocated by host, passed to hot module.
+// Host owns allocation and lifetime.
+PluginInstance :: struct {
+	params:     ^ParamValues,
+	platform:   ^PlatformApi,
+	renderer:   Renderer,
+	font_atlas: TextureHandle,
+}
+
 // Platform vtable
 PlatformApi :: struct {
 	create_texture:    proc(r: Renderer, width, height: u32, format: PixelFormat) -> TextureHandle,

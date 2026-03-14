@@ -77,7 +77,7 @@ draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
 draw_default_params :: proc(ctx: ^DrawContext) -> RectDrawBatchParams {
 	return RectDrawBatchParams{
 		scissor = {0, 0, 0, 0},
-		texture = ctx.plugin.fontAtlas,
+		texture = ctx.plugin.instance.font_atlas,
 		singleChannelTexture = true,
 	}
 }
@@ -183,13 +183,13 @@ draw_clear :: proc(ctx: ^DrawContext) {
 draw_submit :: proc(ctx: ^DrawContext) {
 	if ctx.batchesFirst == nil do return
 
-	p := ctx.plugin.platform
-	r := ctx.plugin.renderer
+	p := ctx.plugin.instance.platform
+	r := ctx.plugin.instance.renderer
 
 	if !p.begin_frame(r) do return
 
 	if font_is_texture_dirty(&ctx.fontState) {
-		p.upload_texture(r, ctx.plugin.fontAtlas, font_get_atlas(&ctx.fontState))
+		p.upload_texture(r, ctx.plugin.instance.font_atlas, font_get_atlas(&ctx.fontState))
 		font_reset_dirty_flag(&ctx.fontState)
 	}
 
@@ -303,7 +303,7 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 
 	counts := font_get_text_quads(&ctx.fontState, text, x, y + ascent, buf[:])
 
-	draw_set_texture(ctx, ctx.plugin.fontAtlas, true)
+	draw_set_texture(ctx, ctx.plugin.instance.font_atlas, true)
 
 	for &rect in buf {
 		rect.color = color

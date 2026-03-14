@@ -14,20 +14,17 @@ import dit "../thirdparty/uFFT_DIT"
 import b "../bridge"
 
 Plugin :: struct {
-	platform: ^b.PlatformApi,
-	renderer: b.Renderer,
-	fontAtlas: b.TextureHandle,
+	instance: ^b.PluginInstance,
 
 	audioProcessor: ^AudioProcessorContext,
 
 	draw: ^DrawContext,
-	ui: ^UIContext,
+	ui:   ^UIContext,
 	mouse: b.MouseState,
 
-	viewBounds: RectI32,
-
-	inDraw: bool,
-	lastDrawTime: time.Tick,
+	viewBounds:    RectI32,
+	inDraw:        bool,
+	lastDrawTime:  time.Tick,
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -37,21 +34,23 @@ PluginComponent :: enum {
 }
 
 PluginApi :: struct {
-	process_audio : proc(plug: ^Plugin),
-	draw : proc(plug: ^Plugin),
-	view_attached : proc(plug: ^Plugin),
-	view_removed : proc(plug: ^Plugin),
-	view_resized : proc(plug: ^Plugin, rect: RectI32),
-	on_hot_load : proc(plug: ^Plugin),
-	on_hot_unload : proc(plug: ^Plugin),
+	process_audio:          proc(plug: ^Plugin),
+	draw:                   proc(plug: ^Plugin),
+	view_attached:          proc(plug: ^Plugin),
+	view_removed:           proc(plug: ^Plugin),
+	view_resized:           proc(plug: ^Plugin, rect: RectI32),
+	on_hot_load:            proc(plug: ^Plugin),
+	on_hot_unload:          proc(plug: ^Plugin),
+	query_parameter_layout: proc() -> []b.ParamDescriptor,
 }
 
 fallbackApi :: PluginApi {
-	process_audio = plugin_process_audio,
-	draw = plugin_draw,
-	view_attached = plugin_view_attached,
-	view_removed = plugin_view_removed,
-	view_resized = plugin_view_resized,
+	process_audio          = plugin_process_audio,
+	draw                   = plugin_draw,
+	view_attached          = plugin_view_attached,
+	view_removed           = plugin_view_removed,
+	view_resized           = plugin_view_resized,
+	query_parameter_layout = plugin_query_parameter_layout,
 }
 
 HOT_DLL :: #config(HOT_DLL, false)
@@ -59,20 +58,30 @@ HOT_DLL :: #config(HOT_DLL, false)
 when HOT_DLL {
 	@(export) GetPluginApi :: proc() -> PluginApi {
 		return PluginApi {
-			process_audio = plugin_process_audio,
-			draw = plugin_draw,
-			view_attached = plugin_view_attached,
-			view_removed = plugin_view_removed,
-			view_resized = plugin_view_resized,
+			process_audio          = plugin_process_audio,
+			draw                   = plugin_draw,
+			view_attached          = plugin_view_attached,
+			view_removed           = plugin_view_removed,
+			view_resized           = plugin_view_resized,
+			query_parameter_layout = plugin_query_parameter_layout,
 		}
 	}
 }
 
+plugin_query_parameter_layout :: proc() -> []b.ParamDescriptor {
+	return param_table[:]
+}
+
 // @(private)
 plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
+	param_init()
+
 	if .Audio in components {
 		if plugin.audioProcessor == nil {
 			plugin.audioProcessor = new(AudioProcessorContext)
+		}
+		if plugin.audioProcessor.paramChanges == nil {
+			plugin.audioProcessor.paramChanges = make([][]ParameterChange, len(param_table))
 		}
 	}
 
@@ -102,7 +111,7 @@ plugin_destroy :: proc(plug: ^Plugin) {
 
 @(private)
 plugin_view_attached :: proc(plug: ^Plugin) {
-	
+
 }
 
 @(private)
@@ -115,7 +124,6 @@ plugin_view_removed :: proc(plug: ^Plugin) {
 @(private)
 plugin_view_resized :: proc(plug: ^Plugin, rect: RectI32) {
 	plug.viewBounds = rect
-	// render_resize(plug.render, plug.viewBounds.w, plug.viewBounds.h)
 }
 
 plugin_draw :: proc(plug: ^Plugin) {
@@ -167,12 +175,12 @@ plugin_draw :: proc(plug: ^Plugin) {
 plugin_process_audio :: proc(plug: ^Plugin) {
 	audioContext := plug.audioProcessor
 	if audioContext == nil do return
+	if plug.instance == nil || plug.instance.params == nil do return
 
-	freq := norm_to_param(audioContext.lastParamState.values[.Freq], ParamTable[.Freq].range)
-	// freq : f64 = 666
+	freq := plug.instance.params.values[PARAM_FREQ]
 	samplesPerHalfPeriod := cast(i32)(audioContext.sampleRate / (2 * freq))
 
-	mix := f32(audioContext.lastParamState.values[.Mix]) // keep mix normalized, 0 to 1
+	mix := f32(plug.instance.params.values[PARAM_MIX] / 100.0)
 
 	@(static) squarePhase : i32 = 0
 
@@ -184,7 +192,7 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 	// Generate output buffer, iterate samples TODO: should be done channel first?
 	for s in 0..< len(outputs[0].buffers32[0]) {
 		AMPLITUDE :: 0.01
-		squareVal : f32= squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
+		squareVal : f32 = squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
 		squarePhase += 1
 		if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
 

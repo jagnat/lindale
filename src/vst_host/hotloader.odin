@@ -12,6 +12,7 @@ import "core:strings"
 import "core:path/filepath"
 
 import lin "../lindale"
+import b "../bridge"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
@@ -80,15 +81,28 @@ hotload_init :: proc() {
 
 hotload_api :: proc() -> lin.PluginApi {
 	api : lin.PluginApi = {
-		draw = buffer_draw,
-		process_audio = buffer_process_audio,
-		view_attached = buffer_view_attached,
-		view_removed = buffer_view_removed,
-		view_resized = buffer_view_resized,
+		draw                   = buffer_draw,
+		process_audio          = buffer_process_audio,
+		view_attached          = buffer_view_attached,
+		view_removed           = buffer_view_removed,
+		view_resized           = buffer_view_resized,
+		query_parameter_layout = buffer_query_parameter_layout,
 	}
 
 	return api
 
+	buffer_query_parameter_layout :: proc() -> []b.ParamDescriptor {
+		when !HOT_DLL {
+			return lin.fallbackApi.query_parameter_layout()
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].query_parameter_layout == nil {
+				return lin.fallbackApi.query_parameter_layout()
+			} else {
+				return ctx.apis[idx].query_parameter_layout()
+			}
+		}
+	}
 	buffer_draw :: proc(plug: ^lin.Plugin) {
 		when !HOT_DLL {
 			lin.fallbackApi.draw(plug)

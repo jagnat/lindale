@@ -89,16 +89,14 @@ LindaleProcessor :: struct {
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
 	processContextRequirements: vst3.IProcessContextRequirements,
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
-	// connectionPoint: vst3.IConnectionPoint,
-	// connectionPointVtable: vst3.IConnectionPointVtbl,
 	refCount: u32,
 
 	plugin: lin.Plugin,
+	pluginInstance: bridge.PluginInstance,
+	paramDescs: []bridge.ParamDescriptor,
+	paramValues: bridge.ParamValues,
 
 	hostContext: ^vst3.FUnknown,
-
-	// Context
-	params: lin.ParamState,
 	sampleRate: f64,
 	ctx: runtime.Context,
 }
@@ -156,11 +154,17 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = get_mutex_logger(.Processor)
 
-	lin.plugin_init(&processor.plugin, {.Audio})
-
-	for i in lin.ParamID {
-		processor.params.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
+	// Init params
+	descs := pluginApi.query_parameter_layout()
+	processor.paramDescs = slice.clone(descs)
+	processor.paramValues.values = make([]f64, len(processor.paramDescs))
+	for desc, i in processor.paramDescs {
+		processor.paramValues.values[i] = desc.default_value
 	}
+
+	processor.pluginInstance.params = &processor.paramValues
+	processor.plugin.instance = &processor.pluginInstance
+	lin.plugin_init(&processor.plugin, {.Audio})
 
 	return processor
 
@@ -370,10 +374,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		outputs := data.outputs
 		inputs := data.inputs
 
-		// TODO: Dynamically allocate?
+		// TODO: Which allocator?
 		groups: [32]lin.AudioBufferGroup
 		channelSlices: [64][]u8 // we will cast slice to the right type later
-		paramChanges: [lin.ParamID][64]lin.ParameterChange
+		paramChanges := make([][64]lin.ParameterChange, len(processor.paramDescs), context.temp_allocator)
 		channelSliceBumpIdx: i32
 
 		audioContext := processor.plugin.audioProcessor
@@ -381,15 +385,15 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			audioContext.sampleRate = data.processContext.sampleRate
 			audioContext.projectTimeSamples = data.processContext.projectTimeSamples
 		}
-		audioContext.lastParamState = processor.params
 
-		// Fetch parameter updates
+		// Fetch parameter updates: convert normalized host values to plain before storing
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
 			paramCount := data.inputParameterChanges->getParameterCount()
 			for i in 0..<paramCount {
 				paramQueue := data.inputParameterChanges->getParameterData(i)
 				if paramQueue != nil && paramQueue.lpVtbl != nil {
-					paramId := cast(lin.ParamID)(paramQueue->getParameterId())
+					paramIdx := int(paramQueue->getParameterId())
+					if paramIdx < 0 || paramIdx >= len(processor.paramDescs) do continue
 					pointCount := paramQueue->getPointCount()
 					if pointCount > 0 {
 						actualCount := 0
@@ -398,15 +402,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 							normParam : f64
 							result := paramQueue->getPoint(i, &sampleOffs, &normParam)
 							if result == vst3.kResultOk {
-								processor.params.values[paramId] = normParam
-								paramChanges[paramId][actualCount] = lin.ParameterChange {
+								plainVal := bridge.normalized_to_param(normParam, processor.paramDescs[paramIdx])
+								processor.paramValues.values[paramIdx] = plainVal
+								paramChanges[paramIdx][actualCount] = lin.ParameterChange {
 									sampleOffset = sampleOffs,
-									value = normParam,
+									value = plainVal,
 								}
 								actualCount += 1
 							}
 						}
-						audioContext.paramChanges[paramId] = paramChanges[paramId][:actualCount]
+						audioContext.paramChanges[paramIdx] = paramChanges[paramIdx][:actualCount]
 					}
 				}
 			}
@@ -514,9 +519,12 @@ LindaleController :: struct {
 	refCount: u32,
 
 	plugin: lin.Plugin,
+	pluginInstance: bridge.PluginInstance,
 	platformApi: bridge.PlatformApi,
+	paramDescs: []bridge.ParamDescriptor,
+	paramValues: bridge.ParamValues,
 
-	paramState: lin.ParamState,
+	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
 	view: LindaleView,
 }
@@ -565,9 +573,16 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.ctx = context
 	controller.ctx.logger = get_mutex_logger(.Controller)
 
-	for i in lin.ParamID {
-		controller.paramState.values[i] = lin.param_to_norm(lin.ParamTable[i].range.defaultValue, lin.ParamTable[i].range)
+	// Init params
+	descs := pluginApi.query_parameter_layout()
+	controller.paramDescs = slice.clone(descs)
+	controller.paramValues.values = make([]f64, len(controller.paramDescs))
+	for desc, i in controller.paramDescs {
+		controller.paramValues.values[i] = desc.default_value
 	}
+
+	controller.pluginInstance.params = &controller.paramValues
+	controller.plugin.instance = &controller.pluginInstance
 
 	controller.plugin.viewBounds = {0, 0, 800, 600}
 
@@ -631,31 +646,30 @@ createLindaleController :: proc () -> ^LindaleController {
 		return vst3.kResultOk
 	}
 	lc_ec_getParameterCount :: proc "system" (this: rawptr) -> i32 {
-		return len(lin.ParamTable)
+		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		return i32(len(controller.paramDescs))
 	}
 	lc_ec_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
-		if paramIndex >= len(lin.ParamTable) {
+		if int(paramIndex) >= len(controller.paramDescs) {
 			return vst3.kInvalidArgument
 		}
 
-		paramId := cast(lin.ParamID)paramIndex
-
-		paramInfo := lin.ParamTable[paramId]
+		desc := controller.paramDescs[paramIndex]
 
 		info^ = vst3.ParameterInfo {
-			id = cast(u32)paramId,
-			stepCount = paramInfo.range.stepCount,
-			defaultNormalizedValue = lin.param_to_norm(paramInfo.range.defaultValue, paramInfo.range),
+			id = u32(paramIndex),
+			stepCount = desc.step_count,
+			defaultNormalizedValue = bridge.param_to_normalized(desc.default_value, desc),
 			unitId = vst3.kRootUnitId,
-			flags = {.kCanAutomate,},
+			flags = {.kCanAutomate},
 		}
 
-		utf16.encode_string(info.title[:], paramInfo.name)
-		utf16.encode_string(info.shortTitle[:], paramInfo.shortName)
-		utf16.encode_string(info.units[:], lin.ParamUnitTypeStrings[paramInfo.range.unit])
+		utf16.encode_string(info.title[:], desc.name)
+		utf16.encode_string(info.shortTitle[:], desc.short_name)
+		utf16.encode_string(info.units[:], bridge.ParamUnitStrings[desc.unit])
 
 		return vst3.kResultOk
 	}
@@ -663,12 +677,13 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
-		paramId := cast(lin.ParamID)id
+		if int(id) >= len(controller.paramDescs) do return vst3.kInvalidArgument
+		desc := controller.paramDescs[id]
 
 		buffer: [128]u8
-		paramVal := lin.norm_to_param(valueNormalized, lin.ParamTable[paramId].range)
-		lin.vst3_print_param_to_buf(&buffer, paramVal, lin.ParamTable[paramId])
-		utf16.encode_string(str[:128], string(buffer[:128]))
+		plainVal := bridge.normalized_to_param(valueNormalized, desc)
+		displayStr := bridge.param_format_value(plainVal, desc, buffer[:])
+		utf16.encode_string(str[:128], displayStr)
 
 		return vst3.kResultOk
 	}
@@ -676,39 +691,46 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
 
-		paramId := cast(lin.ParamID)id
+		if int(id) >= len(controller.paramDescs) do return vst3.kInvalidArgument
+		desc := controller.paramDescs[id]
 
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
-		paramVal := lin.vst3_get_param_from_buf(&buffer)
-		valueNormalized^ = lin.param_to_norm(paramVal, lin.ParamTable[paramId].range)
+		plainVal, ok := bridge.param_parse_value(string(buffer[:]), desc)
+		if !ok do return vst3.kInvalidArgument
+		valueNormalized^ = bridge.param_to_normalized(plainVal, desc)
 
 		return vst3.kResultOk
 	}
 	lc_ec_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		return valueNormalized
+		if int(id) >= len(controller.paramDescs) do return valueNormalized
+		return bridge.normalized_to_param(valueNormalized, controller.paramDescs[id])
 	}
 	lc_ec_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		return plainValue
+		if int(id) >= len(controller.paramDescs) do return plainValue
+		return bridge.param_to_normalized(plainValue, controller.paramDescs[id])
 	}
 	lc_ec_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		paramId := cast(lin.ParamID)id
-		return controller.paramState.values[paramId]
+		if int(id) >= len(controller.paramDescs) do return 0
+		return bridge.param_to_normalized(controller.paramValues.values[id], controller.paramDescs[id])
 	}
 	lc_ec_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		paramId := cast(lin.ParamID)id
-		controller.paramState.values[paramId] = value
+		if int(id) >= len(controller.paramDescs) do return vst3.kInvalidArgument
+		controller.paramValues.values[id] = bridge.normalized_to_param(value, controller.paramDescs[id])
 		return vst3.kResultOk
 	}
 	lc_ec_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = controller.ctx
+		controller.componentHandler = handler
 		return vst3.kResultOk
 	}
 	lc_ec_createView :: proc "system" (this: rawptr, name: vst3.FIDString) -> ^vst3.IPlugView {
@@ -922,12 +944,12 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			end_pass = plat.renderer_end_pass,
 			draw = plat.renderer_draw,
 		}
-		view.plugin.platform = &controller.platformApi
-		view.plugin.renderer = view.renderer
+		controller.pluginInstance.platform = &controller.platformApi
+		controller.pluginInstance.renderer = view.renderer
 		plat.renderer_set_mouse_state(view.renderer, &view.plugin.mouse)
 		plat.renderer_set_repaint_callback(view.renderer, repaint_callback, view)
 
-		view.plugin.fontAtlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
+		controller.pluginInstance.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent
