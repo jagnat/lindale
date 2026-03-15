@@ -287,9 +287,27 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return vst3.kResultOk
 	}
 	lp_comp_setState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = processor.ctx
+		end_pos: i64
+		state.seek(state, 0, 2, &end_pos) // SEEK_END
+		state.seek(state, 0, 0, nil)       // SEEK_SET
+		if end_pos <= 0 do return vst3.kResultOk
+		data := make([]u8, end_pos)
+		defer delete(data)
+		bytes_read: i32
+		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
+		deserialize_params(processor.paramDescs, &processor.paramValues, data[:bytes_read])
 		return vst3.kResultOk
 	}
 	lp_comp_getState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = processor.ctx
+		data, ok := serialize_params(processor.paramDescs, &processor.paramValues)
+		if !ok do return vst3.kResultFalse
+		defer delete(data)
+		written: i32
+		state.write(state, raw_data(data), i32(len(data)), &written)
 		return vst3.kResultOk
 	}
 
@@ -636,7 +654,18 @@ createLindaleController :: proc () -> ^LindaleController {
 	lc_ec_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
 		return vst3.kResultOk
 	}
-	lc_ec_setComponentState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
+	lc_ec_setComponentState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = controller.ctx
+		end_pos: i64
+		state.seek(state, 0, 2, &end_pos) // SEEK_END
+		state.seek(state, 0, 0, nil)       // SEEK_SET
+		if end_pos <= 0 do return vst3.kResultOk
+		data := make([]u8, end_pos)
+		defer delete(data)
+		bytes_read: i32
+		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
+		deserialize_params(controller.paramDescs, &controller.paramValues, data[:bytes_read])
 		return vst3.kResultOk
 	}
 	lc_ec_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
