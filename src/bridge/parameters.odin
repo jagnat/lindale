@@ -13,11 +13,11 @@ ParamUnit :: enum {
 }
 
 @(rodata) ParamUnitStrings := [ParamUnit]string {
-	.Decibel    = "dB",
-	.Hertz      = "Hz",
+	.Decibel = "dB",
+	.Hertz = "Hz",
 	.Percentage = "%",
 	.Normalized = "",
-	.None       = "",
+	.None = "",
 }
 
 ParamFlag :: enum {
@@ -31,14 +31,14 @@ ParamFlag :: enum {
 ParamFlagSet :: bit_set[ParamFlag]
 
 ParamDescriptor :: struct {
-	name:          string,
-	short_name:    string,
-	min:           f64,
-	max:           f64,
+	name: string,
+	short_name: string,
+	min: f64,
+	max: f64,
 	default_value: f64,
-	step_count:    i32,
-	unit:          ParamUnit,
-	flags:         ParamFlagSet,
+	step_count: i32,
+	unit: ParamUnit,
+	flags: ParamFlagSet,
 }
 
 ParamValues :: struct {

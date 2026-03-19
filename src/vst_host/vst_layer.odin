@@ -539,6 +539,7 @@ LindaleController :: struct {
 	plugin: lin.Plugin,
 	pluginInstance: bridge.PluginInstance,
 	platformApi: bridge.PlatformApi,
+	hostApi: bridge.HostApi,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
 
@@ -600,6 +601,13 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 
 	controller.pluginInstance.params = &controller.paramValues
+	controller.hostApi = bridge.HostApi {
+		ctx = bridge.HostContext(controller),
+		param_edit_start = lc_host_param_edit_start,
+		param_edit_change = lc_host_param_edit_change,
+		param_edit_end = lc_host_param_edit_end,
+	}
+	controller.pluginInstance.host = &controller.hostApi
 	controller.plugin.instance = &controller.pluginInstance
 
 	controller.plugin.viewBounds = {0, 0, 800, 600}
@@ -607,6 +615,27 @@ createLindaleController :: proc () -> ^LindaleController {
 	lin.plugin_init(&controller.plugin, {.Controller})
 
 	return controller
+
+	lc_host_param_edit_start :: proc(ctx: bridge.HostContext, param_id: i32) {
+		controller := cast(^LindaleController)ctx
+		context = controller.ctx
+		if controller.componentHandler == nil do return
+		controller.componentHandler->beginEdit(u32(param_id))
+	}
+
+	lc_host_param_edit_change :: proc(ctx: bridge.HostContext, param_id: i32, normalized_value: f64) {
+		controller := cast(^LindaleController)ctx
+		context = controller.ctx
+		if controller.componentHandler == nil do return
+		controller.componentHandler->performEdit(u32(param_id), normalized_value)
+	}
+
+	lc_host_param_edit_end :: proc(ctx: bridge.HostContext, param_id: i32) {
+		controller := cast(^LindaleController)ctx
+		context = controller.ctx
+		if controller.componentHandler == nil do return
+		controller.componentHandler->endEdit(u32(param_id))
+	}
 
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_IEditController || iid^ == vst3.iid_IPluginBase {

@@ -2,6 +2,7 @@ package lindale
 
 import "core:math"
 import "core:testing"
+import b "../bridge"
 
 UITheme :: struct {
 	bgColor: ColorU8,
@@ -82,11 +83,22 @@ ButtonData :: struct {
 	id: u32,
 }
 
+SliderFloatBinding :: struct {
+	val: ^f32,
+	min, max: f32,
+}
+
+SliderParamBinding :: struct {
+	param_idx: ParamIndex,
+}
+
 SliderVData :: struct {
 	label: string,
 	id: u32,
-	val: ^f32,
-	min, max: f32,
+	binding: union {
+		SliderFloatBinding,
+		SliderParamBinding,
+	},
 }
 
 ComponentData :: union {
@@ -209,7 +221,7 @@ ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, al
 	comp.alignX = alignX
 	comp.sizingHoriz = {type = .FIXED, value = slider_width}
 	comp.sizingVert = {type = .GROW, value = 200, min = 200, max = 500}
-	comp.data = SliderVData {label, id, val, min, max}
+	comp.data = SliderVData{label, id, SliderFloatBinding{val, min, max}}
 	ui_close_component(ctx)
 }
 
@@ -218,9 +230,32 @@ ui_slider_labeled :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .VERTICAL
 	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .FIT,}
-	comp.sizingVert = {type = .GROW,}
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .GROW}
 	ui_slider_v(ctx, label, val, min, max, alignX = .CENTER)
+	ui_label(ctx, label, alignX = .CENTER)
+	ui_close_component(ctx)
+}
+
+ui_slider_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, alignX: AlignX = .CENTER) {
+	id := string_hash_u32(label)
+	comp := ui_open_component(ctx)
+	comp.type = .SLIDER_V
+	comp.alignX = alignX
+	comp.sizingHoriz = {type = .FIXED, value = slider_width}
+	comp.sizingVert = {type = .GROW, value = 200, min = 200, max = 500}
+	comp.data = SliderVData{label, id, SliderParamBinding{param_idx}}
+	ui_close_component(ctx)
+}
+
+ui_slider_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex) {
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .VERTICAL
+	comp.child_gaps = 5
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .GROW}
+	ui_slider_param(ctx, label, param_idx, alignX = .CENTER)
 	ui_label(ctx, label, alignX = .CENTER)
 	ui_close_component(ctx)
 }
@@ -300,7 +335,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
 				if mouseOver do ctx.hoveredId = d.id
 				if d.id == ctx.activeId {
-					if .Left in ctx.mouse.released {
+					if .Left not_in ctx.mouse.down {
 						if mouseOver do ctx.lastClickedId = d.id
 						ctx.activeId = 0
 					}
@@ -313,12 +348,44 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
 				if mouseOver do ctx.hoveredId = d.id
 				if d.id == ctx.activeId {
-					mouseP := clamp(ctx.mouse.pos.y, c.calcBounds.y, c.calcBounds.y + c.calcBounds.h)
-					t := 1.0 - (mouseP - c.calcBounds.y) / c.calcBounds.h
-					d.val^ = d.min + t * (d.max - d.min) // lerp
-					if .Left in ctx.mouse.released do ctx.activeId = 0
+					thumbR := f32(slider_width) / 2
+					trackRange := c.calcBounds.h - f32(slider_width)
+					mouseP := clamp(ctx.mouse.pos.y, c.calcBounds.y + thumbR, c.calcBounds.y + c.calcBounds.h - thumbR)
+					norm := clamp(1.0 - (mouseP - c.calcBounds.y - thumbR) / trackRange, 0, 1)
+
+					switch v in d.binding {
+						case SliderFloatBinding: {
+							v.val^ = v.min + norm * (v.max - v.min)
+						}
+						case SliderParamBinding: {
+							inst := ctx.plugin.instance
+							if inst != nil && inst.params != nil {
+								desc := param_table[v.param_idx]
+								inst.params.values[v.param_idx] = b.normalized_to_param(f64(norm), desc)
+							}
+							if inst != nil && inst.host != nil && inst.host.param_edit_change != nil {
+								inst.host.param_edit_change(inst.host.ctx, i32(v.param_idx), f64(norm))
+							}
+						}
+					}
+
+					if .Left not_in ctx.mouse.down {
+						if pb, ok := d.binding.(SliderParamBinding); ok {
+							inst := ctx.plugin.instance
+							if inst != nil && inst.host != nil && inst.host.param_edit_end != nil {
+								inst.host.param_edit_end(inst.host.ctx, i32(pb.param_idx))
+							}
+						}
+						ctx.activeId = 0
+					}
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
+					if pb, ok := d.binding.(SliderParamBinding); ok {
+						inst := ctx.plugin.instance
+						if inst != nil && inst.host != nil && inst.host.param_edit_start != nil {
+							inst.host.param_edit_start(inst.host.ctx, i32(pb.param_idx))
+						}
+					}
 				}
 			}
 		}
@@ -480,46 +547,59 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			case .SLIDER_V: {
 				bounds := c.calcBounds
 				d := c.data.(SliderVData) or_continue
-				sliderP := (d.val^ - d.min) / (d.max - d.min)
-				sliderY := sliderP * bounds.h
+				thumbR := f32(slider_width) / 2
+				trackRange := bounds.h - f32(slider_width)
+
+				norm: f32
+				switch v in d.binding {
+				case SliderFloatBinding:
+					norm = (v.val^ - v.min) / (v.max - v.min)
+				case SliderParamBinding:
+					inst := ctx.plugin.instance
+					if inst != nil && inst.params != nil {
+						desc := param_table[v.param_idx]
+						norm = f32(b.param_to_normalized(inst.params.values[v.param_idx], desc))
+					}
+				}
+				sliderY := norm * trackRange
 
 				thumbColor := ctx.theme.sliderColor
 				if d.id == ctx.activeId do thumbColor = ctx.theme.sliderActiveColor
 				else if d.id == ctx.hoveredId do thumbColor = ctx.theme.sliderHoverColor
 
-				railRect := SimpleUIRect {
+				// Rail background
+				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = bounds.x + (bounds.w / 2) - (slider_rail_width / 2),
-					y = bounds.y,
+					y = bounds.y + thumbR,
 					width = slider_rail_width,
-					height = bounds.h,
+					height = trackRange,
 					color = ctx.theme.sliderTrackColor,
 					cornerRad = 2,
 					borderColor = ctx.theme.borderColor,
 					borderWidth = 0.8,
-				}
-				draw_push_rect(ctx.plugin.draw, railRect)
+				})
 
-				enabledRailRect := SimpleUIRect {
+				// Enabled part of the rail
+				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = bounds.x + (bounds.w / 2) - (slider_rail_width / 2),
-					y = bounds.y + (bounds.h - sliderY),
+					y = bounds.y + thumbR + (trackRange - sliderY),
 					width = slider_rail_width,
 					height = sliderY,
 					color = ctx.theme.sliderColor,
-					cornerRad = 2
-				}
-				draw_push_rect(ctx.plugin.draw, enabledRailRect)
+					cornerRad = 2,
+				})
 
-				thumbRect := SimpleUIRect {
+				// Thumb circle
+				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = bounds.x + (bounds.w / 2) - (slider_width / 2),
-					y = bounds.y + (bounds.h - sliderY) - (slider_width / 2),
+					y = bounds.y + (trackRange - sliderY),
 					width = slider_width,
 					height = slider_width,
 					color = thumbColor,
 					cornerRad = slider_width / 2,
 					borderColor = ctx.theme.sliderActiveColor,
 					borderWidth = 0.5,
-				}
-				draw_push_rect(ctx.plugin.draw, thumbRect)
+				})
 			}
 		}
 	}

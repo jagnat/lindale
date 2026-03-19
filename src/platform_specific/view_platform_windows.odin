@@ -382,36 +382,42 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Left}
 		renderer.mouse.pressed += {.Left}
+		win.SetCapture(hwnd)
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_LBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Left}
 		renderer.mouse.released += {.Left}
+		if renderer.mouse.down == {} do win.ReleaseCapture()
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_RBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Right}
 		renderer.mouse.pressed += {.Right}
+		win.SetCapture(hwnd)
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_RBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Right}
 		renderer.mouse.released += {.Right}
+		if renderer.mouse.down == {} do win.ReleaseCapture()
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Middle}
 		renderer.mouse.pressed += {.Middle}
+		win.SetCapture(hwnd)
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Middle}
 		renderer.mouse.released += {.Middle}
+		if renderer.mouse.down == {} do win.ReleaseCapture()
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
 	case win.WM_MOUSEWHEEL:

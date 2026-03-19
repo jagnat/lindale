@@ -130,10 +130,6 @@ plugin_draw :: proc(plug: ^Plugin) {
 	if plug.draw == nil || plug.ui == nil do return
 
 	@(static) frame : i64 = 0
-	@(static) gainVal : f32 = 0.5
-	@(static) mixVal : f32 = 0.75
-	@(static) mixVal2 : f32 = 0.75
-	@(static) mixVal3 : f32 = 0.75
 
 	if plug.inDraw {
 		log.warn("Re-entrant draw detected!")
@@ -153,9 +149,9 @@ plugin_draw :: proc(plug: ^Plugin) {
 			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}) {
 				if ui_button(plug.ui, "TEST") {
 				}
-				ui_slider_labeled(plug.ui, "Mix", &mixVal, 0, 1)
-				ui_slider_labeled(plug.ui, "Mix 2", &mixVal2, 0, 1)
-				ui_slider_labeled(plug.ui, "Mix 3", &mixVal3, 0, 1)
+				ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
+				ui_slider_param_labeled(plug.ui, "Mix", PARAM_MIX)
+				ui_slider_param_labeled(plug.ui, "Freq", PARAM_FREQ)
 			}
 
 			if ui_panel(plug.ui, dir = .HORIZONTAL) {

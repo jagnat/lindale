@@ -31,12 +31,12 @@ KeyModifiers :: enum {
 MouseButton :: enum { Left, Right, Middle }
 
 MouseState :: struct {
-	pos:         Vec2f,
-	down:        bit_set[MouseButton],
-	pressed:     bit_set[MouseButton],
-	released:    bit_set[MouseButton],
+	pos: Vec2f,
+	down: bit_set[MouseButton],
+	pressed: bit_set[MouseButton],
+	released: bit_set[MouseButton],
 	scrollDelta: Vec2f,
-	modifiers:   KeyModifierSet,
+	modifiers: KeyModifierSet,
 }
 
 // Instance data for SDF rounded rectangles.
@@ -103,6 +103,7 @@ RendererSize :: struct {
 PluginInstance :: struct {
 	params:     ^ParamValues,
 	platform:   ^PlatformApi,
+	host:       ^HostApi,
 	renderer:   Renderer,
 	font_atlas: TextureHandle,
 }
