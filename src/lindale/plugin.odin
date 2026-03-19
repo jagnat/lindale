@@ -7,7 +7,6 @@ import "core:math/linalg"
 import "core:math"
 import "core:math/rand"
 import "core:time"
-import vm "core:mem/virtual"
 import dif "../thirdparty/uFFT_DIF"
 import dit "../thirdparty/uFFT_DIT"
 
@@ -39,8 +38,6 @@ PluginApi :: struct {
 	view_attached:          proc(plug: ^Plugin),
 	view_removed:           proc(plug: ^Plugin),
 	view_resized:           proc(plug: ^Plugin, rect: RectI32),
-	on_hot_load:            proc(plug: ^Plugin),
-	on_hot_unload:          proc(plug: ^Plugin),
 	query_parameter_layout: proc() -> []b.ParamDescriptor,
 }
 
@@ -74,8 +71,6 @@ plugin_query_parameter_layout :: proc() -> []b.ParamDescriptor {
 
 // @(private)
 plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
-	param_init()
-
 	if .Audio in components {
 		if plugin.audioProcessor == nil {
 			plugin.audioProcessor = new(AudioProcessorContext)
@@ -86,21 +81,7 @@ plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
 	}
 
 	if .Controller in components {
-		if plugin.draw == nil {
-			plugin.draw = new(DrawContext)
-			plugin.draw.plugin = plugin
-			err := vm.arena_init_growing(&plugin.draw.arena)
-			assert(err == .None)
-			plugin.draw.alloc = vm.arena_allocator(&plugin.draw.arena)
-			plugin.draw.clearColor = {0, 0, 0, 1}
-
-			font_init(&plugin.draw.fontState)
-			plugin.draw.initialized = true
-		}
-		if plugin.ui == nil {
-			plugin.ui = new(UIContext)
-			plugin.ui.plugin = plugin
-		}
+		param_init()
 	}
 }
 
@@ -111,7 +92,17 @@ plugin_destroy :: proc(plug: ^Plugin) {
 
 @(private)
 plugin_view_attached :: proc(plug: ^Plugin) {
-
+	if plug.draw == nil {
+		plug.draw = new(DrawContext)
+		plug.draw.plugin = plug
+		plug.draw.clearColor = {0, 0, 0, 1}
+		font_init(&plug.draw.fontState)
+		plug.draw.initialized = true
+	}
+	if plug.ui == nil {
+		plug.ui = new(UIContext)
+		plug.ui.plugin = plug
+	}
 }
 
 @(private)
@@ -129,8 +120,6 @@ plugin_view_resized :: proc(plug: ^Plugin, rect: RectI32) {
 plugin_draw :: proc(plug: ^Plugin) {
 	if plug.draw == nil || plug.ui == nil do return
 
-	@(static) frame : i64 = 0
-
 	if plug.inDraw {
 		log.warn("Re-entrant draw detected!")
 		return
@@ -146,7 +135,7 @@ plugin_draw :: proc(plug: ^Plugin) {
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}) {
 
-			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}) {
+			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10,) {
 				if ui_button(plug.ui, "TEST") {
 				}
 				ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
@@ -154,7 +143,7 @@ plugin_draw :: proc(plug: ^Plugin) {
 				ui_slider_param_labeled(plug.ui, "Freq", PARAM_FREQ)
 			}
 
-			if ui_panel(plug.ui, dir = .HORIZONTAL) {
+			if ui_panel(plug.ui, dir = .HORIZONTAL,) {
 				ui_button(plug.ui, "Play")
 				ui_button(plug.ui, "Stop")
 				ui_button(plug.ui, "Record")
@@ -162,7 +151,7 @@ plugin_draw :: proc(plug: ^Plugin) {
 		}
 	}
 
-	frame = frame + 1
+	plug.draw.frame += 1
 
 	draw_submit(plug.draw)
 }
@@ -178,8 +167,6 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 
 	mix := f32(plug.instance.params.values[PARAM_MIX] / 100.0)
 
-	@(static) squarePhase : i32 = 0
-
 	outputs := audioContext.outputBuffers
 	inputs := audioContext.inputBuffers
 
@@ -188,9 +175,9 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 	// Generate output buffer, iterate samples TODO: should be done channel first?
 	for s in 0..< len(outputs[0].buffers32[0]) {
 		AMPLITUDE :: 0.01
-		squareVal : f32 = squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
-		squarePhase += 1
-		if squarePhase >= 2 * samplesPerHalfPeriod do squarePhase = 0
+		squareVal : f32 = audioContext.squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
+		audioContext.squarePhase += 1
+		if audioContext.squarePhase >= 2 * samplesPerHalfPeriod do audioContext.squarePhase = 0
 
 		for i in 0 ..< len(outputs) {
 			outputBufs := outputs[i].buffers32

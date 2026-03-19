@@ -1,12 +1,10 @@
 package lindale
 
 import "core:fmt"
-import "core:mem"
 import "core:math"
 import "core:slice"
 import "core:math/rand"
 import "core:math/linalg"
-import vm "core:mem/virtual"
 
 DRAW_CHUNK_COUNT :: 128
 
@@ -50,25 +48,12 @@ DrawContext :: struct {
 	plugin: ^Plugin,
 	initialized: bool,
 	fontState: FontState,
-	arena: vm.Arena,
-	alloc: mem.Allocator,
 	batchesFirst: ^RectDrawBatch,
 	batchesLast: ^RectDrawBatch,
 	totalInstanceCount: u32,
 	clearColor: ColorF32,
+	frame: i64,
 }
-
-// draw_init :: proc(ctx: ^DrawContext) {
-// 	if ctx.initialized do return
-
-// 	err := vm.arena_init_growing(&ctx.arena)
-// 	assert(err == .None)
-// 	ctx.alloc = vm.arena_allocator(&ctx.arena)
-// 	ctx.clearColor = {0, 0, 0, 1}
-
-// 	font_init(&ctx.fontState)
-// 	ctx.initialized = true
-// }
 
 draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
 	ctx.clearColor = color
@@ -90,7 +75,7 @@ draw_get_current_batch :: proc(ctx: ^DrawContext) -> ^RectDrawBatch {
 }
 
 draw_create_new_batch :: proc(ctx: ^DrawContext, params: RectDrawBatchParams) -> ^RectDrawBatch {
-	newBatch := new(RectDrawBatch, allocator = ctx.alloc)
+	newBatch := new(RectDrawBatch, allocator = context.temp_allocator)
 	newBatch.params = params
 	if ctx.batchesLast != nil {
 		ctx.batchesLast.next = newBatch
@@ -105,7 +90,7 @@ draw_create_new_batch :: proc(ctx: ^DrawContext, params: RectDrawBatchParams) ->
 draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, instance: RectInstance) {
 	lastChunk := batch.chunkLast
 	if lastChunk == nil || lastChunk.instanceCount + 1 >= len(lastChunk.instancePool) {
-		newChunk := new(RectDrawChunk, allocator = ctx.alloc)
+		newChunk := new(RectDrawChunk, allocator = context.temp_allocator)
 		if lastChunk != nil do lastChunk.next = newChunk
 		batch.chunkLast = newChunk
 		if batch.chunkFirst == nil do batch.chunkFirst = newChunk
@@ -177,7 +162,6 @@ draw_clear :: proc(ctx: ^DrawContext) {
 	ctx.batchesFirst = nil
 	ctx.batchesLast = nil
 	ctx.totalInstanceCount = 0
-	vm.arena_free_all(&ctx.arena)
 }
 
 draw_submit :: proc(ctx: ^DrawContext) {

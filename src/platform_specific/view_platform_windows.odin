@@ -605,6 +605,36 @@ renderer_get_white_texture :: proc(r: bridge.Renderer) -> bridge.TextureHandle {
 // Frame rendering
 
 renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
+	renderer := cast(^DX11Renderer)r
+	if renderer == nil do return false
+
+	// Detect parent window resize, matching macOS pattern of auto-detecting in the render path
+	parentRect: win.RECT
+	win.GetClientRect(renderer.parentHwnd, &parentRect)
+	parentWidth := i32(parentRect.right - parentRect.left)
+	parentHeight := i32(parentRect.bottom - parentRect.top)
+	if parentWidth > 0 && parentHeight > 0 {
+		dpi := win.GetDpiForWindow(renderer.hwnd)
+		scaleFactor := f32(dpi) / 96.0
+
+		if parentWidth != renderer.physicalWidth || parentHeight != renderer.physicalHeight || scaleFactor != renderer.scaleFactor {
+			// Resize child window to match parent
+			win.SetWindowPos(renderer.hwnd, nil, 0, 0, parentWidth, parentHeight, win.SWP_NOZORDER | win.SWP_NOMOVE)
+
+			renderer.deviceContext->OMSetRenderTargets(0, nil, nil)
+			if renderer.renderTargetView != nil {
+				renderer.renderTargetView->Release()
+				renderer.renderTargetView = nil
+			}
+			renderer.swapChain->ResizeBuffers(0, u32(parentWidth), u32(parentHeight), .UNKNOWN, {})
+			create_render_target_view(renderer)
+
+			logicalWidth := i32(f32(parentWidth) / scaleFactor)
+			logicalHeight := i32(f32(parentHeight) / scaleFactor)
+			resize_internal(renderer, logicalWidth, logicalHeight, scaleFactor)
+		}
+	}
+
 	return true
 }
 

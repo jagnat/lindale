@@ -36,7 +36,6 @@ PARAM_FREQ :: ParamIndex(2)
 param_index: map[string]ParamIndex
 
 param_init :: proc() {
-	if param_index != nil do return
 	param_index = make(map[string]ParamIndex)
 	for desc, i in param_table {
 		param_index[desc.name] = ParamIndex(i)

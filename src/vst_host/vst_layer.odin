@@ -22,6 +22,7 @@ import "base:builtin"
 import "core:log"
 import "core:time"
 import "core:sys/windows"
+import vm "core:mem/virtual"
 
 import "../thirdparty/vst3"
 
@@ -99,6 +100,10 @@ LindaleProcessor :: struct {
 	hostContext: ^vst3.FUnknown,
 	sampleRate: f64,
 	ctx: runtime.Context,
+
+	frameTemp: runtime.Default_Temp_Allocator,
+	sessionArena: vm.Arena,
+	lastGeneration: u64,
 }
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
@@ -162,6 +167,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.paramValues.values[i] = desc.default_value
 	}
 
+	processor.pluginInstance.persistent_allocator = context.allocator
+
+	runtime.default_temp_allocator_init(&processor.frameTemp, 1024 * 1024, processor.pluginInstance.persistent_allocator)
+	processor.pluginInstance.frame_allocator = runtime.default_temp_allocator(&processor.frameTemp)
+	processor.ctx.temp_allocator = processor.pluginInstance.frame_allocator
+
+	sess_err := vm.arena_init_growing(&processor.sessionArena)
+	assert(sess_err == .None)
+	processor.pluginInstance.session_allocator = vm.arena_allocator(&processor.sessionArena)
+
 	processor.pluginInstance.params = &processor.paramValues
 	processor.plugin.instance = &processor.pluginInstance
 	lin.plugin_init(&processor.plugin, {.Audio})
@@ -209,6 +224,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.refCount -= 1
 		if processor.refCount == 0 {
 			log.info("lp_comp_release free")
+			runtime.default_temp_allocator_destroy(&processor.frameTemp)
+			vm.arena_destroy(&processor.sessionArena)
 			free(processor)
 		}
 		return processor.refCount
@@ -482,8 +499,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			}
 		}
 
+		// Check for hot-reload generation change
+		gen := hotload_generation()
+		if gen != processor.lastGeneration {
+			processor.pluginInstance.generation = gen
+			processor.lastGeneration = gen
+		}
+
 		// Invoke hot-loaded audio process function
 		pluginApi.process_audio(&processor.plugin)
+		free_all(context.temp_allocator)
 
 		return vst3.kResultOk
 	}
@@ -546,6 +571,10 @@ LindaleController :: struct {
 	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
 	view: LindaleView,
+
+	frameTemp: runtime.Default_Temp_Allocator,
+	sessionArena: vm.Arena,
+	lastGeneration: u64,
 }
 
 createLindaleController :: proc () -> ^LindaleController {
@@ -599,6 +628,16 @@ createLindaleController :: proc () -> ^LindaleController {
 	for desc, i in controller.paramDescs {
 		controller.paramValues.values[i] = desc.default_value
 	}
+
+	controller.pluginInstance.persistent_allocator = context.allocator
+
+	runtime.default_temp_allocator_init(&controller.frameTemp, 4 * 1024 * 1024, controller.pluginInstance.persistent_allocator)
+	controller.pluginInstance.frame_allocator = runtime.default_temp_allocator(&controller.frameTemp)
+	controller.ctx.temp_allocator = controller.pluginInstance.frame_allocator
+
+	sess_err := vm.arena_init_growing(&controller.sessionArena)
+	assert(sess_err == .None)
+	controller.pluginInstance.session_allocator = vm.arena_allocator(&controller.sessionArena)
 
 	controller.pluginInstance.params = &controller.paramValues
 	controller.hostApi = bridge.HostApi {
@@ -672,6 +711,8 @@ createLindaleController :: proc () -> ^LindaleController {
 		log.info("lc_release")
 		controller.refCount -= 1
 		if controller.refCount == 0 {
+			runtime.default_temp_allocator_destroy(&controller.frameTemp)
+			vm.arena_destroy(&controller.sessionArena)
 			free(controller)
 		}
 		return controller.refCount
@@ -852,6 +893,8 @@ LindaleView :: struct {
 	pluginViewVtable: vst3.IPlugViewVtbl,
 	refCount: u32,
 
+	controller: ^LindaleController,
+
 	plugin: ^lin.Plugin,
 
 	ctx: runtime.Context,
@@ -872,6 +915,13 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	elapsed := time.tick_since(view.plugin.lastDrawTime)
 	if elapsed < MIN_FRAME_INTERVAL do return
 
+	// Check for hot-reload generation change
+	gen := hotload_generation()
+	if gen != view.controller.lastGeneration {
+		view.controller.pluginInstance.generation = gen
+		view.controller.lastGeneration = gen
+	}
+
 	pluginApi.draw(view.plugin)
 
 	free_all(context.temp_allocator)
@@ -881,6 +931,13 @@ repaint_callback :: proc "c" (data: rawptr) {
 	view := cast(^LindaleView)data
 	context = view.ctx
 	if view.renderer == nil do return
+
+	// Check for hot-reload generation change
+	gen := hotload_generation()
+	if gen != view.controller.lastGeneration {
+		view.controller.pluginInstance.generation = gen
+		view.controller.lastGeneration = gen
+	}
 
 	pluginApi.draw(view.plugin)
 
@@ -910,6 +967,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 	view.ctx = context
 	view.plugin = plug
 	view.timer = plat.timer_create(MS_PER_FRAME, timer_proc, view)
+	view.controller = container_of(view, LindaleController, "view")
 
 	return vst3.kResultOk
 
@@ -1008,6 +1066,8 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		plat.renderer_set_repaint_callback(view.renderer, repaint_callback, view)
 
 		controller.pluginInstance.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
+
+		pluginApi.view_attached(view.plugin)
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent

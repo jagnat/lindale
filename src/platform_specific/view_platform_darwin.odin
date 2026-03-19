@@ -233,6 +233,8 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 
 	if parent != nil {
 		parentView := cast(^F.View)(parent)
+		// NSViewWidthSizable | NSViewHeightSizable — track parent size on resize
+		intrinsics.objc_send(nil, view, "setAutoresizingMask:", u64(2 | 16))
 		F.View_addSubview(parentView, view)
 	}
 

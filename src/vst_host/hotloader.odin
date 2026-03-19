@@ -33,6 +33,7 @@ HotloadState :: struct {
 	lindaleHotDll: string,
 	hotloadedDllFmtBuf: [128]u8,
 	hotloadedDllFmt: string,
+	generation: u64,
 }
 @(private="file")
 ctx: HotloadState
@@ -165,6 +166,10 @@ hotload_api :: proc() -> lin.PluginApi {
 	}
 }
 
+hotload_generation :: proc() -> u64 {
+	return intrinsics.atomic_load_explicit(&ctx.generation, .Acquire)
+}
+
 hotload_deinit :: proc() {
 	if ctx.initialized {
 		buf: [128]u8
@@ -275,6 +280,7 @@ _load_api :: proc() -> bool {
 			ctx.suffixes[nextIdx] = ctx.dllSuffix
 			ctx.dllSuffix += 1
 			intrinsics.atomic_store_explicit(&ctx.idx, nextIdx, .Release)
+			intrinsics.atomic_store_explicit(&ctx.generation, ctx.generation + 1, .Release)
 			// no atomic needed, only called from hotload thread besides first load
 			ctx.dllLastModTime = modificationTime
 			return true

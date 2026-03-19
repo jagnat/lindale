@@ -1,6 +1,7 @@
 package bridge
 
 import "core:math/linalg"
+import "core:mem"
 
 // Common types shared between platform layer and lindale
 Vec2f :: linalg.Vector2f32
@@ -101,11 +102,16 @@ RendererSize :: struct {
 // Plugin header allocated by host, passed to hot module.
 // Host owns allocation and lifetime.
 PluginInstance :: struct {
-	params:     ^ParamValues,
-	platform:   ^PlatformApi,
-	host:       ^HostApi,
-	renderer:   Renderer,
+	params: ^ParamValues,
+	platform: ^PlatformApi,
+	host: ^HostApi,
+	renderer: Renderer,
 	font_atlas: TextureHandle,
+
+	persistent_allocator: mem.Allocator,
+	session_allocator: mem.Allocator,
+	frame_allocator: mem.Allocator,
+	generation: u64,
 }
 
 // Platform vtable
