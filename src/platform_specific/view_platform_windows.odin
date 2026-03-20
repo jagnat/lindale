@@ -68,7 +68,25 @@ DX11Renderer :: struct {
 	mouse: ^bridge.MouseState,
 	onRepaint: proc "c" (rawptr),
 	onRepaintData: rawptr,
+	parentOldWndProc: win.WNDPROC,
 	ctx: runtime.Context,
+}
+
+@(private="file")
+PROP_RENDERER: win.LPCWSTR = win.L("LindaleRenderer")
+
+@(private)
+parent_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPARAM, lParam: win.LPARAM) -> win.LRESULT {
+	renderer := transmute(^DX11Renderer)win.GetPropW(hwnd, PROP_RENDERER)
+	if renderer == nil {
+		return win.DefWindowProcW(hwnd, msg, wParam, lParam)
+	}
+
+	if msg == win.WM_SIZE {
+		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+	}
+
+	return win.CallWindowProcW(renderer.parentOldWndProc, hwnd, msg, wParam, lParam)
 }
 
 // Renderer lifecycle
@@ -137,6 +155,10 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	win.SetWindowLongPtrW(renderer.hwnd, win.GWLP_USERDATA, transmute(win.LONG_PTR)renderer)
 
 	log.infof("Created child HWND: %p, parent: %p, size: %dx%d", renderer.hwnd, parentHwnd, renderer.physicalWidth, renderer.physicalHeight)
+
+	// Subclass parent window to catch resize events
+	win.SetPropW(parentHwnd, PROP_RENDERER, transmute(win.HANDLE)renderer)
+	renderer.parentOldWndProc = transmute(win.WNDPROC)win.SetWindowLongPtrW(parentHwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)parent_wndproc)
 
 	featureLevels := []d3d11.FEATURE_LEVEL{._11_0, ._10_1, ._10_0}
 	deviceFlags: d3d11.CREATE_DEVICE_FLAGS = {}
@@ -312,6 +334,12 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 renderer_destroy :: proc(r: bridge.Renderer) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
+
+	// Restore parent wndproc before destroying child
+	if renderer.parentHwnd != nil && renderer.parentOldWndProc != nil {
+		win.SetWindowLongPtrW(renderer.parentHwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)renderer.parentOldWndProc)
+		win.RemovePropW(renderer.parentHwnd, PROP_RENDERER)
+	}
 
 	if renderer.hwnd != nil {
 		win.DestroyWindow(renderer.hwnd)
