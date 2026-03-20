@@ -533,17 +533,14 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 	logicalWidth := i32(bounds.size.width)
 	logicalHeight := i32(bounds.size.height)
 
-	scaleFactor: f32 = 1.0
-	if logicalWidth > 0 && logicalHeight > 0 {
-		scaleFactor = f32(physicalWidth) / f32(logicalWidth)
-	}
+	scaleFactor := get_backing_scale_factor(renderer)
 
 	if logicalWidth != renderer.logicalWidth || logicalHeight != renderer.logicalHeight || scaleFactor != renderer.scaleFactor {
 		renderer.logicalWidth = logicalWidth
 		renderer.logicalHeight = logicalHeight
 		renderer.scaleFactor = scaleFactor
-		renderer.physicalWidth = physicalWidth
-		renderer.physicalHeight = physicalHeight
+		renderer.physicalWidth = i32(f32(logicalWidth) * scaleFactor)
+		renderer.physicalHeight = i32(f32(logicalHeight) * scaleFactor)
 		renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
 		renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
 	}

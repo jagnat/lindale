@@ -162,6 +162,9 @@ draw_clear :: proc(ctx: ^DrawContext) {
 	ctx.batchesFirst = nil
 	ctx.batchesLast = nil
 	ctx.totalInstanceCount = 0
+
+	size := ctx.plugin.instance.platform.get_size(ctx.plugin.instance.renderer)
+	font_set_scale(&ctx.fontState, size.scaleFactor)
 }
 
 draw_submit :: proc(ctx: ^DrawContext) {
