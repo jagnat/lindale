@@ -313,7 +313,8 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.componentCount = 0
 	ctx.root = ui_alloc_component(ctx)
 	ctx.root^ = Component{}
-	ctx.root.calcBounds = RectF32 {0, 0, f32(ctx.plugin.viewBounds.w), f32(ctx.plugin.viewBounds.h)}
+	size := ctx.plugin.instance.platform.get_size(ctx.plugin.instance.renderer)
+	ctx.root.calcBounds = RectF32 {0, 0, f32(size.logicalWidth), f32(size.logicalHeight)}
 	ctx.currentComponent = ctx.root
 }
 

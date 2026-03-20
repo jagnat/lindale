@@ -522,20 +522,31 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 	if renderer == nil do return
 	if renderer.currentDrawable == nil do return
 
-	scaleFactor := get_backing_scale_factor(renderer)
-	drawableSize := renderer.layer->drawableSize()
-	physicalWidth := i32(drawableSize.width)
-	physicalHeight := i32(drawableSize.height)
+	frameBuffer := renderer.currentDrawable->texture()
 
-	// Calculate logical size from physical size
-	logicalWidth := i32(f32(physicalWidth) / scaleFactor)
-	logicalHeight := i32(f32(physicalHeight) / scaleFactor)
+	// Use the actual drawable texture size for the viewport
+	physicalWidth := i32(frameBuffer->width())
+	physicalHeight := i32(frameBuffer->height())
 
-	if logicalWidth != renderer.logicalWidth || logicalHeight != renderer.logicalHeight || scaleFactor != renderer.scaleFactor {
-		resize_internal(renderer, logicalWidth, logicalHeight, scaleFactor)
+	// View bounds are always in points (logical coordinates)
+	bounds := intrinsics.objc_send(F.Rect, renderer.view, "bounds")
+	logicalWidth := i32(bounds.size.width)
+	logicalHeight := i32(bounds.size.height)
+
+	scaleFactor: f32 = 1.0
+	if logicalWidth > 0 && logicalHeight > 0 {
+		scaleFactor = f32(physicalWidth) / f32(logicalWidth)
 	}
 
-	frameBuffer := renderer.currentDrawable->texture()
+	if logicalWidth != renderer.logicalWidth || logicalHeight != renderer.logicalHeight || scaleFactor != renderer.scaleFactor {
+		renderer.logicalWidth = logicalWidth
+		renderer.logicalHeight = logicalHeight
+		renderer.scaleFactor = scaleFactor
+		renderer.physicalWidth = physicalWidth
+		renderer.physicalHeight = physicalHeight
+		renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
+		renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
+	}
 
 	passDesc := MTL.RenderPassDescriptor.renderPassDescriptor()
 	colorAttachment := passDesc->colorAttachments()->object(0)
@@ -547,12 +558,11 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 	renderer.renderEncoder = renderer.commandBuffer->renderCommandEncoderWithDescriptor(passDesc)
 	renderer.renderEncoder->setRenderPipelineState(renderer.pipeline)
 
-	// Physical pixels
 	viewport := MTL.Viewport{
 		originX = 0,
 		originY = 0,
-		width = f64(renderer.physicalWidth),
-		height = f64(renderer.physicalHeight),
+		width = f64(physicalWidth),
+		height = f64(physicalHeight),
 		znear = 0,
 		zfar = 1,
 	}

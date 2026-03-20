@@ -1045,7 +1045,6 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		controller := container_of(view, LindaleController, "view")
 
 		view.renderer = plat.renderer_create(parent, 800, 600)
-		plat.renderer_resize(view.renderer, 800, 600)
 
 		controller.platformApi = bridge.PlatformApi{
 			create_texture = plat.renderer_create_texture,
