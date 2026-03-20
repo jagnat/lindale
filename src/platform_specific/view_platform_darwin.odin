@@ -11,6 +11,17 @@ import "base:intrinsics"
 
 import "../bridge"
 
+foreign import ObjCRuntime "system:objc"
+
+ObjC_Super :: struct {
+	receiver:    ^intrinsics.objc_object,
+	super_class: ^intrinsics.objc_class,
+}
+
+foreign ObjCRuntime {
+	objc_msgSendSuper2 :: proc "c" (super: rawptr, op: ^intrinsics.objc_selector, #c_vararg args: ..any) -> ^intrinsics.objc_object ---
+}
+
 // Minimal binding for NSTrackingArea (not in Odin's vendor libs)
 @(objc_class="NSTrackingArea")
 NSTrackingArea :: struct { using _: intrinsics.objc_object }
@@ -172,6 +183,15 @@ LindaleMetalView_scrollWheel :: proc (self: ^LindaleMetalView, event: ^F.Event) 
 	dy := intrinsics.objc_send(F.Float, event, "scrollingDeltaY")
 	self.mouse.scrollDelta.x += f32(dx)
 	self.mouse.scrollDelta.y += f32(dy)
+}
+
+@(objc_type=LindaleMetalView, objc_implement, objc_selector="setFrameSize:")
+LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, newSize: F.Size) {
+	cls := intrinsics.objc_send(^intrinsics.objc_class, self, "class")
+	sup := ObjC_Super{auto_cast self, cls}
+	sel := intrinsics.objc_find_selector("setFrameSize:")
+	objc_msgSendSuper2(&sup, sel, newSize)
+	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="updateTrackingAreas")
@@ -539,8 +559,8 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 		renderer.logicalWidth = logicalWidth
 		renderer.logicalHeight = logicalHeight
 		renderer.scaleFactor = scaleFactor
-		renderer.physicalWidth = i32(f32(logicalWidth) * scaleFactor)
-		renderer.physicalHeight = i32(f32(logicalHeight) * scaleFactor)
+		renderer.physicalWidth = physicalWidth
+		renderer.physicalHeight = physicalHeight
 		renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
 		renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
 	}
