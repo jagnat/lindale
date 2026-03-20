@@ -90,7 +90,6 @@ plugin_destroy :: proc(plug: ^Plugin) {
 
 }
 
-@(private)
 plugin_view_attached :: proc(plug: ^Plugin) {
 	if plug.draw == nil {
 		plug.draw = new(DrawContext)

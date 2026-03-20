@@ -1066,7 +1066,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 		controller.pluginInstance.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 
-		pluginApi.view_attached(view.plugin)
+		lin.plugin_view_attached(view.plugin)
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent
