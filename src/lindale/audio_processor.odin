@@ -27,6 +27,11 @@ AudioProcessorContext :: struct {
 
 	sampleRate: f64,
 	projectTimeSamples: i64,
+}
 
-	squarePhase: i32,
+channel_count :: proc(buf: AudioBufferGroup) -> int {
+	if buf.sampleSize == .F32 {
+		return len(buf.buffers32)
+	}
+	return len(buf.buffers64)
 }

@@ -96,6 +96,8 @@ LindaleProcessor :: struct {
 	pluginInstance: bridge.PluginInstance,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
+	bypassParamIdx: int,
+	bypassed: bool,
 
 	hostContext: ^vst3.FUnknown,
 	sampleRate: f64,
@@ -104,6 +106,13 @@ LindaleProcessor :: struct {
 	frameTemp: runtime.Default_Temp_Allocator,
 	sessionArena: vm.Arena,
 	lastGeneration: u64,
+}
+
+bypass_param_desc :: bridge.ParamDescriptor {
+	name = "Bypass", short_name = "Byp",
+	min = 0.0, max = 1.0, default_value = 0.0,
+	step_count = 1, unit = .Normalized,
+	flags = {.Automatable},
 }
 
 createLindaleProcessor :: proc() -> ^LindaleProcessor {
@@ -159,9 +168,12 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = get_mutex_logger(.Processor)
 
-	// Init params
+	// Init params, and append bypass parameter
 	descs := pluginApi.query_parameter_layout()
-	processor.paramDescs = slice.clone(descs)
+	processor.paramDescs = make([]bridge.ParamDescriptor, len(descs) + 1)
+	copy(processor.paramDescs, descs)
+	processor.bypassParamIdx = len(descs)
+	processor.paramDescs[processor.bypassParamIdx] = bypass_param_desc
 	processor.paramValues.values = make([]f64, len(processor.paramDescs))
 	for desc, i in processor.paramDescs {
 		processor.paramValues.values[i] = desc.default_value
@@ -385,7 +397,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return vst3.kNotImplemented
 	}
 	lp_ap_getLatencySamples :: proc "system" (this: rawptr) -> u32 {
-		return 0
+		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = processor.ctx
+		return pluginApi.get_latency_samples(&processor.plugin)
 	}
 	lp_ap_setupProcessing :: proc "system" (this: rawptr, setup: ^vst3.ProcessSetup) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
@@ -421,6 +435,11 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			audioContext.projectTimeSamples = data.processContext.projectTimeSamples
 		}
 
+		// Clear stale paramChanges slices (they pointed into previous call's temp memory)
+		for i in 0 ..< len(audioContext.paramChanges) {
+			audioContext.paramChanges[i] = nil
+		}
+
 		// Fetch parameter updates: convert normalized host values to plain before storing
 		if data.inputParameterChanges != nil && data.inputParameterChanges.lpVtbl != nil {
 			paramCount := data.inputParameterChanges->getParameterCount()
@@ -429,6 +448,20 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				if paramQueue != nil && paramQueue.lpVtbl != nil {
 					paramIdx := int(paramQueue->getParameterId())
 					if paramIdx < 0 || paramIdx >= len(processor.paramDescs) do continue
+
+					// Bypass param is handled by the static layer, not forwarded
+					if paramIdx == processor.bypassParamIdx {
+						pointCount := paramQueue->getPointCount()
+						if pointCount > 0 {
+							sampleOffs: i32
+							normParam: f64
+							paramQueue->getPoint(pointCount - 1, &sampleOffs, &normParam)
+							processor.bypassed = normParam > 0.5
+							processor.paramValues.values[paramIdx] = normParam > 0.5 ? 1.0 : 0.0
+						}
+						continue
+					}
+
 					pointCount := paramQueue->getPointCount()
 					if pointCount > 0 {
 						actualCount := 0
@@ -504,16 +537,37 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		if gen != processor.lastGeneration {
 			processor.pluginInstance.generation = gen
 			processor.lastGeneration = gen
+			// Reset session arena so hot-loaded code reallocates state
+			// with the correct struct layout
+			vm.arena_free_all(&processor.sessionArena)
+			processor.plugin.state = nil
 		}
 
-		// Invoke hot-loaded audio process function
+		// Bypass: copy input to output, skip processing
+		if processor.bypassed {
+			for i in 0 ..< min(numInputs, numOutputs) {
+				input := inputs[i]
+				output := outputs[i]
+				channels := min(input.numChannels, output.numChannels)
+				for c in 0 ..< channels {
+					for s in 0 ..< numSamples {
+						output.channelBuffers32[c][s] = input.channelBuffers32[c][s]
+					}
+				}
+			}
+			free_all(context.temp_allocator)
+			return vst3.kResultOk
+		}
+
 		pluginApi.process_audio(&processor.plugin)
 		free_all(context.temp_allocator)
 
 		return vst3.kResultOk
 	}
 	lp_ap_getTailSamples :: proc "system" (this: rawptr) -> u32 {
-		return 0
+		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
+		context = processor.ctx
+		return pluginApi.get_tail_samples(&processor.plugin)
 	}
 
 	// IProcessContextRequirements
@@ -567,6 +621,7 @@ LindaleController :: struct {
 	hostApi: bridge.HostApi,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
+	bypassParamIdx: int,
 
 	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
@@ -621,9 +676,12 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.ctx = context
 	controller.ctx.logger = get_mutex_logger(.Controller)
 
-	// Init params
+	// Init params, and append bypass parameter
 	descs := pluginApi.query_parameter_layout()
-	controller.paramDescs = slice.clone(descs)
+	controller.paramDescs = make([]bridge.ParamDescriptor, len(descs) + 1)
+	copy(controller.paramDescs, descs)
+	controller.bypassParamIdx = len(descs)
+	controller.paramDescs[controller.bypassParamIdx] = bypass_param_desc
 	controller.paramValues.values = make([]f64, len(controller.paramDescs))
 	for desc, i in controller.paramDescs {
 		controller.paramValues.values[i] = desc.default_value
@@ -758,12 +816,17 @@ createLindaleController :: proc () -> ^LindaleController {
 
 		desc := controller.paramDescs[paramIndex]
 
+		flags := vst3.ParameterFlagSet{.kCanAutomate}
+		if int(paramIndex) == controller.bypassParamIdx {
+			flags += {.kIsBypass}
+		}
+
 		info^ = vst3.ParameterInfo {
 			id = u32(paramIndex),
 			stepCount = desc.step_count,
 			defaultNormalizedValue = bridge.param_to_normalized(desc.default_value, desc),
 			unitId = vst3.kRootUnitId,
-			flags = {.kCanAutomate},
+			flags = flags,
 		}
 
 		utf16.encode_string(info.title[:], desc.name)
@@ -1130,7 +1193,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
-		log.info("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
+		log.debug("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
 		pluginApi.view_resized(view.plugin, rect)
 		return vst3.kResultOk
 	}
@@ -1157,16 +1220,16 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
-		log.info("lv_checkSizeConstraint r:", rect.right, "l:", rect.left, "b:", rect.bottom, "t:", rect.top)
+		log.debug("lv_checkSizeConstraint r:", rect.right, "l:", rect.left, "b:", rect.bottom, "t:", rect.top)
 		if rect.right - rect.left < 800 {
 			rect.right = 800
 			rect.left = 0
-			log.info("adjusting w to 800")
+			log.info("lv_checkSizeConstraint: adjusting w to 800")
 		}
 		if rect.bottom - rect.top < 600 {
 			rect.bottom = 600
 			rect.top = 0
-			log.info("adjusting h to 600")
+			log.info("lv_checkSizeConstraint: adjusting h to 600")
 		}
 		return vst3.kResultOk
 	}

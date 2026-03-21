@@ -6,38 +6,12 @@ import "core:testing"
 
 ParamIndex :: distinct int
 
-PARAM_GAIN :: ParamIndex(0)
-PARAM_MIX  :: ParamIndex(1)
-PARAM_FREQ :: ParamIndex(2)
-
-// Values are in plain units (dB, %, Hz).
-@(rodata) param_table := [?]b.ParamDescriptor {
-	{
-		name = "Gain", short_name = "Gain",
-		min = -60.0, max = 60.0, default_value = 0.0,
-		step_count = 0, unit = .Decibel,
-		flags = {.Automatable},
-	},
-	{
-		name = "Mix", short_name = "Mix",
-		min = 0.0, max = 100.0, default_value = 0.0,
-		step_count = 0, unit = .Percentage,
-		flags = {.Automatable},
-	},
-	{
-		name = "Freq", short_name = "Freq",
-		min = 20.0, max = 22000.0, default_value = 432.0,
-		step_count = 0, unit = .Hertz,
-		flags = {.Automatable},
-	},
-}
-
 // Name-to-index lookup map
 param_index: map[string]ParamIndex
 
-param_init :: proc() {
+param_init :: proc(params: []b.ParamDescriptor) {
 	param_index = make(map[string]ParamIndex)
-	for desc, i in param_table {
+	for desc, i in params {
 		param_index[desc.name] = ParamIndex(i)
 	}
 }

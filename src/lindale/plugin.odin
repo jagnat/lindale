@@ -1,120 +1,107 @@
 package lindale
 
-import "base:runtime"
-import "core:fmt"
 import "core:log"
-import "core:math/linalg"
 import "core:math"
-import "core:math/rand"
+import "core:mem"
 import "core:time"
-import dif "../thirdparty/uFFT_DIF"
-import dit "../thirdparty/uFFT_DIT"
-
 import b "../bridge"
+import dsp "../dsp"
 
-Plugin :: struct {
-	instance: ^b.PluginInstance,
+// State
 
-	audioProcessor: ^AudioProcessorContext,
-
-	draw: ^DrawContext,
-	ui:   ^UIContext,
-	mouse: b.MouseState,
-
-	viewBounds:    RectI32,
-	inDraw:        bool,
-	lastDrawTime:  time.Tick,
+PluginState :: struct {
+	lines:   [2]dsp.DelayLine,
+	buffers: [2][]dsp.Sample,
 }
 
-PluginComponentSet :: bit_set[PluginComponent]
-PluginComponent :: enum {
-	Audio,
-	Controller,
+// Parameters
+
+PARAM_DELAY_TIME :: ParamIndex(0)
+PARAM_FEEDBACK   :: ParamIndex(1)
+PARAM_MIX        :: ParamIndex(2)
+PARAM_GAIN       :: ParamIndex(3)
+
+@(rodata) param_table := [?]b.ParamDescriptor {
+	{
+		name = "Delay Time", short_name = "Delay",
+		min = 1.0, max = 2000.0, default_value = 250.0,
+		step_count = 0, unit = .Milliseconds,
+		flags = {.Automatable},
+	},
+	{
+		name = "Feedback", short_name = "Fdbk",
+		min = 0.0, max = 99.0, default_value = 30.0,
+		step_count = 0, unit = .Percentage,
+		flags = {.Automatable},
+	},
+	{
+		name = "Mix", short_name = "Mix",
+		min = 0.0, max = 100.0, default_value = 50.0,
+		step_count = 0, unit = .Percentage,
+		flags = {.Automatable},
+	},
+	{
+		name = "Gain", short_name = "Gain",
+		min = -60.0, max = 12.0, default_value = 0.0,
+		step_count = 0, unit = .Decibel,
+		flags = {.Automatable},
+	},
 }
 
-PluginApi :: struct {
-	process_audio:          proc(plug: ^Plugin),
-	draw:                   proc(plug: ^Plugin),
-	view_attached:          proc(plug: ^Plugin),
-	view_removed:           proc(plug: ^Plugin),
-	view_resized:           proc(plug: ^Plugin, rect: RectI32),
-	query_parameter_layout: proc() -> []b.ParamDescriptor,
+MAX_DELAY_MS :: 2000.0
+
+// Descriptor
+
+get_plugin_descriptor :: proc() -> PluginDescriptor {
+	return {
+		name          = "Delay",
+		plugin_type   = .Effect,
+		params        = param_table[:],
+		max_channels  = 2,
+		latency       = 0,
+		tail          = u32(MAX_DELAY_MS * 48000.0 / 1000.0),
+		has_wet_dry   = true,
+		wet_dry_param = PARAM_MIX,
+	}
 }
 
-fallbackApi :: PluginApi {
-	process_audio          = plugin_process_audio,
-	draw                   = plugin_draw,
-	view_attached          = plugin_view_attached,
-	view_removed           = plugin_view_removed,
-	view_resized           = plugin_view_resized,
-	query_parameter_layout = plugin_query_parameter_layout,
+// Lifecycle
+
+plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allocator) {
+	max_samples := int(math.ceil(MAX_DELAY_MS * f64(sample_rate) / 1000.0))
+	for c in 0 ..< 2 {
+		state.buffers[c] = make([]dsp.Sample, max_samples, alloc)
+		dsp.delay_init(&state.lines[c], state.buffers[c])
+	}
 }
 
-HOT_DLL :: #config(HOT_DLL, false)
+// Audio
 
-when HOT_DLL {
-	@(export) GetPluginApi :: proc() -> PluginApi {
-		return PluginApi {
-			process_audio          = plugin_process_audio,
-			draw                   = plugin_draw,
-			view_attached          = plugin_view_attached,
-			view_removed           = plugin_view_removed,
-			view_resized           = plugin_view_resized,
-			query_parameter_layout = plugin_query_parameter_layout,
+plugin_process_audio :: proc(plug: ^Plugin) {
+	ctx := process_begin(plug)
+	if ctx == nil do return
+
+	for s in 0 ..< ctx.num_samples {
+		process_advance_params(ctx, s)
+
+		delay_ms := smoothed_next(ctx.params, PARAM_DELAY_TIME)
+		feedback := smoothed_next(ctx.params, PARAM_FEEDBACK) / 100.0
+		gain := dsp.db_to_linear(smoothed_next(ctx.params, PARAM_GAIN))
+
+		delay_samples := delay_ms * ctx.sample_rate / 1000.0
+
+		for c in 0 ..< ctx.num_channels {
+			dry := ctx.inputs[c][s]
+			delayed := dsp.delay_read_frac(&plug.state.lines[c], delay_samples)
+			dsp.delay_write(&plug.state.lines[c], dry + delayed * feedback)
+			ctx.outputs[c][s] = delayed * gain
 		}
 	}
+
+	process_end(ctx)
 }
 
-plugin_query_parameter_layout :: proc() -> []b.ParamDescriptor {
-	return param_table[:]
-}
-
-// @(private)
-plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
-	if .Audio in components {
-		if plugin.audioProcessor == nil {
-			plugin.audioProcessor = new(AudioProcessorContext)
-		}
-		if plugin.audioProcessor.paramChanges == nil {
-			plugin.audioProcessor.paramChanges = make([][]ParameterChange, len(param_table))
-		}
-	}
-
-	if .Controller in components {
-		param_init()
-	}
-}
-
-@(private)
-plugin_destroy :: proc(plug: ^Plugin) {
-
-}
-
-plugin_view_attached :: proc(plug: ^Plugin) {
-	if plug.draw == nil {
-		plug.draw = new(DrawContext)
-		plug.draw.plugin = plug
-		plug.draw.clearColor = {0, 0, 0, 1}
-		font_init(&plug.draw.fontState)
-		plug.draw.initialized = true
-	}
-	if plug.ui == nil {
-		plug.ui = new(UIContext)
-		plug.ui.plugin = plug
-	}
-}
-
-@(private)
-plugin_view_removed :: proc(plug: ^Plugin) {
-	if plug.draw != nil {
-		font_invalidate_texture(&plug.draw.fontState)
-	}
-}
-
-@(private)
-plugin_view_resized :: proc(plug: ^Plugin, rect: RectI32) {
-	plug.viewBounds = rect
-}
+// UI
 
 plugin_draw :: proc(plug: ^Plugin) {
 	if plug.draw == nil || plug.ui == nil do return
@@ -132,65 +119,15 @@ plugin_draw :: proc(plug: ^Plugin) {
 	draw_set_clear_color(plug.draw, {0.08, 0.08, 0.1, 1.0})
 
 	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}) {
-
-			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10,) {
-				if ui_button(plug.ui, "TEST") {
-				}
-				ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
-				ui_slider_param_labeled(plug.ui, "Mix", PARAM_MIX)
-				ui_slider_param_labeled(plug.ui, "Freq", PARAM_FREQ)
-			}
-
-			if ui_panel(plug.ui, dir = .HORIZONTAL,) {
-				ui_button(plug.ui, "Play")
-				ui_button(plug.ui, "Stop")
-				ui_button(plug.ui, "Record")
-			}
+		if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10) {
+			ui_slider_param_labeled(plug.ui, "Delay", PARAM_DELAY_TIME)
+			ui_slider_param_labeled(plug.ui, "Feedback", PARAM_FEEDBACK)
+			ui_slider_param_labeled(plug.ui, "Mix", PARAM_MIX)
+			ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
 		}
 	}
 
 	plug.draw.frame += 1
 
 	draw_submit(plug.draw)
-}
-
-@(private)
-plugin_process_audio :: proc(plug: ^Plugin) {
-	audioContext := plug.audioProcessor
-	if audioContext == nil do return
-	if plug.instance == nil || plug.instance.params == nil do return
-
-	freq := plug.instance.params.values[PARAM_FREQ]
-	samplesPerHalfPeriod := cast(i32)(audioContext.sampleRate / (2 * freq))
-
-	mix := f32(plug.instance.params.values[PARAM_MIX] / 100.0)
-
-	outputs := audioContext.outputBuffers
-	inputs := audioContext.inputBuffers
-
-	if len(outputs) < 1 do return
-
-	// Generate output buffer, iterate samples TODO: should be done channel first?
-	for s in 0..< len(outputs[0].buffers32[0]) {
-		AMPLITUDE :: 0.01
-		squareVal : f32 = audioContext.squarePhase < samplesPerHalfPeriod ? AMPLITUDE : -AMPLITUDE
-		audioContext.squarePhase += 1
-		if audioContext.squarePhase >= 2 * samplesPerHalfPeriod do audioContext.squarePhase = 0
-
-		for i in 0 ..< len(outputs) {
-			outputBufs := outputs[i].buffers32
-			numChannels := len(outputs[i].buffers32)
-			inputBufs := inputs[i].buffers32
-
-			for c in 0..<numChannels {
-				inVal : f32 = 0
-				if len(inputs) > 0 && len(inputs[i].buffers32) > c {
-					inVal = inputs[i].buffers32[c][s]
-				}
-				out := outputBufs[c]
-				out[s] = mix * squareVal + (1 - mix) * inVal
-			}
-		}
-	}
 }

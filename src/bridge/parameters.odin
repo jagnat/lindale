@@ -8,6 +8,7 @@ ParamUnit :: enum {
 	Decibel,
 	Hertz,
 	Percentage,
+	Milliseconds,
 	Normalized,
 	None,
 }
@@ -16,6 +17,7 @@ ParamUnit :: enum {
 	.Decibel = "dB",
 	.Hertz = "Hz",
 	.Percentage = "%",
+	.Milliseconds = "ms",
 	.Normalized = "",
 	.None = "",
 }
@@ -26,7 +28,6 @@ ParamFlag :: enum {
 	Wrap_Around,
 	List,
 	Hidden,
-	Bypass,
 }
 ParamFlagSet :: bit_set[ParamFlag]
 
@@ -53,6 +54,8 @@ param_to_normalized :: proc(value: f64, desc: ParamDescriptor) -> f64 {
 		return math.remap(math.ln_f64(value), math.ln_f64(desc.min), math.ln_f64(desc.max), 0, 1)
 	case .Percentage:
 		return value / 100.0
+	case .Milliseconds:
+		return math.remap(value, desc.min, desc.max, 0, 1)
 	case .Normalized:
 		return value
 	case .None:
@@ -69,6 +72,8 @@ normalized_to_param :: proc(norm: f64, desc: ParamDescriptor) -> f64 {
 		return math.exp_f64(math.remap(norm, 0, 1, math.ln_f64(desc.min), math.ln_f64(desc.max)))
 	case .Percentage:
 		return norm * 100.0
+	case .Milliseconds:
+		return math.remap(norm, 0, 1, desc.min, desc.max)
 	case .Normalized:
 		return norm
 	case .None:
@@ -81,7 +86,7 @@ param_format_value :: proc(value: f64, desc: ParamDescriptor, buf: []u8) -> stri
 	switch desc.unit {
 	case .Decibel, .Normalized, .None:
 		return fmt.bprintf(buf, "{:.2f}", value)
-	case .Hertz, .Percentage:
+	case .Hertz, .Percentage, .Milliseconds:
 		return fmt.bprintf(buf, "{:.0f}", value)
 	}
 	return fmt.bprintf(buf, "{:.2f}", value)

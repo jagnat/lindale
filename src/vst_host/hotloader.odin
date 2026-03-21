@@ -88,10 +88,36 @@ hotload_api :: proc() -> lin.PluginApi {
 		view_removed           = buffer_view_removed,
 		view_resized           = buffer_view_resized,
 		query_parameter_layout = buffer_query_parameter_layout,
+		get_latency_samples    = buffer_get_latency_samples,
+		get_tail_samples       = buffer_get_tail_samples,
 	}
 
 	return api
 
+	buffer_get_latency_samples :: proc(plug: ^lin.Plugin) -> u32 {
+		when !HOT_DLL {
+			return lin.fallbackApi.get_latency_samples(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_latency_samples == nil {
+				return lin.fallbackApi.get_latency_samples(plug)
+			} else {
+				return ctx.apis[idx].get_latency_samples(plug)
+			}
+		}
+	}
+	buffer_get_tail_samples :: proc(plug: ^lin.Plugin) -> u32 {
+		when !HOT_DLL {
+			return lin.fallbackApi.get_tail_samples(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_tail_samples == nil {
+				return lin.fallbackApi.get_tail_samples(plug)
+			} else {
+				return ctx.apis[idx].get_tail_samples(plug)
+			}
+		}
+	}
 	buffer_query_parameter_layout :: proc() -> []b.ParamDescriptor {
 		when !HOT_DLL {
 			return lin.fallbackApi.query_parameter_layout()
