@@ -64,6 +64,7 @@ hotload_init :: proc() {
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
 	ctx.dllSuffix = 1
+	ctx.generation = 1
 
 	// if !_load_api() do return
 
