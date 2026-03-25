@@ -38,7 +38,7 @@ LindalePluginFactory :: struct {
 	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
 	ctx: runtime.Context,
-	// api: lin.PluginApi,
+	desc: lin.PluginDescriptor,
 }
 
 pluginFactory: LindalePluginFactory
@@ -272,8 +272,17 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
 		log.info("lp_comp_getBusCount")
+		is_instrument := pluginFactory.desc.plugin_type == .Instrument
 		if type == .Audio {
-			if dir == .Input || dir == .Output {
+			if dir == .Input {
+				return is_instrument ? 0 : 1
+			}
+			if dir == .Output {
+				return 1
+			}
+		}
+		if type == .Event {
+			if dir == .Input && is_instrument {
 				return 1
 			}
 		}
@@ -290,18 +299,32 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 		log.info("lp_comp_getBusInfo")
 
-		if type != .Audio || index != 0 {
-			return vst3.kInvalidArgument
+		if index != 0 do return vst3.kInvalidArgument
+
+		is_instrument := pluginFactory.desc.plugin_type == .Instrument
+
+		if type == .Audio {
+			if is_instrument && dir == .Input do return vst3.kInvalidArgument
+			bus.mediaType = type
+			bus.direction = dir
+			bus.channelCount = 2
+			utf16.encode_string(bus.name[:], "Main")
+			bus.busType = .Main
+			bus.flags = 0
+			return vst3.kResultOk
 		}
 
-		bus.mediaType = type
-		bus.direction = dir
-		bus.channelCount = 2
-		utf16.encode_string(bus.name[:], "Main")
-		bus.busType = .Main
-		bus.flags = 0
+		if type == .Event && dir == .Input && is_instrument {
+			bus.mediaType = type
+			bus.direction = dir
+			bus.channelCount = 1
+			utf16.encode_string(bus.name[:], "Event In")
+			bus.busType = .Main
+			bus.flags = 0
+			return vst3.kResultOk
+		}
 
-		return vst3.kResultOk
+		return vst3.kInvalidArgument
 	}
 	lp_comp_getRoutingInfo :: proc "system" (this: rawptr, inInfo, outInfo: ^vst3.RoutingInfo) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
@@ -313,6 +336,11 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		return vst3.kResultOk
 	}
 	lp_comp_setActive :: proc "system" (this: rawptr, state: vst3.TBool) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
+		context = processor.ctx
+		if state == 0 && pluginApi.reset != nil {
+			pluginApi.reset(&processor.plugin)
+		}
 		return vst3.kResultOk
 	}
 	lp_comp_setState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
@@ -407,6 +435,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		log.info("lp_ap_setupProcessing")
 
 		processor.sampleRate = setup.sampleRate
+		if pluginApi.setup_processing != nil {
+			pluginApi.setup_processing(&processor.plugin, setup.sampleRate, setup.maxSamplesPerBlock)
+		}
 
 		return vst3.kResultOk
 	}
@@ -485,6 +516,84 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			}
 		}
 
+		// Translate VST3 events to bridge event types
+		audioContext.events = nil
+		if data.inputEvents != nil && data.inputEvents.lpVtbl != nil {
+			eventCount := data.inputEvents->getEventCount()
+			if eventCount > 0 {
+				bridgeEvents := make([]bridge.Event, eventCount, context.temp_allocator)
+				actualCount: i32 = 0
+				for i in 0 ..< eventCount {
+					vst3Event: vst3.Event
+					if data.inputEvents->getEvent(i, &vst3Event) != vst3.kResultOk do continue
+					// VST3 event type constants: 0=NoteOn, 1=NoteOff, 65535=LegacyMIDICCOut
+					switch vst3Event.type {
+					case 0: // kNoteOnEvent
+						bridgeEvents[actualCount] = {
+							sample_offset = vst3Event.sampleOffset,
+							kind = .NoteOn,
+						}
+						bridgeEvents[actualCount].note_on = {
+							note_id = vst3Event.noteOn.noteId,
+							channel = vst3Event.noteOn.channel,
+							pitch = vst3Event.noteOn.pitch,
+							tuning = vst3Event.noteOn.tuning,
+							velocity = vst3Event.noteOn.velocity,
+						}
+						actualCount += 1
+					case 1: // kNoteOffEvent
+						bridgeEvents[actualCount] = {
+							sample_offset = vst3Event.sampleOffset,
+							kind = .NoteOff,
+						}
+						bridgeEvents[actualCount].note_off = {
+							note_id = vst3Event.noteOff.noteId,
+							channel = vst3Event.noteOff.channel,
+							pitch = vst3Event.noteOff.pitch,
+							velocity = vst3Event.noteOff.velocity,
+						}
+						actualCount += 1
+					case 65535: // kLegacyMIDICCOutEvent
+						// TODO: Some hosts send pitch bend via NoteExpression instead of legacy MIDI.
+						// May need IMidiMapping or NoteExpressionValueEvent for full host compatibility.
+						if vst3Event.midiCCOut.controlNumber == 128 {
+							// Pitch bend — pack 14-bit value from two 7-bit bytes
+							raw := i32(u8(vst3Event.midiCCOut.value)) | (i32(u8(vst3Event.midiCCOut.value2)) << 7)
+							normalized := clamp(f32(raw - 8192) / 8192.0, -1, 1)
+							bridgeEvents[actualCount] = {
+								sample_offset = vst3Event.sampleOffset,
+								kind = .PitchBend,
+							}
+							bridgeEvents[actualCount].pitch_bend = {
+								channel = i16(vst3Event.midiCCOut.channel),
+								value = normalized,
+							}
+							actualCount += 1
+						} else {
+							bridgeEvents[actualCount] = {
+								sample_offset = vst3Event.sampleOffset,
+								kind = .CC,
+							}
+							bridgeEvents[actualCount].cc = {
+								channel = i16(vst3Event.midiCCOut.channel),
+								controller = i16(vst3Event.midiCCOut.controlNumber),
+								value = f32(u8(vst3Event.midiCCOut.value)) / 127.0,
+							}
+							actualCount += 1
+						}
+					case:
+						// Skip unrecognized event types
+					}
+				}
+				if numSamples > 0 {
+					for i in 0 ..< actualCount {
+						bridgeEvents[i].sample_offset = clamp(bridgeEvents[i].sample_offset, 0, i32(numSamples - 1))
+					}
+					audioContext.events = bridgeEvents[:actualCount]
+				}
+			}
+		}
+
 		audioContext.inputBuffers = groups[:numInputs]
 		audioContext.outputBuffers = groups[numInputs:numInputs + numOutputs]
 
@@ -543,7 +652,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			processor.plugin.state = nil
 		}
 
-		// Bypass: copy input to output, skip processing
+		// Bypass: copy input to output where possible, zero the rest
 		if processor.bypassed {
 			for i in 0 ..< min(numInputs, numOutputs) {
 				input := inputs[i]
@@ -552,6 +661,19 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				for c in 0 ..< channels {
 					for s in 0 ..< numSamples {
 						output.channelBuffers32[c][s] = input.channelBuffers32[c][s]
+					}
+				}
+				for c in channels ..< output.numChannels {
+					for s in 0 ..< numSamples {
+						output.channelBuffers32[c][s] = 0
+					}
+				}
+			}
+			for i in numInputs ..< numOutputs {
+				output := outputs[i]
+				for c in 0 ..< output.numChannels {
+					for s in 0 ..< numSamples {
+						output.channelBuffers32[c][s] = 0
 					}
 				}
 			}
@@ -1306,7 +1428,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				copy(info.category[:], "Component Controller Class")
 			}
 
-			copy(info.name[:], "Lindale")
+			copy(info.name[:], pluginFactory.desc.name)
 
 			return vst3.kResultOk
 		}
@@ -1379,6 +1501,9 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				return vst3.kInvalidArgument
 			}
 
+			desc := pluginFactory.desc
+			subcat := desc.plugin_type == .Instrument ? "Instrument" : "Fx"
+
 			info^ = vst3.PClassInfo2 {
 				cid = (index == 0? lindaleProcessorCid : lindaleControllerCid),
 				cardinality = vst3.kManyInstances,
@@ -1397,10 +1522,10 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				copy(info.category[:], "Component Controller Class")
 			}
 
-			copy(info.name[:], "Lindale")
-			copy(info.subCategories[:], "Fx")
-			copy(info.vendor[:], "JagI")
-			copy(info.version[:], "0.0.1")
+			copy(info.name[:], desc.name)
+			copy(info.subCategories[:], subcat)
+			copy(info.vendor[:], desc.vendor)
+			copy(info.version[:], desc.version)
 			copy(info.sdkVersion[:], "VST 3.7.0")
 
 			return vst3.kResultOk
@@ -1413,6 +1538,10 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 				log.error("getClassInfoU index >= 2")
 				return vst3.kInvalidArgument
 			}
+
+			desc := pluginFactory.desc
+			subcat := desc.plugin_type == .Instrument ? "Instrument" : "Fx"
+
 			info^ = vst3.PClassInfoW {
 				cid = (index == 0? lindaleProcessorCid : lindaleControllerCid),
 				cardinality = vst3.kManyInstances,
@@ -1430,11 +1559,11 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			} else {
 				copy(info.category[:], "Component Controller Class")
 			}
-			
-			utf16.encode_string(info.name[:], "Lindale")
-			copy(info.subCategories[:], "Fx")
-			utf16.encode_string(info.vendor[:], "JagI")
-			utf16.encode_string(info.version[:], "0.0.1")
+
+			utf16.encode_string(info.name[:], desc.name)
+			copy(info.subCategories[:], subcat)
+			utf16.encode_string(info.vendor[:], desc.vendor)
+			utf16.encode_string(info.version[:], desc.version)
 			utf16.encode_string(info.sdkVersion[:], "VST 3.7.0")
 
 			return vst3.kResultOk
@@ -1464,6 +1593,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 
 		pluginFactory.ctx = context
 		pluginApi = hotload_api()
+		pluginFactory.desc = pluginApi.get_plugin_descriptor()
 		pluginFactory.initialized = true
 	}
 

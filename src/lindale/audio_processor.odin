@@ -1,5 +1,7 @@
 package lindale
 
+import b "../bridge"
+
 SampleSize :: enum {
 	F32,
 	F64,
@@ -24,6 +26,7 @@ AudioProcessorContext :: struct {
 	outputBuffers: []AudioBufferGroup,
 
 	paramChanges: [][]ParameterChange,
+	events: []b.Event,
 
 	sampleRate: f64,
 	projectTimeSamples: i64,

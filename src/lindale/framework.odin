@@ -10,30 +10,32 @@ PluginType :: enum {
 }
 
 PluginDescriptor :: struct {
-	name:          string,
-	plugin_type:   PluginType,
-	params:        []b.ParamDescriptor,
-	max_channels:  int,
-	latency:       u32,
-	tail:          u32,
-	has_wet_dry:   bool,
+	name: string,
+	vendor: string,
+	version:string,
+	plugin_type: PluginType,
+	params: []b.ParamDescriptor,
+	max_channels: int,
+	latency: u32,
+	tail: u32,
+	has_wet_dry: bool,
 	wet_dry_param: ParamIndex,
 }
 
 Plugin :: struct {
-	instance:       ^b.PluginInstance,
-	state:          ^PluginState,
+	instance: ^b.PluginInstance,
+	state: ^PluginState,
 	audioProcessor: ^AudioProcessorContext,
-	process_ctx:    ProcessContext,
-	smoothed:       SmoothedParams,
-	generation:     u64,
+	process_ctx: ProcessContext,
+	smoothed: SmoothedParams,
+	generation: u64,
 
-	draw:           ^DrawContext,
-	ui:             ^UIContext,
-	mouse:          b.MouseState,
-	viewBounds:     RectI32,
-	inDraw:         bool,
-	lastDrawTime:   time.Tick,
+	draw: ^DrawContext,
+	ui: ^UIContext,
+	mouse: b.MouseState,
+	viewBounds: RectI32,
+	inDraw: bool,
+	lastDrawTime: time.Tick,
 }
 
 PluginComponentSet :: bit_set[PluginComponent]
@@ -49,8 +51,11 @@ PluginApi :: struct {
 	view_removed:           proc(plug: ^Plugin),
 	view_resized:           proc(plug: ^Plugin, rect: RectI32),
 	query_parameter_layout: proc() -> []b.ParamDescriptor,
+	get_plugin_descriptor:  proc() -> PluginDescriptor,
 	get_latency_samples:    proc(plug: ^Plugin) -> u32,
 	get_tail_samples:       proc(plug: ^Plugin) -> u32,
+	setup_processing:       proc(plug: ^Plugin, sample_rate: f64, max_block_size: i32),
+	reset:                  proc(plug: ^Plugin),
 }
 
 fallbackApi :: PluginApi {
@@ -60,8 +65,11 @@ fallbackApi :: PluginApi {
 	view_removed           = plugin_view_removed,
 	view_resized           = plugin_view_resized,
 	query_parameter_layout = plugin_query_parameter_layout,
+	get_plugin_descriptor  = get_plugin_descriptor,
 	get_latency_samples    = plugin_get_latency_samples,
 	get_tail_samples       = plugin_get_tail_samples,
+	setup_processing       = plugin_setup_processing,
+	reset                  = plugin_reset,
 }
 
 HOT_DLL :: #config(HOT_DLL, false)
@@ -75,8 +83,11 @@ when HOT_DLL {
 			view_removed           = plugin_view_removed,
 			view_resized           = plugin_view_resized,
 			query_parameter_layout = plugin_query_parameter_layout,
+			get_plugin_descriptor  = get_plugin_descriptor,
 			get_latency_samples    = plugin_get_latency_samples,
 			get_tail_samples       = plugin_get_tail_samples,
+			setup_processing       = plugin_setup_processing,
+			reset                  = plugin_reset,
 		}
 	}
 }
@@ -142,19 +153,22 @@ plugin_get_tail_samples :: proc(plug: ^Plugin) -> u32 {
 PARAM_SMOOTH_MS :: f32(5.0)
 
 ProcessContext :: struct {
-	inputs:         [][]f32,
-	outputs:        [][]f32,
-	num_samples:    int,
-	num_channels:   int,
-	sample_rate:    f32,
-	params:         ^SmoothedParams,
+	inputs: [][]f32,
+	outputs: [][]f32,
+	num_samples: int,
+	num_channels: int,
+	sample_rate: f32,
+	params: ^SmoothedParams,
+	events: []b.Event,
+	sample_offset: int, // absolute offset within the full process block
+
 	// Internal
-	dry:            [][]f32,
-	has_wet_dry:    bool,
-	wet_dry_param:  ParamIndex,
-	mix_buf:        []f32,
+	dry: [][]f32,
+	has_wet_dry: bool,
+	wet_dry_param: ParamIndex,
+	mix_buf: []f32,
 	change_indices: []int,
-	audio_ctx:      ^AudioProcessorContext,
+	audio_ctx: ^AudioProcessorContext,
 }
 
 SmoothedParams :: struct {
@@ -202,24 +216,31 @@ process_begin :: proc(plug: ^Plugin) -> ^ProcessContext {
 	ctx.num_samples = num_samples
 	ctx.num_channels = num_channels
 	ctx.sample_rate = sr
+	ctx.sample_offset = 0
 	ctx.params = &plug.smoothed
 	ctx.audio_ctx = actx
 	ctx.has_wet_dry = desc.has_wet_dry
 	ctx.wet_dry_param = desc.wet_dry_param
 
-	ctx.inputs = make([][]f32, num_channels, alloc)
 	ctx.outputs = make([][]f32, num_channels, alloc)
-
 	for c in 0 ..< num_channels {
 		ctx.outputs[c] = out_buf.buffers32[c][:num_samples]
-		if len(inputs) > 0 && len(inputs[0].buffers32) > c {
-			ctx.inputs[c] = inputs[0].buffers32[c][:num_samples]
-		} else {
-			ctx.inputs[c] = make([]f32, num_samples, alloc)
-		}
 	}
 
-	if ctx.has_wet_dry {
+	if len(inputs) > 0 && len(inputs[0].buffers32) > 0 {
+		ctx.inputs = make([][]f32, num_channels, alloc)
+		for c in 0 ..< num_channels {
+			if len(inputs[0].buffers32) > c {
+				ctx.inputs[c] = inputs[0].buffers32[c][:num_samples]
+			} else {
+				ctx.inputs[c] = make([]f32, num_samples, alloc)
+			}
+		}
+	} else {
+		ctx.inputs = nil
+	}
+
+	if ctx.has_wet_dry && ctx.inputs != nil {
 		ctx.dry = make([][]f32, num_channels, alloc)
 		ctx.mix_buf = make([]f32, num_samples, alloc)
 		for c in 0 ..< num_channels {
@@ -229,6 +250,7 @@ process_begin :: proc(plug: ^Plugin) -> ^ProcessContext {
 	}
 
 	ctx.change_indices = make([]int, len(desc.params), alloc)
+	ctx.events = actx.events
 
 	return ctx
 }
@@ -244,7 +266,7 @@ process_advance_params :: proc(ctx: ^ProcessContext, sample: int) {
 	for &s in ctx.params.smoothers {
 		dsp.smoother_next(&s)
 	}
-	if ctx.has_wet_dry {
+	if ctx.has_wet_dry && ctx.mix_buf != nil {
 		ctx.mix_buf[sample] = ctx.params.smoothers[int(ctx.wet_dry_param)].current / 100.0
 	}
 }
@@ -258,3 +280,81 @@ process_end :: proc(ctx: ^ProcessContext) {
 		}
 	}
 }
+
+// Block splitting — calls process_fn for each sub-block split at event boundaries.
+// Events at each split point are attached to ctx.events for that sub-block.
+// Output/input slices are views into the full buffer (no allocation).
+// Param advancement is the plugin's responsibility — call process_advance_params
+// per-sample using ctx.sample_offset + s for absolute indexing.
+// When no events are present, calls process_fn once for the full block.
+process_split_blocks :: proc(ctx: ^ProcessContext, plug: ^Plugin, process_fn: proc(ctx: ^ProcessContext, plug: ^Plugin)) {
+	if len(ctx.events) == 0 {
+		process_fn(ctx, plug)
+		return
+	}
+
+	alloc := plug.instance.frame_allocator
+	nc := ctx.num_channels
+
+	// Save original per-channel slices so sub-block reslicing doesn't alias
+	full_outputs := make([][]f32, nc, alloc)
+	copy(full_outputs, ctx.outputs)
+	full_inputs: [][]f32
+	if ctx.inputs != nil {
+		full_inputs = make([][]f32, nc, alloc)
+		copy(full_inputs, ctx.inputs)
+	}
+	full_num_samples := ctx.num_samples
+	full_events := ctx.events
+
+	block_start := 0
+	event_idx := 0
+
+	for block_start < full_num_samples {
+		// Collect events at this offset
+		sub_event_start := event_idx
+		for event_idx < len(full_events) && int(full_events[event_idx].sample_offset) <= block_start {
+			event_idx += 1
+		}
+
+		// Next split point
+		block_end := full_num_samples
+		if event_idx < len(full_events) {
+			block_end = int(full_events[event_idx].sample_offset)
+		}
+
+		sub_len := block_end - block_start
+		if sub_len <= 0 do break
+
+		// Sub-block views for outputs and inputs
+		for c in 0 ..< nc {
+			ctx.outputs[c] = full_outputs[c][block_start:block_end]
+		}
+		if full_inputs != nil {
+			for c in 0 ..< nc {
+				ctx.inputs[c] = full_inputs[c][block_start:block_end]
+			}
+		}
+
+		ctx.num_samples = sub_len
+		ctx.sample_offset = block_start
+		ctx.events = full_events[sub_event_start:event_idx]
+
+		process_fn(ctx, plug)
+
+		block_start = block_end
+	}
+
+	// Restore full context
+	ctx.inputs = full_inputs
+	ctx.outputs = full_outputs
+	ctx.num_samples = full_num_samples
+	ctx.events = full_events
+	ctx.sample_offset = 0
+}
+
+plugin_setup_processing :: proc(plug: ^Plugin, sample_rate: f64, max_block_size: i32) {
+	
+}
+
+plugin_reset :: proc(plug: ^Plugin) {}

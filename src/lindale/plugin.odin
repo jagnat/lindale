@@ -1,78 +1,130 @@
 package lindale
 
 import "core:log"
-import "core:math"
 import "core:mem"
 import "core:time"
 import b "../bridge"
 import dsp "../dsp"
 
+// Voice
+
+MAX_VOICES :: 16
+PITCH_BEND_RANGE :: f32(2.0) // semitones
+
+Voice :: struct {
+	active: bool,
+	note_id: i32,
+	pitch: i16,
+	velocity: f32,
+	osc1: dsp.Oscillator,
+	osc2: dsp.Oscillator,
+	env: dsp.ADSR,
+}
+
 // State
 
 PluginState :: struct {
-	lines:   [2]dsp.DelayLine,
-	buffers: [2][]dsp.Sample,
+	voices: [MAX_VOICES]Voice,
+	pitch_bend: f32, // -1 to +1
+	sample_rate: f32,
 }
 
 // Parameters
 
-PARAM_DELAY_TIME :: ParamIndex(0)
-PARAM_FEEDBACK   :: ParamIndex(1)
-PARAM_MIX        :: ParamIndex(2)
-PARAM_GAIN       :: ParamIndex(3)
+PARAM_OSC1_WAVE :: ParamIndex(0)
+PARAM_OSC2_WAVE :: ParamIndex(1)
+PARAM_OSC2_DET  :: ParamIndex(2)
+PARAM_ATTACK    :: ParamIndex(3)
+PARAM_DECAY     :: ParamIndex(4)
+PARAM_SUSTAIN   :: ParamIndex(5)
+PARAM_RELEASE   :: ParamIndex(6)
+PARAM_GAIN      :: ParamIndex(7)
 
 @(rodata) param_table := [?]b.ParamDescriptor {
 	{
-		name = "Delay Time", short_name = "Delay",
-		min = 1.0, max = 2000.0, default_value = 250.0,
+		name = "Osc1 Wave", short_name = "Osc1",
+		min = 0, max = 2, default_value = 0,
+		step_count = 2, unit = .None,
+		flags = {.Automatable, .List},
+	},
+	{
+		name = "Osc2 Wave", short_name = "Osc2",
+		min = 0, max = 2, default_value = 1,
+		step_count = 2, unit = .None,
+		flags = {.Automatable, .List},
+	},
+	{
+		name = "Osc2 Detune", short_name = "Det",
+		min = -100, max = 100, default_value = 7,
+		step_count = 0, unit = .None,
+		flags = {.Automatable},
+	},
+	{
+		name = "Attack", short_name = "Atk",
+		min = 1, max = 5000, default_value = 10,
 		step_count = 0, unit = .Milliseconds,
 		flags = {.Automatable},
 	},
 	{
-		name = "Feedback", short_name = "Fdbk",
-		min = 0.0, max = 99.0, default_value = 30.0,
+		name = "Decay", short_name = "Dec",
+		min = 1, max = 5000, default_value = 100,
+		step_count = 0, unit = .Milliseconds,
+		flags = {.Automatable},
+	},
+	{
+		name = "Sustain", short_name = "Sus",
+		min = 0, max = 100, default_value = 70,
 		step_count = 0, unit = .Percentage,
 		flags = {.Automatable},
 	},
 	{
-		name = "Mix", short_name = "Mix",
-		min = 0.0, max = 100.0, default_value = 50.0,
-		step_count = 0, unit = .Percentage,
+		name = "Release", short_name = "Rel",
+		min = 1, max = 10000, default_value = 200,
+		step_count = 0, unit = .Milliseconds,
 		flags = {.Automatable},
 	},
 	{
 		name = "Gain", short_name = "Gain",
-		min = -60.0, max = 12.0, default_value = 0.0,
+		min = -60, max = 12, default_value = -6,
 		step_count = 0, unit = .Decibel,
 		flags = {.Automatable},
 	},
 }
 
-MAX_DELAY_MS :: 2000.0
-
 // Descriptor
 
 get_plugin_descriptor :: proc() -> PluginDescriptor {
 	return {
-		name          = "Delay",
-		plugin_type   = .Effect,
-		params        = param_table[:],
-		max_channels  = 2,
-		latency       = 0,
-		tail          = u32(MAX_DELAY_MS * 48000.0 / 1000.0),
-		has_wet_dry   = true,
-		wet_dry_param = PARAM_MIX,
+		name = "Lindale Synth",
+		vendor = "JagI",
+		version = "0.0.1",
+		plugin_type = .Instrument,
+		params = param_table[:],
+		max_channels = 2,
+		latency = 0,
+		tail = 0,
 	}
 }
 
 // Lifecycle
 
 plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allocator) {
-	max_samples := int(math.ceil(MAX_DELAY_MS * f64(sample_rate) / 1000.0))
-	for c in 0 ..< 2 {
-		state.buffers[c] = make([]dsp.Sample, max_samples, alloc)
-		dsp.delay_init(&state.lines[c], state.buffers[c])
+	state.sample_rate = sample_rate
+	for &v in state.voices {
+		dsp.osc_init(&v.osc1, sample_rate)
+		dsp.osc_init(&v.osc2, sample_rate)
+		dsp.adsr_init(&v.env, sample_rate)
 	}
+}
+
+waveform_from_param :: proc(val: f32) -> dsp.Waveform {
+	idx := clamp(int(val + 0.5), 0, 2)
+	switch idx {
+	case 0: return .Sine
+	case 1: return .Saw
+	case 2: return .Square
+	}
+	return .Sine
 }
 
 // Audio
@@ -81,24 +133,110 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 	ctx := process_begin(plug)
 	if ctx == nil do return
 
-	for s in 0 ..< ctx.num_samples {
-		process_advance_params(ctx, s)
+	process_split_blocks(ctx, plug, proc(ctx: ^ProcessContext, plug: ^Plugin) {
+		state := plug.state
 
-		delay_ms := smoothed_next(ctx.params, PARAM_DELAY_TIME)
-		feedback := smoothed_next(ctx.params, PARAM_FEEDBACK) / 100.0
-		gain := dsp.db_to_linear(smoothed_next(ctx.params, PARAM_GAIN))
-
-		delay_samples := delay_ms * ctx.sample_rate / 1000.0
-
-		for c in 0 ..< ctx.num_channels {
-			dry := ctx.inputs[c][s]
-			delayed := dsp.delay_read_frac(&plug.state.lines[c], delay_samples)
-			dsp.delay_write(&plug.state.lines[c], dry + delayed * feedback)
-			ctx.outputs[c][s] = delayed * gain
+		// Handle events for this sub-block
+		for &evt in ctx.events {
+			switch evt.kind {
+			case .NoteOn:
+				note_on(state, evt.note_on, ctx.sample_rate)
+			case .NoteOff:
+				note_off(state, evt.note_off)
+			case .PitchBend:
+				state.pitch_bend = evt.pitch_bend.value
+			case .CC:
+			}
 		}
-	}
+
+		for s in 0 ..< ctx.num_samples {
+			process_advance_params(ctx, ctx.sample_offset + s)
+
+			osc1_wave := waveform_from_param(smoothed_next(ctx.params, PARAM_OSC1_WAVE))
+			osc2_wave := waveform_from_param(smoothed_next(ctx.params, PARAM_OSC2_WAVE))
+			osc2_detune_cents := smoothed_next(ctx.params, PARAM_OSC2_DET)
+			attack := smoothed_next(ctx.params, PARAM_ATTACK) / 1000.0
+			decay := smoothed_next(ctx.params, PARAM_DECAY) / 1000.0
+			sustain := smoothed_next(ctx.params, PARAM_SUSTAIN) / 100.0
+			release := smoothed_next(ctx.params, PARAM_RELEASE) / 1000.0
+			gain := dsp.db_to_linear(smoothed_next(ctx.params, PARAM_GAIN))
+
+			// Update voice params
+			bend_semitones := state.pitch_bend * PITCH_BEND_RANGE
+			for &v in state.voices {
+				if !v.active do continue
+				dsp.adsr_set_params(&v.env, attack, decay, sustain, release)
+				base_freq := dsp.midi_to_freq(f32(v.pitch) + bend_semitones)
+				detune_freq := dsp.midi_to_freq(f32(v.pitch) + bend_semitones + osc2_detune_cents / 100.0)
+				dsp.osc_set_freq(&v.osc1, base_freq)
+				dsp.osc_set_freq(&v.osc2, detune_freq)
+			}
+
+			sample: f32 = 0
+			for &v in state.voices {
+				if !v.active do continue
+
+				env_val := dsp.adsr_next(&v.env)
+				if dsp.adsr_is_idle(&v.env) {
+					v.active = false
+					continue
+				}
+
+				o1 := dsp.osc_next(&v.osc1, osc1_wave)
+				o2 := dsp.osc_next(&v.osc2, osc2_wave)
+				sample += (o1 + o2) * 0.5 * env_val * v.velocity
+			}
+
+			sample *= gain
+
+			for c in 0 ..< ctx.num_channels {
+				ctx.outputs[c][s] = sample
+			}
+		}
+	})
 
 	process_end(ctx)
+}
+
+note_on :: proc(state: ^PluginState, evt: b.NoteOn, sample_rate: f32) {
+	// Find a free voice, or steal the oldest idle one
+	slot: ^Voice = nil
+	for &v in state.voices {
+		if !v.active {
+			slot = &v
+			break
+		}
+	}
+	// If no free voice, steal the quietest releasing voice
+	if slot == nil {
+		lowest_level := f32(999)
+		for &v in state.voices {
+			if v.env.stage == .Release && v.env.level < lowest_level {
+				lowest_level = v.env.level
+				slot = &v
+			}
+		}
+	}
+	// Last resort: steal first voice
+	if slot == nil {
+		slot = &state.voices[0]
+	}
+
+	slot.active = true
+	slot.note_id = evt.note_id
+	slot.pitch = evt.pitch
+	slot.velocity = evt.velocity
+	dsp.osc_reset(&slot.osc1)
+	dsp.osc_reset(&slot.osc2)
+	dsp.adsr_gate_on(&slot.env)
+}
+
+note_off :: proc(state: ^PluginState, evt: b.NoteOff) {
+	for &v in state.voices {
+		if v.active && (evt.note_id >= 0 ? v.note_id == evt.note_id : v.pitch == evt.pitch) {
+			dsp.adsr_gate_off(&v.env)
+		}
+	}
 }
 
 // UI
@@ -120,9 +258,13 @@ plugin_draw :: proc(plug: ^Plugin) {
 
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10) {
-			ui_slider_param_labeled(plug.ui, "Delay", PARAM_DELAY_TIME)
-			ui_slider_param_labeled(plug.ui, "Feedback", PARAM_FEEDBACK)
-			ui_slider_param_labeled(plug.ui, "Mix", PARAM_MIX)
+			ui_slider_param_labeled(plug.ui, "Osc1", PARAM_OSC1_WAVE)
+			ui_slider_param_labeled(plug.ui, "Osc2", PARAM_OSC2_WAVE)
+			ui_slider_param_labeled(plug.ui, "Detune", PARAM_OSC2_DET)
+			ui_slider_param_labeled(plug.ui, "Attack", PARAM_ATTACK)
+			ui_slider_param_labeled(plug.ui, "Decay", PARAM_DECAY)
+			ui_slider_param_labeled(plug.ui, "Sustain", PARAM_SUSTAIN)
+			ui_slider_param_labeled(plug.ui, "Release", PARAM_RELEASE)
 			ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
 		}
 	}

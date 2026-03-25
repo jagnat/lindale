@@ -48,7 +48,7 @@ Symlink `out/Lindale.vst3` into your system VST3 folder:
 - Always indent code with tabs, not spaces.
 - Remember that this is Odin. Not C, not Golang.
 - Prioritize putting more code into existing files over creating new files.
-- Do not apply vertical alignment anywhere except in vtable structs.
+- DO NOT apply vertical alignment to variable types in any structs except in vtable structs.
 
 ### Comments
 

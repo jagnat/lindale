@@ -89,8 +89,11 @@ hotload_api :: proc() -> lin.PluginApi {
 		view_removed           = buffer_view_removed,
 		view_resized           = buffer_view_resized,
 		query_parameter_layout = buffer_query_parameter_layout,
+		get_plugin_descriptor  = buffer_get_plugin_descriptor,
 		get_latency_samples    = buffer_get_latency_samples,
 		get_tail_samples       = buffer_get_tail_samples,
+		setup_processing       = buffer_setup_processing,
+		reset                  = buffer_reset,
 	}
 
 	return api
@@ -148,7 +151,7 @@ hotload_api :: proc() -> lin.PluginApi {
 			lin.fallbackApi.process_audio(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
-			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].process_audio == nil {
 				lin.fallbackApi.process_audio(plug)
 			} else {
 				ctx.apis[idx].process_audio(plug)
@@ -188,6 +191,42 @@ hotload_api :: proc() -> lin.PluginApi {
 				lin.fallbackApi.view_resized(plug, rect)
 			} else {
 				ctx.apis[idx].view_resized(plug, rect)
+			}
+		}
+	}
+	buffer_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
+		when !HOT_DLL {
+			return lin.fallbackApi.get_plugin_descriptor()
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_plugin_descriptor == nil {
+				return lin.fallbackApi.get_plugin_descriptor()
+			} else {
+				return ctx.apis[idx].get_plugin_descriptor()
+			}
+		}
+	}
+	buffer_setup_processing :: proc(plug: ^lin.Plugin, sample_rate: f64, max_block_size: i32) {
+		when !HOT_DLL {
+			if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug, sample_rate, max_block_size)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_processing == nil {
+				if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug, sample_rate, max_block_size)
+			} else {
+				ctx.apis[idx].setup_processing(plug, sample_rate, max_block_size)
+			}
+		}
+	}
+	buffer_reset :: proc(plug: ^lin.Plugin) {
+		when !HOT_DLL {
+			if lin.fallbackApi.reset != nil do lin.fallbackApi.reset(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].reset == nil {
+				if lin.fallbackApi.reset != nil do lin.fallbackApi.reset(plug)
+			} else {
+				ctx.apis[idx].reset(plug)
 			}
 		}
 	}
