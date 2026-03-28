@@ -2,6 +2,8 @@
 
 Cross-platform audio plugin framework written in Odin. Currently targeting VST3 on Mac and Windows. Work in progress.
 
+![Screenshot of a basic synth plugin built with the framework](resources/screenshot.png)
+
 My aim is to create a framework that's a joy to use to experiment with audio plugin development, and to have a long-term learning project. The project is built around a hot-reloading architecture, so that the core audio processing and rendering/UI code can be recompiled and reloaded on the fly without restarting the plugin or the DAW. This is common in game development, but as far as I know hasn't been done in the audio plugin environment before now. It's a huge benefit for iterating quickly while prototyping and learning DSP.
 
 ### Features
