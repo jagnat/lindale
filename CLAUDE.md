@@ -8,34 +8,15 @@ Lindalë is an audio plugin framework written in Odin, targeting VST3 on Mac and
 
 ## Build Commands
 
-### Mac
+**Use the `.bat` and `.command` files to build on windows and mac respectively**
 
-**Build the full VST3 plugin (with hot-reload support):**
-```bash
-./build_plugin.command
-```
+**Build the full VST3 plugin (with hot-reloading enabled) with the `build_plugin.(command/bat)` script.**
 This builds both:
-- The hot-reloadable DLL: `out/hot/LindaleHot.dylib`
-- The VST3 plugin bundle: `out/Lindale.vst3/`
+- The hot-reloadable DLL: `out/hot/LindaleHot.(dylib/dll)`
+- The VST3 plugin: `out/Lindale.vst3/`
 
-**Build only the hot-reloadable plugin code:**
-```bash
-./build_hotload_plugin.command
-```
+**Build only the hot-reloadable plugin code with the `build_hotload_plugin.(command/bat)` script.**
 Use this during development to quickly rebuild just the audio/UI logic that gets hot-reloaded.
-
-**Build the standalone test host:**
-```bash
-./build_test_host.sh
-```
-Standalone test host (currently not functional after SDL renderer removal).
-
-### Windows
-
-Use the `.bat` equivalents:
-- `build_plugin.bat`
-- `build_hotload_plugin.bat`
-- `build_test_host.bat`
 
 ### Setup
 
@@ -71,7 +52,7 @@ DAW (VST3 Host)
     ▼
 src/vst_host/  (package: platform)
     │  Static VST3 layer. Owns Plugin lifetime, hot-reload logic, VST3 interfaces.
-    │  Imports: bridge, lindale, platform_specific, thirdparty/vst3
+    │  Imports: bridge, lindale, platform_specific, thirdparty/vst3, any packages it needs.
     │
     ├──► src/bridge/  (package: bridge)
     │      Shared types and vtables. The contract between static and hot-loaded code.
@@ -79,11 +60,11 @@ src/vst_host/  (package: platform)
     │
     ├──► src/lindale/  (package: lindale)
     │      Hot-reloadable plugin code: audio, UI, drawing, parameters.
-    │      Imports: bridge (as `b`), thirdparty/uFFT. Nothing else in src/.
+    │      Imports: bridge (as `b`), dsp, but nothing in vst_host or the platform layers.
     │
     └──► src/platform_specific/  (package: platform_specific)
            GPU renderers (Metal/DX11), timers, filesystem utils.
-           Imports: bridge only.
+           Imports: bridge only, nothing else in the project packages.
 ```
 
 **Key constraints:**
@@ -110,33 +91,11 @@ The hot-reload system (`src/vst_host/hotloader.odin`) works by:
 - `src/vst_host/hotloader.odin`: Hot-reload thread and DLL management
 - `src/lindale/plugin.odin`: Core plugin state and `PluginApi` structure with `draw`, `process_audio`, `view_attached`, `view_removed`, `view_resized`, and `query_parameter_layout` procedures
 
-### Plugin Architecture
-
-The plugin is split into two VST3 components:
-
-1. **LindaleProcessor** (`src/vst_host/vst_layer.odin`): Audio processing component
-   - Implements `IComponent` and `IAudioProcessor` interfaces
-   - Runs on the audio thread
-   - Manages parameter changes and audio buffer routing
-   - Owns `Plugin` instance with audio processing state
-
-2. **LindaleController** (`src/vst_host/vst_layer.odin`): UI/controller component
-   - Implements `IEditController` and `IEditController2` interfaces
-   - Runs on the UI thread
-   - Manages parameter state and the plugin view
-   - Owns `Plugin` instance and `PlatformApi` vtable
-
-3. **LindaleView** (`src/vst_host/vst_layer.odin`): Platform view implementation
-   - Implements `IPlugView` interface
-   - Creates platform-specific renderer in `lv_attached`
-   - Runs a timer to drive the render loop at 30ms intervals
-   - Timer calls `plugin_draw` which uses the platform vtable
-
 ### Plugin State
 
-The `Plugin` struct (`src/lindale/plugin.odin`) is allocated by the static VST layer and survives hot-reloads. It holds a pointer to `PluginInstance` (defined in `src/bridge/platform_api.odin`), which carries the platform-provided state.
+The `Plugin` struct (`src/lindale/plugin.odin`) is allocated by the static VST layer and survives hot-reloads. It holds a pointer to `HostContext` (defined in `src/bridge/platform_api.odin`), which carries the platform-provided state.
 
-**PluginInstance (in bridge, survives hot-reload):**
+**HostContext (in bridge, survives hot-reload):**
 - `params`: Pointer to `ParamValues`
 - `platform`: Pointer to `PlatformApi` vtable
 - `renderer`: Opaque `Renderer` handle
@@ -147,13 +106,13 @@ The `Plugin` struct (`src/lindale/plugin.odin`) is allocated by the static VST l
 - `ui`: UI widget state
 - `audioProcessor`: Audio processing state
 
-Hot-loaded fields are zeroed by static layer on DLL unload, then reallocated by `plugin_init` after new DLL loads. The `PluginInstance` pointer and its contents remain valid throughout.
+Hot-loaded fields are zeroed by static layer on DLL unload, then reallocated by `plugin_init` after new DLL loads. The `HostContext` pointer and its contents remain valid throughout.
 
 ### Bridge Package
 
 `src/bridge/` defines the shared contract between static and hot-loaded code:
 
-- `platform_api.odin`: `PlatformApi` vtable, `PluginInstance`, rendering types (`RectInstance`, `TextureHandle`, `DrawCommand`, `RendererSize`), input types (`MouseState`), math types (`Vec2f`, `Vec4f`, `ColorU8`)
+- `platform_api.odin`: `PlatformApi` vtable, `HostContext`, rendering types (`RectInstance`, `TextureHandle`, `DrawCommand`, `RendererSize`), input types (`MouseState`), math types (`Vec2f`, `Vec4f`, `ColorU8`)
 - `host_api.odin`: `HostApi` vtable for parameter edit callbacks from plugin to host
 - `parameters.odin`: `ParamDescriptor`, `ParamValues`, `ParamUnit`, conversion utilities (`param_to_normalized`, `normalized_to_param`, `param_format_value`)
 
@@ -191,7 +150,7 @@ To modify audio processing behavior:
 SDF rounded rectangle renderer with instanced rendering. Supports borders, corner radii, and textures.
 
 **Platform API Vtable** (`src/bridge/platform_api.odin`):
-The `PlatformApi` struct contains all renderer function pointers. Static layer populates this vtable with platform-specific implementations and passes it to hot-loaded code via `PluginInstance`. This allows renderer calls from lindale without linking to platform-specific code.
+The `PlatformApi` struct contains all renderer function pointers. Static layer populates this vtable with platform-specific implementations and passes it to hot-loaded code via `HostContext`. This allows renderer calls from lindale without linking to platform-specific code.
 
 **Draw System** (`src/lindale/draw.odin`):
 High-level drawing API that batches rectangles and text into draw calls. `draw_submit` flattens batches and issues `DrawCommand`s via the platform vtable. Font rendering uses fontstash with a persistent texture atlas.
@@ -233,38 +192,11 @@ Each `Component` has independent `sizingHoriz` and `sizingVert` (`AxisSizing`), 
 
 Panels (`ui_panel`) accept sizing overrides. Leaf widgets (buttons, sliders) set their own sizing in their constructors.
 
-### Platform-Specific Code
-
-- `src/bridge/`: Shared types and vtables between all packages (avoids circular imports)
-- `src/platform_specific/view_platform.odin`: Renderer interface documentation
-- `src/platform_specific/view_platform_darwin.odin`: macOS Metal implementation
-- `src/platform_specific/view_platform_windows.odin`: Windows DirectX 11 implementation
-- `src/platform_specific/timer*.odin`: High-resolution timer for render loop
-
-## Development Workflow
-
-1. **Initial setup:**
-   ```bash
-   ./build_plugin.command  # Build full VST3 plugin
-   ```
-
-2. **During development (iterating on audio/UI code):**
-   ```bash
-   ./build_hotload_plugin.command  # Quick rebuild of hot-reloadable code
-   ```
-   Changes automatically reload in the running plugin.
-
-3. **Changes to VST3 layer require full rebuild:**
-   ```bash
-   ./build_plugin.command  # Rebuild entire plugin
-   ```
-   Must restart the DAW after this.
-
 ## Important Implementation Details
 
 - **HOT_DLL Config:** When `HOT_DLL=true`, the plugin exports a `GetPluginApi()` function that returns function pointers for hot-reloadable code.
 - **Platform API Initialization:** The static layer creates the renderer, populates `PlatformApi` vtable with function pointers, creates the font atlas texture, then calls `plugin_init`. See `src/vst_host/vst_layer.odin:lv_attached` for initialization flow.
-- **Hot-Reload Lifecycle:** Static layer zeros `plugin.draw` and `plugin.ui` fields after DLL unload. After loading new DLL, calls `plugin_init` which reallocates these fields. `PluginInstance` (holding `platform`, `renderer`, `font_atlas`) remains valid throughout.
+- **Hot-Reload Lifecycle:** Static layer zeros `plugin.draw` and `plugin.ui` fields after DLL unload. After loading new DLL, calls `plugin_init` which reallocates these fields. `HostContext` (holding `platform`, `renderer`, `font_atlas`) remains valid throughout.
 - **Container_of Pattern:** The VST3 layer uses a `container_of` pattern to convert from VST3 interface pointers back to the containing structs.
 - **Reference Counting:** Each VST3 component manages its own reference count. When count reaches 0, the component is freed.
 - **Context Management:** Each component stores its own Odin context with appropriate loggers for thread-safe logging.
@@ -272,5 +204,4 @@ Panels (`ui_panel`) accept sizing overrides. Leaf widgets (buttons, sliders) set
 
 ## Current Limitations & TODOs
 
-- Wire up `on_hot_load` and `on_hot_unload` in PluginApi (declared but not exported via `GetPluginApi` or implemented)
 - Support CLAP format in addition to VST3
