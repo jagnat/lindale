@@ -28,6 +28,11 @@ adsr_init :: proc(e: ^ADSR, sample_rate: f32) {
 	e.sustain_level = 1
 }
 
+adsr_reset :: proc(e: ^ADSR) {
+	e.stage = .Idle
+	e.level = 0
+}
+
 // Times in seconds
 adsr_set_params :: proc(e: ^ADSR, attack, decay, sustain, release: f32) {
 	e.sustain_level = sustain

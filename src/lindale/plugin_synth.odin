@@ -26,7 +26,6 @@ Voice :: struct {
 PluginState :: struct {
 	voices: [MAX_VOICES]Voice,
 	pitch_bend: f32, // -1 to +1
-	sample_rate: f32,
 }
 
 // Parameters
@@ -46,12 +45,14 @@ PARAM_GAIN      :: ParamIndex(7)
 		min = 0, max = 2, default_value = 0,
 		step_count = 2, unit = .None,
 		flags = {.Automatable, .List},
+		smooth_ms = NO_SMOOTHING,
 	},
 	{
 		name = "Osc2 Wave", short_name = "Osc2",
 		min = 0, max = 2, default_value = 1,
 		step_count = 2, unit = .None,
 		flags = {.Automatable, .List},
+		smooth_ms = NO_SMOOTHING,
 	},
 	{
 		name = "Osc2 Detune", short_name = "Det",
@@ -109,11 +110,20 @@ get_plugin_descriptor :: proc() -> PluginDescriptor {
 // Lifecycle
 
 plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allocator) {
-	state.sample_rate = sample_rate
 	for &v in state.voices {
 		dsp.osc_init(&v.osc1, sample_rate)
 		dsp.osc_init(&v.osc2, sample_rate)
 		dsp.adsr_init(&v.env, sample_rate)
+	}
+}
+
+plugin_reset_state :: proc(state: ^PluginState) {
+	state.pitch_bend = 0
+	for &v in state.voices {
+		v.active = false
+		dsp.osc_reset(&v.osc1)
+		dsp.osc_reset(&v.osc2)
+		dsp.adsr_reset(&v.env)
 	}
 }
 
@@ -130,17 +140,21 @@ waveform_from_param :: proc(val: f32) -> dsp.Waveform {
 // Audio
 
 plugin_process_audio :: proc(plug: ^Plugin) {
-	ctx := process_begin(plug)
-	if ctx == nil do return
+	actx := plug.audioProcessor
+	if actx == nil do return
+	if plug.state == nil do return
+	if actx.numChannels == 0 || actx.numSamples == 0 do return
 
-	process_split_blocks(ctx, plug, proc(ctx: ^ProcessContext, plug: ^Plugin) {
-		state := plug.state
+	state := plug.state
+	num_samples := actx.numSamples
+	num_channels := actx.numChannels
 
-		// Handle events for this sub-block
-		for &evt in ctx.events {
+	it := make_block_iterator(actx.events, num_samples)
+	for block in next_block(&it) {
+		for &evt in block.events {
 			switch evt.kind {
 			case .NoteOn:
-				note_on(state, evt.note_on, ctx.sample_rate)
+				note_on(state, evt.note_on)
 			case .NoteOff:
 				note_off(state, evt.note_off)
 			case .PitchBend:
@@ -149,19 +163,19 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 			}
 		}
 
-		for s in 0 ..< ctx.num_samples {
-			process_advance_params(ctx, ctx.sample_offset + s)
+		for s in 0 ..< block.sample_count {
+			abs_sample := block.sample_offset + s
+			advance_smoothers(actx, abs_sample)
 
-			osc1_wave := waveform_from_param(smoothed_next(ctx.params, PARAM_OSC1_WAVE))
-			osc2_wave := waveform_from_param(smoothed_next(ctx.params, PARAM_OSC2_WAVE))
-			osc2_detune_cents := smoothed_next(ctx.params, PARAM_OSC2_DET)
-			attack := smoothed_next(ctx.params, PARAM_ATTACK) / 1000.0
-			decay := smoothed_next(ctx.params, PARAM_DECAY) / 1000.0
-			sustain := smoothed_next(ctx.params, PARAM_SUSTAIN) / 100.0
-			release := smoothed_next(ctx.params, PARAM_RELEASE) / 1000.0
-			gain := dsp.db_to_linear(smoothed_next(ctx.params, PARAM_GAIN))
+			osc1_wave := waveform_from_param(smoothed_read(actx, PARAM_OSC1_WAVE))
+			osc2_wave := waveform_from_param(smoothed_read(actx, PARAM_OSC2_WAVE))
+			osc2_detune_cents := smoothed_read(actx, PARAM_OSC2_DET)
+			attack := smoothed_read(actx, PARAM_ATTACK) / 1000.0
+			decay := smoothed_read(actx, PARAM_DECAY) / 1000.0
+			sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100.0
+			release := smoothed_read(actx, PARAM_RELEASE) / 1000.0
+			gain := dsp.db_to_linear(smoothed_read(actx, PARAM_GAIN))
 
-			// Update voice params
 			bend_semitones := state.pitch_bend * PITCH_BEND_RANGE
 			for &v in state.voices {
 				if !v.active do continue
@@ -189,16 +203,14 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 
 			sample *= gain
 
-			for c in 0 ..< ctx.num_channels {
-				ctx.outputs[c][s] = sample
+			for c in 0 ..< num_channels {
+				actx.outputs[c][abs_sample] = sample
 			}
 		}
-	})
-
-	process_end(ctx)
+	}
 }
 
-note_on :: proc(state: ^PluginState, evt: b.NoteOn, sample_rate: f32) {
+note_on :: proc(state: ^PluginState, evt: b.NoteOn) {
 	// Find a free voice, or steal the oldest idle one
 	slot: ^Voice = nil
 	for &v in state.voices {

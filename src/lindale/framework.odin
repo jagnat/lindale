@@ -1,8 +1,31 @@
 package lindale
 
+import "core:mem"
 import "core:time"
 import b "../bridge"
 import dsp "../dsp"
+
+ParameterChange :: struct {
+	sampleOffset: i32,
+	value: f64,
+}
+
+AudioProcessContext :: struct {
+	// Host-written fields (set by the VST layer before calling process)
+	sampleRate: f64,
+	maxBlockSize: i32,
+	projectTimeSamples: i64,
+	outputs: [][]f32,
+	inputs: [][]f32,
+	numChannels: int,
+	numSamples: int,
+	paramChanges: [][]ParameterChange,
+	events: []b.Event,
+
+	// Framework-managed fields (set during setup_processing)
+	smoothers: []dsp.Smoother,
+	changeIndices: []int,
+}
 
 PluginType :: enum {
 	Effect,
@@ -18,17 +41,12 @@ PluginDescriptor :: struct {
 	max_channels: int,
 	latency: u32,
 	tail: u32,
-	has_wet_dry: bool,
-	wet_dry_param: ParamIndex,
 }
 
 Plugin :: struct {
-	instance: ^b.PluginInstance,
-	state: ^PluginState,
-	audioProcessor: ^AudioProcessorContext,
-	process_ctx: ProcessContext,
-	smoothed: SmoothedParams,
-	generation: u64,
+	host: ^b.HostContext,
+	state: ^PluginState, // User code state
+	audioProcessor: ^AudioProcessContext,
 
 	draw: ^DrawContext,
 	ui: ^UIContext,
@@ -54,7 +72,7 @@ PluginApi :: struct {
 	get_plugin_descriptor:  proc() -> PluginDescriptor,
 	get_latency_samples:    proc(plug: ^Plugin) -> u32,
 	get_tail_samples:       proc(plug: ^Plugin) -> u32,
-	setup_processing:       proc(plug: ^Plugin, sample_rate: f64, max_block_size: i32),
+	setup_processing:       proc(plug: ^Plugin),
 	reset:                  proc(plug: ^Plugin),
 }
 
@@ -102,7 +120,7 @@ plugin_init :: proc(plugin: ^Plugin, components: PluginComponentSet) {
 	desc := get_plugin_descriptor()
 	if .Audio in components {
 		if plugin.audioProcessor == nil {
-			plugin.audioProcessor = new(AudioProcessorContext)
+			plugin.audioProcessor = new(AudioProcessContext)
 		}
 		if plugin.audioProcessor.paramChanges == nil {
 			plugin.audioProcessor.paramChanges = make([][]ParameterChange, len(desc.params))
@@ -148,213 +166,137 @@ plugin_get_tail_samples :: proc(plug: ^Plugin) -> u32 {
 	return get_plugin_descriptor().tail
 }
 
-// Processing framework
+// Processing
 
-PARAM_SMOOTH_MS :: f32(5.0)
+DEFAULT_SMOOTH_MS :: f32(5.0)
+NO_SMOOTHING :: f32(-1)
 
-ProcessContext :: struct {
-	inputs: [][]f32,
-	outputs: [][]f32,
-	num_samples: int,
-	num_channels: int,
-	sample_rate: f32,
-	params: ^SmoothedParams,
-	events: []b.Event,
-	sample_offset: int, // absolute offset within the full process block
-
-	// Internal
-	dry: [][]f32,
-	has_wet_dry: bool,
-	wet_dry_param: ParamIndex,
-	mix_buf: []f32,
-	change_indices: []int,
-	audio_ctx: ^AudioProcessorContext,
-}
-
-SmoothedParams :: struct {
-	smoothers: []dsp.Smoother,
-}
-
-smoothed_next :: proc(p: ^SmoothedParams, index: ParamIndex) -> f32 {
-	return p.smoothers[int(index)].current
-}
-
-process_begin :: proc(plug: ^Plugin) -> ^ProcessContext {
+plugin_setup_processing :: proc(plug: ^Plugin) {
 	actx := plug.audioProcessor
-	if actx == nil do return nil
-	if plug.instance == nil || plug.instance.params == nil do return nil
-
-	outputs := actx.outputBuffers
-	inputs := actx.inputBuffers
-	if len(outputs) < 1 do return nil
-
-	out_buf := outputs[0]
-	if len(out_buf.buffers32) == 0 || len(out_buf.buffers32[0]) == 0 do return nil
+	if actx == nil do return
+	if plug.host == nil do return
 
 	desc := get_plugin_descriptor()
 	sr := f32(actx.sampleRate)
-	if sr <= 0 do sr = 48000
+	alloc := plug.host.session_allocator
 
-	// Hot-reload or first-call init
-	if plug.generation != plug.instance.generation {
-		alloc := plug.instance.session_allocator
-		plug.state = new(PluginState, alloc)
-		plugin_init_state(plug.state, sr, alloc)
-		plug.smoothed.smoothers = make([]dsp.Smoother, len(desc.params), alloc)
-		for &s, i in plug.smoothed.smoothers {
-			dsp.smoother_init(&s, f32(desc.params[i].default_value), PARAM_SMOOTH_MS, sr)
-			dsp.smoother_set_target(&s, f32(plug.instance.params.values[i]))
+	// Allocate plugin state and call plugin-specific init
+	plug.state = new(PluginState, alloc)
+	plugin_init_state(plug.state, sr, alloc)
+
+	// Allocate smoothers based on param table
+	actx.smoothers = make([]dsp.Smoother, len(desc.params), alloc)
+	params := plug.host.params
+	for p, i in desc.params {
+		initial := f32(params.values[i]) if params != nil else f32(p.default_value)
+		smooth_time: f32
+		if .List in p.flags || p.smooth_ms < 0 {
+			smooth_time = 0 // pass-through
+		} else if p.smooth_ms == 0 {
+			smooth_time = DEFAULT_SMOOTH_MS
+		} else {
+			smooth_time = p.smooth_ms
 		}
-		plug.generation = plug.instance.generation
+		dsp.smoother_init(&actx.smoothers[i], initial, smooth_time, sr)
 	}
 
-	num_channels := min(channel_count(out_buf), desc.max_channels)
-	num_samples := len(out_buf.buffers32[0])
-	alloc := plug.instance.frame_allocator
-
-	ctx := &plug.process_ctx
-	ctx.num_samples = num_samples
-	ctx.num_channels = num_channels
-	ctx.sample_rate = sr
-	ctx.sample_offset = 0
-	ctx.params = &plug.smoothed
-	ctx.audio_ctx = actx
-	ctx.has_wet_dry = desc.has_wet_dry
-	ctx.wet_dry_param = desc.wet_dry_param
-
-	ctx.outputs = make([][]f32, num_channels, alloc)
-	for c in 0 ..< num_channels {
-		ctx.outputs[c] = out_buf.buffers32[c][:num_samples]
-	}
-
-	if len(inputs) > 0 && len(inputs[0].buffers32) > 0 {
-		ctx.inputs = make([][]f32, num_channels, alloc)
-		for c in 0 ..< num_channels {
-			if len(inputs[0].buffers32) > c {
-				ctx.inputs[c] = inputs[0].buffers32[c][:num_samples]
-			} else {
-				ctx.inputs[c] = make([]f32, num_samples, alloc)
-			}
-		}
-	} else {
-		ctx.inputs = nil
-	}
-
-	if ctx.has_wet_dry && ctx.inputs != nil {
-		ctx.dry = make([][]f32, num_channels, alloc)
-		ctx.mix_buf = make([]f32, num_samples, alloc)
-		for c in 0 ..< num_channels {
-			ctx.dry[c] = make([]f32, num_samples, alloc)
-			dsp.buf_copy(ctx.dry[c], ctx.inputs[c])
-		}
-	}
-
-	ctx.change_indices = make([]int, len(desc.params), alloc)
-	ctx.events = actx.events
-
-	return ctx
+	// Pre-allocate per-call arrays (resliced, not reallocated, each process call)
+	actx.changeIndices = make([]int, len(desc.params), alloc)
+	actx.outputs = make([][]f32, desc.max_channels, alloc)
+	actx.inputs = make([][]f32, desc.max_channels, alloc)
 }
 
-process_advance_params :: proc(ctx: ^ProcessContext, sample: int) {
-	for p in 0 ..< len(ctx.params.smoothers) {
-		changes := ctx.audio_ctx.paramChanges[p]
-		for ctx.change_indices[p] < len(changes) && changes[ctx.change_indices[p]].sampleOffset <= i32(sample) {
-			dsp.smoother_set_target(&ctx.params.smoothers[p], f32(changes[ctx.change_indices[p]].value))
-			ctx.change_indices[p] += 1
+plugin_reset :: proc(plug: ^Plugin) {
+	if plug.state == nil do return
+	plugin_reset_state(plug.state)
+	if plug.audioProcessor != nil {
+		for &s in plug.audioProcessor.smoothers {
+			dsp.smoother_reset(&s)
 		}
 	}
-	for &s in ctx.params.smoothers {
+}
+
+// Utilities
+
+// Block iterator — splits a process block at note event boundaries
+BlockIterator :: struct {
+	events: []b.Event,
+	total_samples: int,
+	pos: int,
+	event_idx: int,
+}
+
+BlockInfo :: struct {
+	events: []b.Event,
+	sample_offset: int,
+	sample_count: int,
+}
+
+make_block_iterator :: proc(events: []b.Event, total_samples: int) -> BlockIterator {
+	return {events = events, total_samples = total_samples}
+}
+
+next_block :: proc(it: ^BlockIterator) -> (BlockInfo, bool) {
+	if it.pos >= it.total_samples do return {}, false
+
+	// Collect events at current position
+	sub_event_start := it.event_idx
+	for it.event_idx < len(it.events) && int(it.events[it.event_idx].sample_offset) <= it.pos {
+		it.event_idx += 1
+	}
+
+	// Next split point
+	block_end := it.total_samples
+	if it.event_idx < len(it.events) {
+		block_end = int(it.events[it.event_idx].sample_offset)
+	}
+
+	sample_count := block_end - it.pos
+	if sample_count <= 0 do return {}, false
+
+	info := BlockInfo {
+		events = it.events[sub_event_start:it.event_idx],
+		sample_offset = it.pos,
+		sample_count = sample_count,
+	}
+	it.pos = block_end
+	return info, true
+}
+
+// Smoother utilities
+
+advance_smoothers :: proc(actx: ^AudioProcessContext, sample: int) {
+	for p in 0 ..< len(actx.smoothers) {
+		changes := actx.paramChanges[p]
+		for actx.changeIndices[p] < len(changes) && changes[actx.changeIndices[p]].sampleOffset <= i32(sample) {
+			dsp.smoother_set_target(&actx.smoothers[p], f32(changes[actx.changeIndices[p]].value))
+			actx.changeIndices[p] += 1
+		}
+	}
+	for &s in actx.smoothers {
 		dsp.smoother_next(&s)
 	}
-	if ctx.has_wet_dry && ctx.mix_buf != nil {
-		ctx.mix_buf[sample] = ctx.params.smoothers[int(ctx.wet_dry_param)].current / 100.0
-	}
 }
 
-process_end :: proc(ctx: ^ProcessContext) {
-	if !ctx.has_wet_dry do return
-	for c in 0 ..< ctx.num_channels {
-		for s in 0 ..< ctx.num_samples {
-			mix := ctx.mix_buf[s]
-			ctx.outputs[c][s] = ctx.dry[c][s] * (1 - mix) + ctx.outputs[c][s] * mix
+smoothed_read :: proc(actx: ^AudioProcessContext, index: ParamIndex) -> f32 {
+	return actx.smoothers[int(index)].current
+}
+
+// Wet/dry utilities
+
+capture_dry :: proc(inputs: [][]f32, num_samples: int, alloc: mem.Allocator) -> [][]f32 {
+	dry := make([][]f32, len(inputs), alloc)
+	for c in 0 ..< len(inputs) {
+		dry[c] = make([]f32, num_samples, alloc)
+		copy(dry[c], inputs[c][:num_samples])
+	}
+	return dry
+}
+
+apply_wet_dry :: proc(outputs: [][]f32, dry: [][]f32, mix: f32, num_samples: int) {
+	for c in 0 ..< len(outputs) {
+		for s in 0 ..< num_samples {
+			outputs[c][s] = dry[c][s] * (1 - mix) + outputs[c][s] * mix
 		}
 	}
 }
-
-// Block splitting — calls process_fn for each sub-block split at event boundaries.
-// Events at each split point are attached to ctx.events for that sub-block.
-// Output/input slices are views into the full buffer (no allocation).
-// Param advancement is the plugin's responsibility — call process_advance_params
-// per-sample using ctx.sample_offset + s for absolute indexing.
-// When no events are present, calls process_fn once for the full block.
-process_split_blocks :: proc(ctx: ^ProcessContext, plug: ^Plugin, process_fn: proc(ctx: ^ProcessContext, plug: ^Plugin)) {
-	if len(ctx.events) == 0 {
-		process_fn(ctx, plug)
-		return
-	}
-
-	alloc := plug.instance.frame_allocator
-	nc := ctx.num_channels
-
-	// Save original per-channel slices so sub-block reslicing doesn't alias
-	full_outputs := make([][]f32, nc, alloc)
-	copy(full_outputs, ctx.outputs)
-	full_inputs: [][]f32
-	if ctx.inputs != nil {
-		full_inputs = make([][]f32, nc, alloc)
-		copy(full_inputs, ctx.inputs)
-	}
-	full_num_samples := ctx.num_samples
-	full_events := ctx.events
-
-	block_start := 0
-	event_idx := 0
-
-	for block_start < full_num_samples {
-		// Collect events at this offset
-		sub_event_start := event_idx
-		for event_idx < len(full_events) && int(full_events[event_idx].sample_offset) <= block_start {
-			event_idx += 1
-		}
-
-		// Next split point
-		block_end := full_num_samples
-		if event_idx < len(full_events) {
-			block_end = int(full_events[event_idx].sample_offset)
-		}
-
-		sub_len := block_end - block_start
-		if sub_len <= 0 do break
-
-		// Sub-block views for outputs and inputs
-		for c in 0 ..< nc {
-			ctx.outputs[c] = full_outputs[c][block_start:block_end]
-		}
-		if full_inputs != nil {
-			for c in 0 ..< nc {
-				ctx.inputs[c] = full_inputs[c][block_start:block_end]
-			}
-		}
-
-		ctx.num_samples = sub_len
-		ctx.sample_offset = block_start
-		ctx.events = full_events[sub_event_start:event_idx]
-
-		process_fn(ctx, plug)
-
-		block_start = block_end
-	}
-
-	// Restore full context
-	ctx.inputs = full_inputs
-	ctx.outputs = full_outputs
-	ctx.num_samples = full_num_samples
-	ctx.events = full_events
-	ctx.sample_offset = 0
-}
-
-plugin_setup_processing :: proc(plug: ^Plugin, sample_rate: f64, max_block_size: i32) {
-	
-}
-
-plugin_reset :: proc(plug: ^Plugin) {}

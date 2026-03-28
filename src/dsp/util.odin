@@ -137,6 +137,10 @@ smoother_init :: proc(s: ^Smoother, initial: f32, time_ms: f32, sample_rate: f32
 	}
 }
 
+smoother_reset :: proc(s: ^Smoother) {
+	s.current = s.target
+}
+
 smoother_set_target :: proc(s: ^Smoother, target: f32) {
 	s.target = target
 }

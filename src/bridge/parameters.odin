@@ -40,6 +40,7 @@ ParamDescriptor :: struct {
 	step_count: i32,
 	unit: ParamUnit,
 	flags: ParamFlagSet,
+	smooth_ms: f32,
 }
 
 ParamValues :: struct {

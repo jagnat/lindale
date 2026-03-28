@@ -313,7 +313,7 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.componentCount = 0
 	ctx.root = ui_alloc_component(ctx)
 	ctx.root^ = Component{}
-	size := ctx.plugin.instance.platform.get_size(ctx.plugin.instance.renderer)
+	size := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer)
 	ctx.root.calcBounds = RectF32 {0, 0, f32(size.logicalWidth), f32(size.logicalHeight)}
 	ctx.currentComponent = ctx.root
 }
@@ -359,22 +359,22 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 							v.val^ = v.min + norm * (v.max - v.min)
 						}
 						case SliderParamBinding: {
-							inst := ctx.plugin.instance
+							inst := ctx.plugin.host
 							if inst != nil && inst.params != nil {
 								desc := param_table[v.param_idx]
 								inst.params.values[v.param_idx] = b.normalized_to_param(f64(norm), desc)
 							}
-							if inst != nil && inst.host != nil && inst.host.param_edit_change != nil {
-								inst.host.param_edit_change(inst.host.ctx, i32(v.param_idx), f64(norm))
+							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
+								inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(v.param_idx), f64(norm))
 							}
 						}
 					}
 
 					if .Left not_in ctx.mouse.down {
 						if pb, ok := d.binding.(SliderParamBinding); ok {
-							inst := ctx.plugin.instance
-							if inst != nil && inst.host != nil && inst.host.param_edit_end != nil {
-								inst.host.param_edit_end(inst.host.ctx, i32(pb.param_idx))
+							inst := ctx.plugin.host
+							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
+								inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(pb.param_idx))
 							}
 						}
 						ctx.activeId = 0
@@ -382,9 +382,9 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
 					if pb, ok := d.binding.(SliderParamBinding); ok {
-						inst := ctx.plugin.instance
-						if inst != nil && inst.host != nil && inst.host.param_edit_start != nil {
-							inst.host.param_edit_start(inst.host.ctx, i32(pb.param_idx))
+						inst := ctx.plugin.host
+						if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
+							inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(pb.param_idx))
 						}
 					}
 				}
@@ -556,7 +556,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				case SliderFloatBinding:
 					norm = (v.val^ - v.min) / (v.max - v.min)
 				case SliderParamBinding:
-					inst := ctx.plugin.instance
+					inst := ctx.plugin.host
 					if inst != nil && inst.params != nil {
 						desc := param_table[v.param_idx]
 						norm = f32(b.param_to_normalized(inst.params.values[v.param_idx], desc))

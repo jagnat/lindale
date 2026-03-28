@@ -99,12 +99,12 @@ RendererSize :: struct {
 	physicalHeight: i32, // Actual drawable pixels
 }
 
-// Plugin header allocated by host, passed to hot module.
-// Host owns allocation and lifetime.
-PluginInstance :: struct {
+// Host-provided resources passed to the hot-loaded plugin.
+// Allocated and owned by the static VST layer, survives hot-reloads.
+HostContext :: struct {
 	params: ^ParamValues,
 	platform: ^PlatformApi,
-	host: ^HostApi,
+	hostApi: ^HostApi,
 	renderer: Renderer,
 	font_atlas: TextureHandle,
 

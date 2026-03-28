@@ -62,8 +62,6 @@ get_plugin_descriptor :: proc() -> PluginDescriptor {
 		max_channels  = 2,
 		latency       = 0,
 		tail          = u32(MAX_DELAY_MS * 48000.0 / 1000.0),
-		has_wet_dry   = true,
-		wet_dry_param = PARAM_MIX,
 	}
 }
 
@@ -77,30 +75,46 @@ plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allo
 	}
 }
 
+plugin_reset_state :: proc(state: ^PluginState) {
+	for c in 0 ..< 2 {
+		for i in 0 ..< len(state.buffers[c]) {
+			state.buffers[c][i] = 0
+		}
+		state.lines[c].write_pos = 0
+	}
+}
+
 // Audio
 
 plugin_process_audio :: proc(plug: ^Plugin) {
-	ctx := process_begin(plug)
-	if ctx == nil do return
+	actx := plug.audioProcessor
+	if actx == nil do return
+	if plug.state == nil do return
+	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	if actx.inputs[0] == nil do return
 
-	for s in 0 ..< ctx.num_samples {
-		process_advance_params(ctx, s)
+	num_samples := actx.numSamples
+	num_channels := actx.numChannels
+	sample_rate := f32(actx.sampleRate)
 
-		delay_ms := smoothed_next(ctx.params, PARAM_DELAY_TIME)
-		feedback := smoothed_next(ctx.params, PARAM_FEEDBACK) / 100.0
-		gain := dsp.db_to_linear(smoothed_next(ctx.params, PARAM_GAIN))
+	dry := capture_dry(actx.inputs[:num_channels], num_samples, plug.host.frame_allocator)
 
-		delay_samples := delay_ms * ctx.sample_rate / 1000.0
+	for s in 0 ..< num_samples {
+		advance_smoothers(actx, s)
 
-		for c in 0 ..< ctx.num_channels {
-			dry := ctx.inputs[c][s]
+		delay_ms := smoothed_read(actx, PARAM_DELAY_TIME)
+		feedback := smoothed_read(actx, PARAM_FEEDBACK) / 100.0
+		mix := smoothed_read(actx, PARAM_MIX) / 100.0
+		gain := dsp.db_to_linear(smoothed_read(actx, PARAM_GAIN))
+		delay_samples := delay_ms * sample_rate / 1000.0
+
+		for c in 0 ..< num_channels {
+			input := actx.inputs[c][s]
 			delayed := dsp.delay_read_frac(&plug.state.lines[c], delay_samples)
-			dsp.delay_write(&plug.state.lines[c], dry + delayed * feedback)
-			ctx.outputs[c][s] = delayed * gain
+			dsp.delay_write(&plug.state.lines[c], input + delayed * feedback)
+			actx.outputs[c][s] = dry[c][s] * (1 - mix) + delayed * gain * mix
 		}
 	}
-
-	process_end(ctx)
 }
 
 // UI

@@ -206,15 +206,15 @@ hotload_api :: proc() -> lin.PluginApi {
 			}
 		}
 	}
-	buffer_setup_processing :: proc(plug: ^lin.Plugin, sample_rate: f64, max_block_size: i32) {
+	buffer_setup_processing :: proc(plug: ^lin.Plugin) {
 		when !HOT_DLL {
-			if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug, sample_rate, max_block_size)
+			if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_processing == nil {
-				if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug, sample_rate, max_block_size)
+				if lin.fallbackApi.setup_processing != nil do lin.fallbackApi.setup_processing(plug)
 			} else {
-				ctx.apis[idx].setup_processing(plug, sample_rate, max_block_size)
+				ctx.apis[idx].setup_processing(plug)
 			}
 		}
 	}

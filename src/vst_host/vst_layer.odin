@@ -93,14 +93,13 @@ LindaleProcessor :: struct {
 	refCount: u32,
 
 	plugin: lin.Plugin,
-	pluginInstance: bridge.PluginInstance,
+	hostCtx: bridge.HostContext,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
 	bypassParamIdx: int,
 	bypassed: bool,
 
 	hostContext: ^vst3.FUnknown,
-	sampleRate: f64,
 	ctx: runtime.Context,
 
 	frameTemp: runtime.Default_Temp_Allocator,
@@ -179,18 +178,18 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.paramValues.values[i] = desc.default_value
 	}
 
-	processor.pluginInstance.persistent_allocator = context.allocator
+	processor.hostCtx.persistent_allocator = context.allocator
 
-	runtime.default_temp_allocator_init(&processor.frameTemp, 1024 * 1024, processor.pluginInstance.persistent_allocator)
-	processor.pluginInstance.frame_allocator = runtime.default_temp_allocator(&processor.frameTemp)
-	processor.ctx.temp_allocator = processor.pluginInstance.frame_allocator
+	runtime.default_temp_allocator_init(&processor.frameTemp, 1024 * 1024, processor.hostCtx.persistent_allocator)
+	processor.hostCtx.frame_allocator = runtime.default_temp_allocator(&processor.frameTemp)
+	processor.ctx.temp_allocator = processor.hostCtx.frame_allocator
 
 	sess_err := vm.arena_init_growing(&processor.sessionArena)
 	assert(sess_err == .None)
-	processor.pluginInstance.session_allocator = vm.arena_allocator(&processor.sessionArena)
+	processor.hostCtx.session_allocator = vm.arena_allocator(&processor.sessionArena)
 
-	processor.pluginInstance.params = &processor.paramValues
-	processor.plugin.instance = &processor.pluginInstance
+	processor.hostCtx.params = &processor.paramValues
+	processor.plugin.host = &processor.hostCtx
 	lin.plugin_init(&processor.plugin, {.Audio})
 
 	return processor
@@ -434,9 +433,11 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 		log.info("lp_ap_setupProcessing")
 
-		processor.sampleRate = setup.sampleRate
+		processor.plugin.audioProcessor.sampleRate = setup.sampleRate
+		processor.plugin.audioProcessor.maxBlockSize = setup.maxSamplesPerBlock
+		vm.arena_free_all(&processor.sessionArena)
 		if pluginApi.setup_processing != nil {
-			pluginApi.setup_processing(&processor.plugin, setup.sampleRate, setup.maxSamplesPerBlock)
+			pluginApi.setup_processing(&processor.plugin)
 		}
 
 		return vst3.kResultOk
@@ -454,11 +455,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		outputs := data.outputs
 		inputs := data.inputs
 
-		// TODO: Which allocator?
-		groups: [32]lin.AudioBufferGroup
-		channelSlices: [64][]u8 // we will cast slice to the right type later
 		paramChanges := make([][64]lin.ParameterChange, len(processor.paramDescs), context.temp_allocator)
-		channelSliceBumpIdx: i32
 
 		audioContext := processor.plugin.audioProcessor
 		if data.processContext != nil {
@@ -469,6 +466,11 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		// Clear stale paramChanges slices (they pointed into previous call's temp memory)
 		for i in 0 ..< len(audioContext.paramChanges) {
 			audioContext.paramChanges[i] = nil
+		}
+
+		// Reset change indices for param advancement
+		for i in 0 ..< len(audioContext.changeIndices) {
+			audioContext.changeIndices[i] = 0
 		}
 
 		// Fetch parameter updates: convert normalized host values to plain before storing
@@ -594,62 +596,39 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			}
 		}
 
-		audioContext.inputBuffers = groups[:numInputs]
-		audioContext.outputBuffers = groups[numInputs:numInputs + numOutputs]
-
-		// Convert input buffers to slices
-		for i in 0..< numInputs {
-			input := inputs[i]
-			inputChannelCount := input.numChannels
-			audioContext.inputBuffers[i].silenceFlags = input.silenceFlags
-			audioContext.inputBuffers[i].sampleSize = data.symbolicSampleSize == .Sample32? .F32 : .F64
-			channels := channelSlices[channelSliceBumpIdx:channelSliceBumpIdx+inputChannelCount]
-			channelSliceBumpIdx += inputChannelCount
-
-			if data.symbolicSampleSize == .Sample32 {
-				audioContext.inputBuffers[i].buffers32 = transmute([][]f32)channels
-				for j in 0..<inputChannelCount {
-					audioContext.inputBuffers[i].buffers32[j] = input.channelBuffers32[j][:data.numSamples]
-				}
-			} else {
-				audioContext.inputBuffers[i].buffers64 = transmute([][]f64)channels
-				for j in 0..<inputChannelCount {
-					audioContext.inputBuffers[i].buffers64[j] = input.channelBuffers64[j][:data.numSamples]
-				}
-			}
-		}
-
-		// Convert output buffers to slices
-		for i in 0..< numOutputs {
-			output := outputs[i]
-			outputChannelCount := output.numChannels
-			audioContext.outputBuffers[i].silenceFlags = output.silenceFlags
-			audioContext.outputBuffers[i].sampleSize = data.symbolicSampleSize == .Sample32? .F32 : .F64
-			channels := channelSlices[channelSliceBumpIdx:channelSliceBumpIdx+outputChannelCount]
-			channelSliceBumpIdx += outputChannelCount
-
-			if data.symbolicSampleSize == .Sample32 {
-				audioContext.outputBuffers[i].buffers32 = transmute([][]f32)channels
-				for j in 0..<outputChannelCount {
-					audioContext.outputBuffers[i].buffers32[j] = output.channelBuffers32[j][:data.numSamples]
-				}
-			} else {
-				audioContext.outputBuffers[i].buffers64 = transmute([][]f64)channels
-				for j in 0..<outputChannelCount {
-					audioContext.outputBuffers[i].buffers64[j] = output.channelBuffers64[j][:data.numSamples]
-				}
-			}
-		}
-
-		// Check for hot-reload generation change
+		// Check for hot-reload generation change — must happen before writing
+		// buffer slices, since setup_processing re-allocates the slice arrays
 		gen := hotload_generation()
 		if gen != processor.lastGeneration {
-			processor.pluginInstance.generation = gen
+			processor.hostCtx.generation = gen
 			processor.lastGeneration = gen
-			// Reset session arena so hot-loaded code reallocates state
-			// with the correct struct layout
 			vm.arena_free_all(&processor.sessionArena)
-			processor.plugin.state = nil
+			if pluginApi.setup_processing != nil {
+				pluginApi.setup_processing(&processor.plugin)
+			}
+		}
+
+		// Write flat f32 buffer slices into the audio context (bus 0 only)
+		desc := pluginApi.get_plugin_descriptor()
+		if numOutputs > 0 {
+			output := outputs[0]
+			nc := min(int(output.numChannels), desc.max_channels)
+			audioContext.numChannels = nc
+			audioContext.numSamples = int(numSamples)
+			for c in 0 ..< nc {
+				audioContext.outputs[c] = output.channelBuffers32[c][:numSamples]
+			}
+		}
+		if numInputs > 0 {
+			input := inputs[0]
+			nc := min(int(input.numChannels), desc.max_channels)
+			for c in 0 ..< nc {
+				audioContext.inputs[c] = input.channelBuffers32[c][:numSamples]
+			}
+		} else {
+			for c in 0 ..< audioContext.numChannels {
+				audioContext.inputs[c] = nil
+			}
 		}
 
 		// Bypass: copy input to output where possible, zero the rest
@@ -738,7 +717,7 @@ LindaleController :: struct {
 	refCount: u32,
 
 	plugin: lin.Plugin,
-	pluginInstance: bridge.PluginInstance,
+	hostCtx: bridge.HostContext,
 	platformApi: bridge.PlatformApi,
 	hostApi: bridge.HostApi,
 	paramDescs: []bridge.ParamDescriptor,
@@ -809,25 +788,25 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller.paramValues.values[i] = desc.default_value
 	}
 
-	controller.pluginInstance.persistent_allocator = context.allocator
+	controller.hostCtx.persistent_allocator = context.allocator
 
-	runtime.default_temp_allocator_init(&controller.frameTemp, 4 * 1024 * 1024, controller.pluginInstance.persistent_allocator)
-	controller.pluginInstance.frame_allocator = runtime.default_temp_allocator(&controller.frameTemp)
-	controller.ctx.temp_allocator = controller.pluginInstance.frame_allocator
+	runtime.default_temp_allocator_init(&controller.frameTemp, 4 * 1024 * 1024, controller.hostCtx.persistent_allocator)
+	controller.hostCtx.frame_allocator = runtime.default_temp_allocator(&controller.frameTemp)
+	controller.ctx.temp_allocator = controller.hostCtx.frame_allocator
 
 	sess_err := vm.arena_init_growing(&controller.sessionArena)
 	assert(sess_err == .None)
-	controller.pluginInstance.session_allocator = vm.arena_allocator(&controller.sessionArena)
+	controller.hostCtx.session_allocator = vm.arena_allocator(&controller.sessionArena)
 
-	controller.pluginInstance.params = &controller.paramValues
+	controller.hostCtx.params = &controller.paramValues
 	controller.hostApi = bridge.HostApi {
-		ctx = bridge.HostContext(controller),
+		ctx = bridge.HostHandle(controller),
 		param_edit_start = lc_host_param_edit_start,
 		param_edit_change = lc_host_param_edit_change,
 		param_edit_end = lc_host_param_edit_end,
 	}
-	controller.pluginInstance.host = &controller.hostApi
-	controller.plugin.instance = &controller.pluginInstance
+	controller.hostCtx.hostApi = &controller.hostApi
+	controller.plugin.host = &controller.hostCtx
 
 	controller.plugin.viewBounds = {0, 0, 800, 600}
 
@@ -835,21 +814,21 @@ createLindaleController :: proc () -> ^LindaleController {
 
 	return controller
 
-	lc_host_param_edit_start :: proc(ctx: bridge.HostContext, param_id: i32) {
+	lc_host_param_edit_start :: proc(ctx: bridge.HostHandle, param_id: i32) {
 		controller := cast(^LindaleController)ctx
 		context = controller.ctx
 		if controller.componentHandler == nil do return
 		controller.componentHandler->beginEdit(u32(param_id))
 	}
 
-	lc_host_param_edit_change :: proc(ctx: bridge.HostContext, param_id: i32, normalized_value: f64) {
+	lc_host_param_edit_change :: proc(ctx: bridge.HostHandle, param_id: i32, normalized_value: f64) {
 		controller := cast(^LindaleController)ctx
 		context = controller.ctx
 		if controller.componentHandler == nil do return
 		controller.componentHandler->performEdit(u32(param_id), normalized_value)
 	}
 
-	lc_host_param_edit_end :: proc(ctx: bridge.HostContext, param_id: i32) {
+	lc_host_param_edit_end :: proc(ctx: bridge.HostHandle, param_id: i32) {
 		controller := cast(^LindaleController)ctx
 		context = controller.ctx
 		if controller.componentHandler == nil do return
@@ -1103,7 +1082,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	// Check for hot-reload generation change
 	gen := hotload_generation()
 	if gen != view.controller.lastGeneration {
-		view.controller.pluginInstance.generation = gen
+		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
 	}
 
@@ -1120,7 +1099,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 	// Check for hot-reload generation change
 	gen := hotload_generation()
 	if gen != view.controller.lastGeneration {
-		view.controller.pluginInstance.generation = gen
+		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
 	}
 
@@ -1244,12 +1223,12 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult
 			end_pass = plat.renderer_end_pass,
 			draw = plat.renderer_draw,
 		}
-		controller.pluginInstance.platform = &controller.platformApi
-		controller.pluginInstance.renderer = view.renderer
+		controller.hostCtx.platform = &controller.platformApi
+		controller.hostCtx.renderer = view.renderer
 		plat.renderer_set_mouse_state(view.renderer, &view.plugin.mouse)
 		plat.renderer_set_repaint_callback(view.renderer, repaint_callback, view)
 
-		controller.pluginInstance.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
+		controller.hostCtx.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 
 		lin.plugin_view_attached(view.plugin)
 
