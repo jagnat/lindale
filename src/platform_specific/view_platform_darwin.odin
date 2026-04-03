@@ -248,7 +248,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	// Get the CAMetalLayer created by makeBackingLayer
 	layer := cast(^CA.MetalLayer)view->layer()
 	layer->setDevice(device)
-	layer->setPixelFormat(.BGRA8Unorm_sRGB)
+	layer->setPixelFormat(.BGRA8Unorm)
 	layer->setFramebufferOnly(true)
 
 	if parent != nil {
@@ -724,7 +724,7 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 
 	// Color attachment with alpha blending
 	colorAttachment := pipelineDesc->colorAttachments()->object(0)
-	colorAttachment->setPixelFormat(.BGRA8Unorm_sRGB)
+	colorAttachment->setPixelFormat(.BGRA8Unorm)
 	colorAttachment->setBlendingEnabled(true)
 	colorAttachment->setSourceRGBBlendFactor(.SourceAlpha)
 	colorAttachment->setDestinationRGBBlendFactor(.OneMinusSourceAlpha)

@@ -168,8 +168,6 @@ draw_clear :: proc(ctx: ^DrawContext) {
 }
 
 draw_submit :: proc(ctx: ^DrawContext) {
-	if ctx.batchesFirst == nil do return
-
 	p := ctx.plugin.host.platform
 	r := ctx.plugin.host.renderer
 
@@ -180,15 +178,17 @@ draw_submit :: proc(ctx: ^DrawContext) {
 		font_reset_dirty_flag(&ctx.fontState)
 	}
 
-	instances := make([]RectInstance, ctx.totalInstanceCount, context.temp_allocator)
-	idx: u32 = 0
-	for batch := ctx.batchesFirst; batch != nil; batch = batch.next {
-		for chunk := batch.chunkFirst; chunk != nil; chunk = chunk.next {
-			copy(instances[idx:], chunk.instancePool[:chunk.instanceCount])
-			idx += chunk.instanceCount
+	if ctx.batchesFirst != nil {
+		instances := make([]RectInstance, ctx.totalInstanceCount, context.temp_allocator)
+		idx: u32 = 0
+		for batch := ctx.batchesFirst; batch != nil; batch = batch.next {
+			for chunk := batch.chunkFirst; chunk != nil; chunk = chunk.next {
+				copy(instances[idx:], chunk.instancePool[:chunk.instanceCount])
+				idx += chunk.instanceCount
+			}
 		}
+		p.upload_instances(r, instances)
 	}
-	p.upload_instances(r, instances)
 
 	p.begin_pass(r, ctx.clearColor)
 

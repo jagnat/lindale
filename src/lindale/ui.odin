@@ -50,6 +50,25 @@ DEFAULT_THEME : UITheme : {
 	borderWidth = 1.5,
 }
 
+THEME_APOLLO : UITheme : {
+	bgColor = {0x24, 0x15, 0x27, 0xff},
+	panelBgColor = {0x24, 0x15, 0x27, 0xff},
+	buttonColor = {0x4e, 0x50, 0x52, 0xff},
+	buttonHoverColor = {0x55, 0x58, 0x5a, 0xff},
+	buttonActiveColor = {0x5d, 0x5f, 0x62, 0xff},
+	sliderTrackColor = {0x81, 0x97, 0x96, 0xff},
+	sliderColor = {0x57, 0x72, 0x77, 0xff},
+	sliderHoverColor = {0x81, 0x97, 0x96, 0xff},
+	sliderActiveColor = {0xc7, 0xcf, 0xcc, 0xff},
+	textColor = {0xeb, 0xed, 0xe9, 0xff},
+	borderColor = {0x61, 0x63, 0x65, 0xff},
+
+	padding = 10,
+	itemSpacing = 10,
+	cornerRadius = 10,
+	borderWidth = 1.2,
+}
+
 LayoutDirection :: enum { VERTICAL, HORIZONTAL, }
 
 AlignX :: enum { LEFT, CENTER, RIGHT, }
@@ -260,6 +279,21 @@ ui_slider_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: Param
 	ui_close_component(ctx)
 }
 
+ui_slider_param_labeled2 :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string : proc(val: f64) -> string = nil) {
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .VERTICAL
+	comp.child_gaps = 5
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .GROW}
+	paramBuf := make([]byte, 40, allocator=ctx.plugin.host.frame_allocator)
+	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], param_table[param_idx], paramBuf, enum_to_string)
+	ui_label(ctx, str, alignX = .CENTER)
+	ui_slider_param(ctx, label, param_idx, alignX = .CENTER)
+	ui_label(ctx, label, alignX = .CENTER)
+	ui_close_component(ctx)
+}
+
 @(private="file")
 ui_alloc_component :: proc(ctx: ^UIContext) -> ^Component {
 	assert(ctx.componentCount + 1 <= UI_MAX_COMPONENTS)
@@ -304,7 +338,7 @@ ui_close_component :: proc(ctx: ^UIContext) {
 }
 
 ui_frame_begin :: proc(ctx: ^UIContext) {
-	ctx.theme = DEFAULT_THEME
+	ctx.theme = THEME_APOLLO
 	ctx.mouse = ctx.plugin.mouse
 	ctx.plugin.mouse.pressed = {}
 	ctx.plugin.mouse.released = {}

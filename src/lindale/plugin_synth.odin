@@ -3,6 +3,7 @@ package lindale
 import "core:log"
 import "core:mem"
 import "core:time"
+import "core:math"
 import b "../bridge"
 import dsp "../dsp"
 
@@ -32,27 +33,34 @@ PluginState :: struct {
 
 PARAM_OSC1_WAVE :: ParamIndex(0)
 PARAM_OSC2_WAVE :: ParamIndex(1)
-PARAM_OSC2_DET  :: ParamIndex(2)
-PARAM_ATTACK    :: ParamIndex(3)
-PARAM_DECAY     :: ParamIndex(4)
-PARAM_SUSTAIN   :: ParamIndex(5)
-PARAM_RELEASE   :: ParamIndex(6)
-PARAM_GAIN      :: ParamIndex(7)
+PARAM_OSC_MIX   :: ParamIndex(2)
+PARAM_OSC2_DET  :: ParamIndex(3)
+PARAM_ATTACK    :: ParamIndex(4)
+PARAM_DECAY     :: ParamIndex(5)
+PARAM_SUSTAIN   :: ParamIndex(6)
+PARAM_RELEASE   :: ParamIndex(7)
+PARAM_GAIN      :: ParamIndex(8)
 
 @(rodata) param_table := [?]b.ParamDescriptor {
 	{
 		name = "Osc1 Wave", short_name = "Osc1",
-		min = 0, max = 2, default_value = 0,
-		step_count = 2, unit = .None,
+		min = 0, max = 4, default_value = 0,
+		step_count = 4, unit = .None,
 		flags = {.Automatable, .List},
 		smooth_ms = NO_SMOOTHING,
 	},
 	{
 		name = "Osc2 Wave", short_name = "Osc2",
-		min = 0, max = 2, default_value = 1,
-		step_count = 2, unit = .None,
+		min = 0, max = 4, default_value = 1,
+		step_count = 4, unit = .None,
 		flags = {.Automatable, .List},
 		smooth_ms = NO_SMOOTHING,
+	},
+	{
+		name = "Osc Mix", short_name = "Mix",
+		min = -1, max = 1, default_value = 0,
+		unit = .None,
+		flags = {.Automatable},
 	},
 	{
 		name = "Osc2 Detune", short_name = "Det",
@@ -128,11 +136,13 @@ plugin_reset_state :: proc(state: ^PluginState) {
 }
 
 waveform_from_param :: proc(val: f32) -> dsp.Waveform {
-	idx := clamp(int(val + 0.5), 0, 2)
+	idx := clamp(int(val + 0.5), 0, 4)
 	switch idx {
 	case 0: return .Sine
 	case 1: return .Saw
-	case 2: return .Square
+	case 2: return .Triangle
+	case 3: return .Square
+	case 4: return .Noise
 	}
 	return .Sine
 }
@@ -174,6 +184,7 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 			decay := smoothed_read(actx, PARAM_DECAY) / 1000.0
 			sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100.0
 			release := smoothed_read(actx, PARAM_RELEASE) / 1000.0
+			osc_mix := (smoothed_read(actx, PARAM_OSC_MIX) + 1.0) / 2.0
 			gain := dsp.db_to_linear(smoothed_read(actx, PARAM_GAIN))
 
 			bend_semitones := state.pitch_bend * PITCH_BEND_RANGE
@@ -184,6 +195,8 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 				detune_freq := dsp.midi_to_freq(f32(v.pitch) + bend_semitones + osc2_detune_cents / 100.0)
 				dsp.osc_set_freq(&v.osc1, base_freq)
 				dsp.osc_set_freq(&v.osc2, detune_freq)
+				v.osc1.wave = osc1_wave
+				v.osc2.wave = osc2_wave
 			}
 
 			sample: f32 = 0
@@ -196,9 +209,10 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 					continue
 				}
 
-				o1 := dsp.osc_next(&v.osc1, osc1_wave)
-				o2 := dsp.osc_next(&v.osc2, osc2_wave)
-				sample += (o1 + o2) * 0.5 * env_val * v.velocity
+				o1 := dsp.osc_next(&v.osc1)
+				o2 := dsp.osc_next(&v.osc2)
+				// sample += (o1 + o2) * 0.5 * env_val * v.velocity
+				sample += (o1 * math.cos(osc_mix * math.PI/2) + o2 * math.sin(osc_mix * math.PI/2)) * env_val * v.velocity
 			}
 
 			sample *= gain
@@ -265,19 +279,32 @@ plugin_draw :: proc(plug: ^Plugin) {
 
 	plug.lastDrawTime = time.tick_now()
 
+	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
 	draw_clear(plug.draw)
-	draw_set_clear_color(plug.draw, {0.08, 0.08, 0.1, 1.0})
+
+	osc_enum_to_string :: proc(val: f64) -> string {
+		waveform := waveform_from_param(f32(val))
+		switch waveform {
+			case .Sine: return "Sine"
+			case .Saw: return "Saw"
+			case .Square: return "Square"
+			case .Triangle: return "Triangle"
+			case .Noise: return "Noise"
+		}
+		return ""
+	}
 
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10) {
-			ui_slider_param_labeled(plug.ui, "Osc1", PARAM_OSC1_WAVE)
-			ui_slider_param_labeled(plug.ui, "Osc2", PARAM_OSC2_WAVE)
-			ui_slider_param_labeled(plug.ui, "Detune", PARAM_OSC2_DET)
-			ui_slider_param_labeled(plug.ui, "Attack", PARAM_ATTACK)
-			ui_slider_param_labeled(plug.ui, "Decay", PARAM_DECAY)
-			ui_slider_param_labeled(plug.ui, "Sustain", PARAM_SUSTAIN)
-			ui_slider_param_labeled(plug.ui, "Release", PARAM_RELEASE)
-			ui_slider_param_labeled(plug.ui, "Gain", PARAM_GAIN)
+			ui_slider_param_labeled2(plug.ui, "Osc1", PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
+			ui_slider_param_labeled2(plug.ui, "Osc2", PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
+			ui_slider_param_labeled2(plug.ui, "Osc Mix", PARAM_OSC_MIX)
+			ui_slider_param_labeled2(plug.ui, "Detune", PARAM_OSC2_DET)
+			ui_slider_param_labeled2(plug.ui, "Attack", PARAM_ATTACK)
+			ui_slider_param_labeled2(plug.ui, "Decay", PARAM_DECAY)
+			ui_slider_param_labeled2(plug.ui, "Sustain", PARAM_SUSTAIN)
+			ui_slider_param_labeled2(plug.ui, "Release", PARAM_RELEASE)
+			ui_slider_param_labeled2(plug.ui, "Gain", PARAM_GAIN)
 		}
 	}
 

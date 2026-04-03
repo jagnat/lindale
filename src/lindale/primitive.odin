@@ -33,6 +33,14 @@ ColorU8_from_hex :: proc(hexCode: u32) -> ColorU8 {
 	return {r, g, b, a}
 }
 
+ColorF32_from_ColorU8 :: proc(col: ColorU8) -> ColorF32 {
+	r := f32(col.r) / 255.0
+	g := f32(col.g) / 255.0
+	b := f32(col.b) / 255.0
+	a := f32(col.a) / 255.0
+	return {r, g, b, a}
+}
+
 decibels_to_linear :: proc(decibels: f64) -> f64 {
 	return math.pow10_f64(decibels / 20)
 }
