@@ -301,3 +301,15 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 draw_measure_text :: proc(ctx: ^DrawContext, text: string) -> Vec2f {
 	return font_measure_bounds(&ctx.fontState, text)
 }
+
+draw_filled_rect :: proc(ctx: ^DrawContext, x, y, w, h: f32, color: ColorU8, cornerRad: f32 = 0) {
+	draw_push_rect(ctx, SimpleUIRect{x = x, y = y, width = w, height = h, color = color, cornerRad = cornerRad})
+}
+
+draw_bordered_rect :: proc(ctx: ^DrawContext, x, y, w, h: f32, fill: ColorU8, border: ColorU8, borderWidth: f32, cornerRad: f32 = 0) {
+	draw_push_rect(ctx, SimpleUIRect{x = x, y = y, width = w, height = h, color = fill, cornerRad = cornerRad, borderColor = border, borderWidth = borderWidth})
+}
+
+draw_circle :: proc(ctx: ^DrawContext, cx, cy, radius: f32, color: ColorU8) {
+	draw_push_rect(ctx, SimpleUIRect{x = cx - radius, y = cy - radius, width = radius * 2, height = radius * 2, color = color, cornerRad = radius})
+}

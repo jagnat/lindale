@@ -295,18 +295,30 @@ plugin_draw :: proc(plug: ^Plugin) {
 	}
 
 	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10) {
-			ui_slider_param_labeled2(plug.ui, "Osc1", PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
-			ui_slider_param_labeled2(plug.ui, "Osc2", PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
-			ui_slider_param_labeled2(plug.ui, "Osc Mix", PARAM_OSC_MIX)
-			ui_slider_param_labeled2(plug.ui, "Detune", PARAM_OSC2_DET)
-			ui_slider_param_labeled2(plug.ui, "Attack", PARAM_ATTACK)
-			ui_slider_param_labeled2(plug.ui, "Decay", PARAM_DECAY)
-			ui_slider_param_labeled2(plug.ui, "Sustain", PARAM_SUSTAIN)
-			ui_slider_param_labeled2(plug.ui, "Release", PARAM_RELEASE)
-			ui_slider_param_labeled2(plug.ui, "Gain", PARAM_GAIN)
+		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10) {
+			// Horizontal sliders for envelope
+			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+				ui_slider_h_param_labeled(plug.ui, "Attack", PARAM_ATTACK)
+				ui_slider_h_param_labeled(plug.ui, "Decay", PARAM_DECAY)
+				ui_slider_h_param_labeled(plug.ui, "Sustain", PARAM_SUSTAIN)
+				ui_slider_h_param_labeled(plug.ui, "Release", PARAM_RELEASE)
+				ui_slider_h_param_labeled(plug.ui, "Gain", PARAM_GAIN)
+			}
+			// Vertical sliders for oscillator params
+			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 0, skipDraw = true) {
+				ui_slider_param_labeled2(plug.ui, "Osc1", PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
+				ui_slider_param_labeled2(plug.ui, "Osc2", PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
+				ui_slider_param_labeled2(plug.ui, "Mix", PARAM_OSC_MIX)
+				ui_slider_param_labeled2(plug.ui, "Detune", PARAM_OSC2_DET)
+				dummy: bool = false
+				ui_toggle(plug.ui, "ADSFJK", &dummy)
+			}
 		}
 	}
+
+	// Draw helper demo: a small indicator circle in the top-right corner
+	size := plug.host.platform.get_size(plug.host.renderer)
+	draw_circle(plug.draw, f32(size.logicalWidth) - 14, 14, 5, {0x4c, 0x87, 0xc8, 0xcc})
 
 	plug.draw.frame += 1
 

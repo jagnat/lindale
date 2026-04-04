@@ -80,7 +80,7 @@
 			},
 			"zig":
 			{
-				"enabled": true
+				"enabled": false
 			}
 		}
 	},
