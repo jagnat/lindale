@@ -201,7 +201,7 @@ UIContext :: struct {
 	mouse: MouseState,
 	theme: UITheme,
 
-	plugin: ^Plugin
+	plugin: ^PluginController
 }
 
 @(deferred_in = ui_frame_end)

@@ -92,7 +92,7 @@ LindaleProcessor :: struct {
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
 	refCount: u32,
 
-	plugin: lin.Plugin,
+	plugin: lin.PluginProcessor,
 	hostCtx: bridge.HostContext,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
@@ -168,7 +168,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.ctx.logger = get_mutex_logger(.Processor)
 
 	// Init params, and append bypass parameter
-	descs := pluginApi.query_parameter_layout()
+	descs := pluginApi.get_plugin_descriptor().params
 	processor.paramDescs = make([]bridge.ParamDescriptor, len(descs) + 1)
 	copy(processor.paramDescs, descs)
 	processor.bypassParamIdx = len(descs)
@@ -190,7 +190,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	processor.hostCtx.params = &processor.paramValues
 	processor.plugin.host = &processor.hostCtx
-	lin.plugin_init(&processor.plugin, {.Audio})
+	lin.plugin_init_processor(&processor.plugin)
 
 	return processor
 
@@ -436,9 +436,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.plugin.audioProcessor.sampleRate = setup.sampleRate
 		processor.plugin.audioProcessor.maxBlockSize = setup.maxSamplesPerBlock
 		vm.arena_free_all(&processor.sessionArena)
-		if pluginApi.setup_processing != nil {
-			pluginApi.setup_processing(&processor.plugin)
-		}
+		pluginApi.setup_processor(&processor.plugin)
 
 		return vst3.kResultOk
 	}
@@ -597,15 +595,13 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		}
 
 		// Check for hot-reload generation change — must happen before writing
-		// buffer slices, since setup_processing re-allocates the slice arrays
+		// buffer slices, since setup_processor re-allocates the slice arrays
 		gen := hotload_generation()
 		if gen != processor.lastGeneration {
 			processor.hostCtx.generation = gen
 			processor.lastGeneration = gen
 			vm.arena_free_all(&processor.sessionArena)
-			if pluginApi.setup_processing != nil {
-				pluginApi.setup_processing(&processor.plugin)
-			}
+			pluginApi.setup_processor(&processor.plugin)
 		}
 
 		// Write flat f32 buffer slices into the audio context (bus 0 only)
@@ -716,7 +712,7 @@ LindaleController :: struct {
 
 	refCount: u32,
 
-	plugin: lin.Plugin,
+	plugin: lin.PluginController,
 	hostCtx: bridge.HostContext,
 	platformApi: bridge.PlatformApi,
 	hostApi: bridge.HostApi,
@@ -778,7 +774,7 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.ctx.logger = get_mutex_logger(.Controller)
 
 	// Init params, and append bypass parameter
-	descs := pluginApi.query_parameter_layout()
+	descs := pluginApi.get_plugin_descriptor().params
 	controller.paramDescs = make([]bridge.ParamDescriptor, len(descs) + 1)
 	copy(controller.paramDescs, descs)
 	controller.bypassParamIdx = len(descs)
@@ -810,7 +806,8 @@ createLindaleController :: proc () -> ^LindaleController {
 
 	controller.plugin.viewBounds = {0, 0, 800, 600}
 
-	lin.plugin_init(&controller.plugin, {.Controller})
+	lin.plugin_init_controller(&controller.plugin)
+	pluginApi.setup_controller(&controller.plugin)
 
 	return controller
 
@@ -1059,7 +1056,7 @@ LindaleView :: struct {
 
 	controller: ^LindaleController,
 
-	plugin: ^lin.Plugin,
+	plugin: ^lin.PluginController,
 
 	ctx: runtime.Context,
 	parent: rawptr,
@@ -1108,7 +1105,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 	free_all(context.temp_allocator)
 }
 
-createLindaleView :: proc(view: ^LindaleView, plug: ^lin.Plugin) -> vst3.TResult {
+createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vst3.TResult {
 	view.pluginViewVtable = {
 		queryInterface = lv_queryInterface,
 		addRef = lv_addRef,

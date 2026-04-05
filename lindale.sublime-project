@@ -10,6 +10,7 @@
 		{
 			"name": "Build Plugin",
 			"working_dir": "${project_path}",
+			// "quiet": true,
 			"windows":
 			{
 				"shell_cmd": "build_plugin.bat"
@@ -22,6 +23,7 @@
 		{
 			"name": "Build Hotload Plugin",
 			"working_dir": "${project_path}",
+			// "quiet": true,
 			"windows":
 			{
 				"shell_cmd": "build_hotload_plugin.bat"

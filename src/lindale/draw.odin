@@ -45,7 +45,7 @@ SimpleUIRect :: struct {
 }
 
 DrawContext :: struct {
-	plugin: ^Plugin,
+	plugin: ^PluginController,
 	initialized: bool,
 	fontState: FontState,
 	batchesFirst: ^RectDrawBatch,

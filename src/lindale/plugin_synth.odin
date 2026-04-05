@@ -24,9 +24,15 @@ Voice :: struct {
 
 // State
 
-PluginState :: struct {
+// Processor thread
+PluginProcessState :: struct {
 	voices: [MAX_VOICES]Voice,
 	pitch_bend: f32, // -1 to +1
+}
+
+// Controller thread
+PluginControlState :: struct {
+	test: bool,
 }
 
 // Parameters
@@ -117,7 +123,7 @@ get_plugin_descriptor :: proc() -> PluginDescriptor {
 
 // Lifecycle
 
-plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allocator) {
+plugin_init_state :: proc(state: ^PluginProcessState, sample_rate: f32, alloc: mem.Allocator) {
 	for &v in state.voices {
 		dsp.osc_init(&v.osc1, sample_rate)
 		dsp.osc_init(&v.osc2, sample_rate)
@@ -125,7 +131,7 @@ plugin_init_state :: proc(state: ^PluginState, sample_rate: f32, alloc: mem.Allo
 	}
 }
 
-plugin_reset_state :: proc(state: ^PluginState) {
+plugin_reset_state :: proc(state: ^PluginProcessState) {
 	state.pitch_bend = 0
 	for &v in state.voices {
 		v.active = false
@@ -149,7 +155,7 @@ waveform_from_param :: proc(val: f32) -> dsp.Waveform {
 
 // Audio
 
-plugin_process_audio :: proc(plug: ^Plugin) {
+plugin_process_audio :: proc(plug: ^PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
@@ -224,7 +230,7 @@ plugin_process_audio :: proc(plug: ^Plugin) {
 	}
 }
 
-note_on :: proc(state: ^PluginState, evt: b.NoteOn) {
+note_on :: proc(state: ^PluginProcessState, evt: b.NoteOn) {
 	// Find a free voice, or steal the oldest idle one
 	slot: ^Voice = nil
 	for &v in state.voices {
@@ -257,7 +263,7 @@ note_on :: proc(state: ^PluginState, evt: b.NoteOn) {
 	dsp.adsr_gate_on(&slot.env)
 }
 
-note_off :: proc(state: ^PluginState, evt: b.NoteOff) {
+note_off :: proc(state: ^PluginProcessState, evt: b.NoteOff) {
 	for &v in state.voices {
 		if v.active && (evt.note_id >= 0 ? v.note_id == evt.note_id : v.pitch == evt.pitch) {
 			dsp.adsr_gate_off(&v.env)
@@ -267,7 +273,7 @@ note_off :: proc(state: ^PluginState, evt: b.NoteOff) {
 
 // UI
 
-plugin_draw :: proc(plug: ^Plugin) {
+plugin_draw :: proc(plug: ^PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
 	if plug.inDraw {
@@ -310,13 +316,11 @@ plugin_draw :: proc(plug: ^Plugin) {
 				ui_slider_param_labeled2(plug.ui, "Osc2", PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
 				ui_slider_param_labeled2(plug.ui, "Mix", PARAM_OSC_MIX)
 				ui_slider_param_labeled2(plug.ui, "Detune", PARAM_OSC2_DET)
-				dummy: bool = false
-				ui_toggle(plug.ui, "ADSFJK", &dummy)
+				ui_toggle(plug.ui, "ADSFJK", &plug.state.test)
 			}
 		}
 	}
 
-	// Draw helper demo: a small indicator circle in the top-right corner
 	size := plug.host.platform.get_size(plug.host.renderer)
 	draw_circle(plug.draw, f32(size.logicalWidth) - 14, 14, 5, {0x4c, 0x87, 0xc8, 0xcc})
 
