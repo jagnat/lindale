@@ -10,6 +10,33 @@ ParameterChange :: struct {
 	value: f64,
 }
 
+TransportValidFlags :: enum u8 {
+	Tempo,
+	TimeSig,
+	BeatPosition,
+	BarPosition,
+	SamplePosition,
+	CycleActive,
+	CyclePoints,
+	Playing,
+}
+
+TransportValidFlagSet :: bit_set[TransportValidFlags]
+
+TransportState :: struct {
+	playing: bool,
+	tempo: f64,
+	time_sig_numerator: i32,
+	time_sig_denominator: i32,
+	beat_position: f64,
+	bar_position: f64,
+	sample_position: i64,
+	cycle_active: bool,
+	cycle_start: f64,
+	cycle_end: f64,
+	valid: TransportValidFlagSet,
+}
+
 AudioProcessContext :: struct {
 	// Host-written fields (set by the VST layer before calling process)
 	sampleRate: f64,
@@ -21,6 +48,7 @@ AudioProcessContext :: struct {
 	numSamples: int,
 	paramChanges: [][]ParameterChange,
 	events: []b.Event,
+	transport: TransportState,
 
 	// Framework-managed fields (set during setup_processor)
 	smoothers: []dsp.Smoother,

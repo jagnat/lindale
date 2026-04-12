@@ -457,8 +457,45 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 		audioContext := processor.plugin.audioProcessor
 		if data.processContext != nil {
-			audioContext.sampleRate = data.processContext.sampleRate
-			audioContext.projectTimeSamples = data.processContext.projectTimeSamples
+			pc := data.processContext
+			audioContext.sampleRate = pc.sampleRate
+			audioContext.projectTimeSamples = pc.projectTimeSamples
+
+			stateFlags := transmute(vst3.ProcessingStatesFlagsSet)pc.state
+			transport := &audioContext.transport
+			transport.valid = {}
+
+			transport.playing = .kPlaying in stateFlags
+			transport.valid += {.Playing}
+
+			if .kTempoValid in stateFlags {
+				transport.tempo = pc.tempo
+				transport.valid += {.Tempo}
+			}
+			if .kTimeSigValid in stateFlags {
+				transport.time_sig_numerator = pc.timeSigNumerator
+				transport.time_sig_denominator = pc.timeSigDenominator
+				transport.valid += {.TimeSig}
+			}
+			if .kProjectTimeMusicValid in stateFlags {
+				transport.beat_position = pc.projectTimeMusic
+				transport.valid += {.BeatPosition}
+			}
+			if .kBarPositionValid in stateFlags {
+				transport.bar_position = pc.barPositionMusic
+				transport.valid += {.BarPosition}
+			}
+			transport.sample_position = pc.projectTimeSamples
+			transport.valid += {.SamplePosition}
+
+			transport.cycle_active = .kCycleActive in stateFlags
+			transport.valid += {.CycleActive}
+
+			if .kCycleValid in stateFlags {
+				transport.cycle_start = pc.cycleStartMusic
+				transport.cycle_end = pc.cycleEndMusic
+				transport.valid += {.CyclePoints}
+			}
 		}
 
 		// Clear stale paramChanges slices (they pointed into previous call's temp memory)
@@ -700,7 +737,14 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 		log.info("lp_getProcessContextRequirements")
 
-		return {}
+		return {
+			.NeedTempo,
+			.NeedTimeSignature,
+			.NeedTransportState,
+			.NeedProjectTimeMusic,
+			.NeedBarPositionMusic,
+			.NeedCycleMusic,
+		}
 	}
 }
 
