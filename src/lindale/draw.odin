@@ -52,7 +52,6 @@ DrawContext :: struct {
 	batchesLast: ^RectDrawBatch,
 	totalInstanceCount: u32,
 	clearColor: ColorF32,
-	frame: i64,
 }
 
 draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {

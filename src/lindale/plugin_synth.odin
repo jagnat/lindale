@@ -4,11 +4,16 @@ import "core:log"
 import "core:mem"
 import "core:time"
 import "core:math"
+import "core:c"
+import stbi "vendor:stb/image"
 import b "../bridge"
 import dsp "../dsp"
 
-// Voice
+@(private="file") test_tex_loaded: bool
+@(private="file") test_tex_handle: TextureHandle
+@(private="file") test_love_png := #load("../../resources/love.png")
 
+// Voice
 MAX_VOICES :: 16
 MAX_ARP_NOTES :: 16
 PITCH_BEND_RANGE :: f32(2.0) // semitones
@@ -480,10 +485,62 @@ plugin_draw :: proc(plug: ^PluginController) {
 		}
 	}
 
-	size := plug.host.platform.get_size(plug.host.renderer)
-	draw_circle(plug.draw, f32(size.logicalWidth) - 14, 14, 5, {0x4c, 0x87, 0xc8, 0xcc})
+	// {
+	// 	r := plug.host.renderer
+	// 	p := plug.host.platform
+	// 	dctx := plug.draw
 
-	plug.draw.frame += 1
+	// 	if !test_tex_loaded {
+	// 		w, h, ch: c.int
+	// 		pixels := stbi.load_from_memory(raw_data(test_love_png), c.int(len(test_love_png)), &w, &h, &ch, 4)
+	// 		if pixels != nil {
+	// 			test_tex_handle = p.create_texture(r, u32(w), u32(h), .RGBA8)
+	// 			p.upload_texture(r, test_tex_handle, pixels[:int(w)*int(h)*4])
+	// 			stbi.image_free(pixels)
+	// 			test_tex_loaded = true
+	// 			log.infof("loaded love.png: %dx%d", w, h)
+	// 		} else {
+	// 			log.error("failed to decode love.png")
+	// 		}
+	// 	}
+
+	// 	draw_filled_rect(dctx, 0, 0, 800, 600, {30, 30, 40, 255})
+	// 	draw_filled_rect(dctx, 20, 20, 360, 260, {50, 50, 70, 255})
+	// 	draw_filled_rect(dctx, 300, 200, 300, 260, {70, 50, 50, 255})
+
+	// 	if test_tex_loaded {
+	// 		scissorA := RectI32{20, 20, 360, 260}
+	// 		draw_set_scissor(dctx, scissorA)
+	// 		draw_set_texture(dctx, test_tex_handle, false)
+	// 		img := RectInstance{
+	// 			pos0 = {40, 40},
+	// 			pos1 = {500, 440},
+	// 			uv0 = {0, 0},
+	// 			uv1 = {1, 1},
+	// 			color = {255, 255, 255, 255},
+	// 			noTexture = 0,
+	// 		}
+	// 		draw_push_instance(dctx, img)
+	// 		draw_text(dctx, "love clipped by scissor A", 30, 30, {255, 255, 255, 255})
+
+	// 		scissorB := RectI32{300, 200, 300, 260}
+	// 		draw_set_scissor(dctx, scissorB)
+	// 		draw_set_texture(dctx, test_tex_handle, false)
+	// 		img2 := RectInstance{
+	// 			pos0 = {260, 180},
+	// 			pos1 = {700, 520},
+	// 			uv0 = {0, 0},
+	// 			uv1 = {1, 1},
+	// 			color = {255, 255, 255, 255},
+	// 			noTexture = 0,
+	// 		}
+	// 		draw_push_instance(dctx, img2)
+	// 		draw_text(dctx, "scissor B text", 320, 220, {255, 255, 255, 255})
+
+	// 		draw_remove_scissor(dctx)
+	// 		draw_text(dctx, "unclipped control text", 20, 560, {200, 255, 200, 255})
+	// 	}
+	// }
 
 	draw_submit(plug.draw)
 }
