@@ -40,21 +40,31 @@ MouseState :: struct {
 	modifiers: KeyModifierSet,
 }
 
-// Instance data for SDF rounded rectangles.
-// Must match vertex shader input format
-RectInstance :: struct #packed {
-	pos0: [2]f32,         // Top left corner
-	pos1: [2]f32,         // Bottom right corner
-	uv0: [2]f32,          // Top left UV
-	uv1: [2]f32,          // Bottom right UV
-	color: ColorU8,       // Fill color
-	borderColor: ColorU8, // Border color
-	borderWidth: f32,     // Border thickness in pixels
-	cornerRad: f32,       // Corner radius in pixels
-	noTexture: f32,       // 1.0 = solid color, 0.0 = use texture
-	_pad: f32,            // Padding to align to 56 bytes
+ShaderMode :: enum u32 {
+	Rect = 0,
+	Pill = 1,
+	Arc  = 2,
 }
-#assert(size_of(RectInstance) == 56)
+
+// Instance data for SDF draw primitives.
+// pos0/pos1 are always the AABB for the vertex shader quad.
+// uv0/uv1 and extras are reinterpreted per mode.
+// Must match vertex shader input format (64 bytes).
+DrawInstance :: struct #packed {
+	pos0: [2]f32, // AABB top-left
+	pos1: [2]f32, // AABB bottom-right
+	uv0: [2]f32, // Rect: tex UV0. Pill: p0. Arc: center.
+	uv1: [2]f32, // Rect: tex UV1. Pill: p1. Arc: {startAngle, endAngle} rads.
+	color: ColorU8,
+	borderColor: ColorU8,
+	borderWidth: f32,
+	shapeParam: f32, // Rect: cornerRad. Pill/Arc: thickness.
+	noTexture: f32,
+	mode: u32,
+	extra0: f32, // Arc: radius.
+	extra1: f32,
+}
+#assert(size_of(DrawInstance) == 64)
 
 // Uniform data passed to shader
 UniformBuffer :: struct {
@@ -83,8 +93,8 @@ DrawCommand :: struct {
 	scissor: RectI32,     // {0,0,0,0} means no scissor
 }
 
-// Maximum instances per frame (1MB / 56 bytes)
-MAX_INSTANCES :: 1024 * 1024 / size_of(RectInstance)
+// Maximum instances per frame (1MB / 64 bytes)
+MAX_INSTANCES :: 1024 * 1024 / size_of(DrawInstance)
 MAX_TEXTURES :: 64
 
 // Renderer handle - platform specific implementation
@@ -123,7 +133,7 @@ PlatformApi :: struct {
 	get_size:          proc(r: Renderer) -> RendererSize,
 	begin_frame:       proc(r: Renderer) -> bool,
 	end_frame:         proc(r: Renderer),
-	upload_instances:  proc(r: Renderer, instances: []RectInstance),
+	upload_instances:  proc(r: Renderer, instances: []DrawInstance),
 	begin_pass:        proc(r: Renderer, clearColor: ColorF32),
 	end_pass:          proc(r: Renderer),
 	draw:              proc(r: Renderer, cmd: DrawCommand),

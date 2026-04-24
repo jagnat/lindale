@@ -217,6 +217,11 @@ BusInfo :: struct {
 	flags: u32,
 }
 
+BusFlags :: enum u32 {
+	kDefaultActive = 1 << 0,
+	kIsControlVoltage = 1 << 1,
+}
+
 RoutingInfo :: struct {
 	mediaType: MediaType,
 	busIndex: i32,

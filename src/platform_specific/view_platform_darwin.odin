@@ -273,7 +273,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	}
 
 	// 1MB instance buffer
-	instanceBufferSize := F.UInteger(bridge.MAX_INSTANCES * size_of(bridge.RectInstance))
+	instanceBufferSize := F.UInteger(bridge.MAX_INSTANCES * size_of(bridge.DrawInstance))
 	renderer.instanceBuffer = device->newBufferWithLength(instanceBufferSize, {.StorageModeManaged})
 	if renderer.instanceBuffer == nil {
 		free(renderer)
@@ -524,17 +524,17 @@ renderer_end_frame :: proc(r: bridge.Renderer) {
 	// CA.Transaction.flush()
 }
 
-renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.RectInstance) {
+renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawInstance) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
 	if u32(len(instances)) > renderer.instanceCapacity do return
 
-	bufferPtr := renderer.instanceBuffer->contentsAsSlice([]bridge.RectInstance)
+	bufferPtr := renderer.instanceBuffer->contentsAsSlice([]bridge.DrawInstance)
 	copy(bufferPtr, instances)
 
 	// Mark the modified range for managed storage mode
-	renderer.instanceBuffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.RectInstance))})
+	renderer.instanceBuffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.DrawInstance))})
 }
 
 renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
@@ -705,13 +705,18 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	vertexDesc->attributes()->object(5)->setOffset(8 * size_of(f32) + 4)
 	vertexDesc->attributes()->object(5)->setBufferIndex(1)
 
-	// Attribute 6: params (float4) - borderWidth, cornerRad, noTexture, pad
+	// Attribute 6: params (float4) - borderWidth, shapeParam, noTexture, mode-bits
 	vertexDesc->attributes()->object(6)->setFormat(.Float4)
 	vertexDesc->attributes()->object(6)->setOffset(10 * size_of(f32))
 	vertexDesc->attributes()->object(6)->setBufferIndex(1)
 
+	// Attribute 7: extras (float2) - extra0, extra1
+	vertexDesc->attributes()->object(7)->setFormat(.Float2)
+	vertexDesc->attributes()->object(7)->setOffset(14 * size_of(f32))
+	vertexDesc->attributes()->object(7)->setBufferIndex(1)
+
 	// Buffer layout - per instance
-	vertexDesc->layouts()->object(1)->setStride(size_of(bridge.RectInstance))
+	vertexDesc->layouts()->object(1)->setStride(size_of(bridge.DrawInstance))
 	vertexDesc->layouts()->object(1)->setStepFunction(.PerInstance)
 	vertexDesc->layouts()->object(1)->setStepRate(1)
 

@@ -22,7 +22,7 @@ font_init :: proc(ctx: ^FontState) {
 	fs.AddFontMem(&ctx.fontContext, "Noto Sans", font_NotoSans, false)
 }
 
-font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []RectInstance) -> int {
+font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []DrawInstance) -> int {
 	scale := ctx.scale
 	state := fs.__getState(&ctx.fontContext)
 	state.size = FONT_SIZE * scale
@@ -36,17 +36,11 @@ font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []R
 	for {
 		quad: fs.Quad
 		fs.TextIterNext(&ctx.fontContext, &iter, &quad) or_break
-		instance := RectInstance{
-			{quad.x0 * invScale, quad.y0 * invScale},
-			{quad.x1 * invScale, quad.y1 * invScale},
-			{quad.s0, quad.t0},
-			{quad.s1, quad.t1},
-			{}, // Color
-			{}, // Border color
-			0, // Border width
-			0, // Corner Radius
-			0, // Not white texture
-			0, // Padding
+		instance := DrawInstance{
+			pos0 = {quad.x0 * invScale, quad.y0 * invScale},
+			pos1 = {quad.x1 * invScale, quad.y1 * invScale},
+			uv0  = {quad.s0, quad.t0},
+			uv1  = {quad.s1, quad.t1},
 		}
 		rects[i] = instance
 		i += 1

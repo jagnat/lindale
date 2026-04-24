@@ -15,7 +15,7 @@ import "core:testing"
 // Interface
 
 mutex_log_init :: proc(log_folder: string) {
-	if ctx.loggerRunning do return
+	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) do return
 
 	// Timestamp file prefix
 	timestampBuf: [32]u8
@@ -42,16 +42,17 @@ mutex_log_init :: proc(log_folder: string) {
 	if t != nil {
 		t.init_context = context
 		ctx.readerThread = t
-		ctx.loggerRunning = true
+		intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
 		thread.start(t)
 	}
 }
 
 mutex_log_exit :: proc() {
-	if ctx.loggerRunning {
-		ctx.loggerRunning = false
+	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
+		intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
 		thread.join(ctx.readerThread)
 		thread.destroy(ctx.readerThread)
+		ctx.readerThread = nil
 	}
 }
 
@@ -128,7 +129,7 @@ mutex_log_flush :: proc() {
 log_mutex_reader_thread_proc :: proc(t: ^thread.Thread) {
 	lastFlush := time.now()
 
-	for ctx.loggerRunning {
+	for intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
 		msg: Log
 
 		shouldFlush := time.since(lastFlush) > LOG_FLUSH_TIME

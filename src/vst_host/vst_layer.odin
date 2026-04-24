@@ -70,11 +70,17 @@ when ODIN_OS == .Darwin {
 		return true
 	}
 } else when ODIN_OS == .Windows {
-	// @(fini)
-	// WindowsExit :: proc () {
-	// 	context = pluginFactory.ctx
-	// 	deinit()
-	// }
+	@export InitDll :: proc "system" () -> c.bool {
+		context = runtime.default_context()
+		return true
+	}
+
+	@export ExitDll :: proc "system" () -> c.bool {
+		context = pluginFactory.initialized ? pluginFactory.ctx : runtime.default_context()
+		log.info("ExitDll")
+		deinit()
+		return true
+	}
 }
 
 deinit :: proc() {
@@ -309,7 +315,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			bus.channelCount = 2
 			utf16.encode_string(bus.name[:], "Main")
 			bus.busType = .Main
-			bus.flags = 0
+			bus.flags = u32(vst3.BusFlags.kDefaultActive)
 			return vst3.kResultOk
 		}
 
@@ -319,7 +325,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			bus.channelCount = 1
 			utf16.encode_string(bus.name[:], "Event In")
 			bus.busType = .Main
-			bus.flags = 0
+			bus.flags = u32(vst3.BusFlags.kDefaultActive)
 			return vst3.kResultOk
 		}
 
@@ -640,6 +646,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			vm.arena_free_all(&processor.sessionArena)
 			pluginApi.setup_processor(&processor.plugin)
 		}
+
+		audioContext.numChannels = 0
+		audioContext.numSamples = 0
 
 		// Write flat f32 buffer slices into the audio context (bus 0 only)
 		desc := pluginApi.get_plugin_descriptor()

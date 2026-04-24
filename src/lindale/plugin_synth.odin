@@ -4,6 +4,7 @@ import "core:log"
 import "core:mem"
 import "core:time"
 import "core:math"
+import "core:slice"
 import "core:c"
 import stbi "vendor:stb/image"
 import b "../bridge"
@@ -363,7 +364,7 @@ plugin_process_audio :: proc(plug: ^PluginProcessor) {
 				if dsp.adsr_is_idle(&v.env) {
 					v.active = false
 					continue
-				}
+				} 
 
 				o1 := dsp.osc_next(&v.osc1)
 				o2 := dsp.osc_next(&v.osc2)
@@ -373,6 +374,10 @@ plugin_process_audio :: proc(plug: ^PluginProcessor) {
 			sample *= gain
 
 			for c in 0 ..< num_channels {
+				outputLen := len(actx.outputs)
+				outputZLen := len(actx.outputs[0])
+				outputPtr := slice.as_ptr(actx.outputs[0])
+				log.info("outputLen", outputLen, "outputZLen", outputZLen, "outPtr", outputPtr)
 				actx.outputs[c][abs_sample] = sample
 			}
 		}
@@ -541,6 +546,19 @@ plugin_draw :: proc(plug: ^PluginController) {
 	// 		draw_text(dctx, "unclipped control text", 20, 560, {200, 255, 200, 255})
 	// 	}
 	// }
+
+	// Test: pill and arc primitives
+	{
+		dctx := plug.draw
+		// Diagonal pill, no border
+		// draw_push_pill(dctx, {50, 540}, {200, 570}, 8, {100, 200, 255, 220})
+		// Thick pill with border
+		// draw_push_pill(dctx, {50, 520}, {200, 520}, 16, {60, 60, 80, 255}, 2, {180, 180, 255, 255})
+
+		draw_push_arc(dctx, {680, 540}, 28, 0, math.PI * 2, 3, {0xcc, 0xc5, 0xb9, 0xff})
+		// end_ang :: 
+		draw_push_arc(dctx, {680, 540}, 28, math.PI / 2 + 0.5, math.PI * 2 + math.PI / 2 - 0.5, 8, {0x8d, 0xb3, 0x67, 0xff})
+	}
 
 	draw_submit(plug.draw)
 }

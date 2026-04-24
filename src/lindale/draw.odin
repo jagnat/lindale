@@ -13,7 +13,7 @@ WINDOW_WIDTH, WINDOW_HEIGHT : i32 : 800, 600
 RectDrawChunk :: struct {
 	next: ^RectDrawChunk,
 	instanceCount: u32,
-	instancePool: [DRAW_CHUNK_COUNT]RectInstance,
+	instancePool: [DRAW_CHUNK_COUNT]DrawInstance,
 }
 
 RectDrawBatchParams :: struct {
@@ -86,7 +86,7 @@ draw_create_new_batch :: proc(ctx: ^DrawContext, params: RectDrawBatchParams) ->
 	return newBatch
 }
 
-draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, instance: RectInstance) {
+draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, instance: DrawInstance) {
 	lastChunk := batch.chunkLast
 	if lastChunk == nil || lastChunk.instanceCount + 1 >= len(lastChunk.instancePool) {
 		newChunk := new(RectDrawChunk, allocator = context.temp_allocator)
@@ -139,22 +139,59 @@ draw_remove_scissor :: proc(ctx: ^DrawContext) {
 draw_push_rect :: proc(ctx: ^DrawContext, rect: SimpleUIRect) {
 	curBatch := draw_get_current_batch(ctx)
 
-	instance : RectInstance
+	instance : DrawInstance
 	instance.pos0 = {rect.x, rect.y}
 	instance.pos1 = {rect.x + rect.width, rect.y + rect.height}
 	instance.uv0 = {rect.u, rect.v}
 	instance.uv1 = {rect.u + rect.uw, rect.v + rect.vh}
 	instance.color = rect.color
-	instance.cornerRad = rect.cornerRad
+	instance.shapeParam = rect.cornerRad
 	instance.noTexture = 1
 	instance.borderColor = rect.borderColor
 	instance.borderWidth = rect.borderWidth
 	draw_add_instance_to_batch(ctx, curBatch, instance)
 }
 
-draw_push_instance :: proc(ctx: ^DrawContext, rect: RectInstance) {
+draw_push_instance :: proc(ctx: ^DrawContext, rect: DrawInstance) {
 	curBatch := draw_get_current_batch(ctx)
 	draw_add_instance_to_batch(ctx, curBatch, rect)
+}
+
+draw_push_pill :: proc(ctx: ^DrawContext, p0, p1: Vec2f, thickness: f32, color: ColorU8, border_width: f32 = 0, border_color: ColorU8 = {}) {
+	r := thickness * 0.5 + 1.0
+	instance := DrawInstance{
+		pos0       = {min(p0.x, p1.x) - r, min(p0.y, p1.y) - r},
+		pos1       = {max(p0.x, p1.x) + r, max(p0.y, p1.y) + r},
+		uv0        = p0,
+		uv1        = p1,
+		color      = color,
+		borderColor = border_color,
+		borderWidth = border_width,
+		shapeParam = thickness,
+		noTexture  = 1,
+		mode       = u32(ShaderMode.Pill),
+	}
+	curBatch := draw_get_current_batch(ctx)
+	draw_add_instance_to_batch(ctx, curBatch, instance)
+}
+
+draw_push_arc :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, start_angle, end_angle: f32, thickness: f32, color: ColorU8, border_width: f32 = 0, border_color: ColorU8 = {}) {
+	margin := radius + thickness * 0.5 + 1.0
+	instance := DrawInstance{
+		pos0        = {center.x - margin, center.y - margin},
+		pos1        = {center.x + margin, center.y + margin},
+		uv0         = center,
+		uv1         = {start_angle, end_angle},
+		color       = color,
+		borderColor = border_color,
+		borderWidth = border_width,
+		shapeParam  = thickness,
+		noTexture   = 1,
+		mode        = u32(ShaderMode.Arc),
+		extra0      = radius,
+	}
+	curBatch := draw_get_current_batch(ctx)
+	draw_add_instance_to_batch(ctx, curBatch, instance)
 }
 
 draw_clear :: proc(ctx: ^DrawContext) {
@@ -178,7 +215,7 @@ draw_submit :: proc(ctx: ^DrawContext) {
 	}
 
 	if ctx.batchesFirst != nil {
-		instances := make([]RectInstance, ctx.totalInstanceCount, context.temp_allocator)
+		instances := make([]DrawInstance, ctx.totalInstanceCount, context.temp_allocator)
 		idx: u32 = 0
 		for batch := ctx.batchesFirst; batch != nil; batch = batch.next {
 			for chunk := batch.chunkFirst; chunk != nil; chunk = chunk.next {
@@ -283,7 +320,7 @@ draw_one_rect :: proc(ctx: ^DrawContext) {
 
 draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {255, 255, 255, 255}) {
 	strLen := len(text)
-	buf := make([dynamic]RectInstance, strLen, allocator = context.temp_allocator)
+	buf := make([dynamic]DrawInstance, strLen, allocator = context.temp_allocator)
 
 	ascent, _, _ := font_get_vertical_metrics(&ctx.fontState)
 

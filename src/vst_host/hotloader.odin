@@ -28,6 +28,7 @@ HotloadState :: struct {
 	dllLastModTime: time.Time,
 	hotload_thread: ^thread.Thread,
 	initialized: bool,
+	running: bool,
 	dllSuffix: int,
 	lindaleHotDllBuf: [128]u8,
 	lindaleHotDll: string,
@@ -68,10 +69,10 @@ hotload_init :: proc() {
 
 	// if !_load_api() do return
 
-	// launch thread
 	ctx.hotload_thread = thread.create(_hotreload_thread_proc)
 	if ctx.hotload_thread != nil {
 		ctx.hotload_thread.init_context = context
+		intrinsics.atomic_store_explicit(&ctx.running, true, .Release)
 		thread.start(ctx.hotload_thread)
 	} else {
 		log.error("Failed to create hotreload thread")
@@ -242,18 +243,26 @@ hotload_generation :: proc() -> u64 {
 }
 
 hotload_deinit :: proc() {
-	if ctx.initialized {
-		buf: [128]u8
-		// Delete the hotloaded dlls
-		for i in ctx.suffixes {
-			if i == 0 do continue
-			oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, i)
-			fail := os.remove(oldSlotFilename)
-			if fail != nil && fail != .Not_Exist {
-				log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
-			}
+	if !ctx.initialized do return
+
+	if ctx.hotload_thread != nil {
+		intrinsics.atomic_store_explicit(&ctx.running, false, .Release)
+		thread.join(ctx.hotload_thread)
+		thread.destroy(ctx.hotload_thread)
+		ctx.hotload_thread = nil
+	}
+
+	buf: [128]u8
+	for i in ctx.suffixes {
+		if i == 0 do continue
+		oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, i)
+		fail := os.remove(oldSlotFilename)
+		if fail != nil && fail != .Not_Exist {
+			log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 		}
 	}
+
+	ctx.initialized = false
 }
 
 //////////////
@@ -299,7 +308,7 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 
 	if !_load_api() do log.error("FAILED to load hotloaded dll on startup")
 
-	for {
+	for intrinsics.atomic_load_explicit(&ctx.running, .Acquire) {
 		modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)
 		if err != nil {
 			log.error("Failed to get modification time of hotloaded dll", err)
@@ -311,7 +320,7 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 			time.sleep(100 * time.Millisecond)
 			if !_load_api() {
 				log.error("Failed to load hotloaded API")
-				time.sleep(time.Millisecond * 1000) // wait before retrying
+				time.sleep(time.Millisecond * 1000)
 				continue
 			}
 			log.info("Hotloaded API successfully")

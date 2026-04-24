@@ -15,7 +15,8 @@ struct VSInput {
 	float2 uv1 [[attribute(3)]];
 	float4 color [[attribute(4)]];
 	float4 borderColor [[attribute(5)]];
-	float4 params [[attribute(6)]]; // (borderWidth, cornerRad, noTexture, padding)
+	float4 params [[attribute(6)]]; // (borderWidth, shapeParam, noTexture, mode-bits)
+	float2 extras [[attribute(7)]]; // (extra0, extra1)
 };
 
 struct VSOutput {
@@ -26,20 +27,16 @@ struct VSOutput {
 	float4 color [[flat]];
 	float4 borderColor [[flat]];
 	float4 params [[flat]];
+	float2 worldPos;
+	float2 instanceUv0 [[flat]];
+	float2 instanceUv1 [[flat]];
+	float2 extras [[flat]];
 };
-
-float4 blerp(float4 c00, float4 c01, float4 c10, float4 c11, float2 uv) {
-	return mix(mix(c00, c01, uv.y), mix(c10, c11, uv.y), uv.x);
-}
 
 float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 	float rad = cornerRad;
 	float2 q = abs(input) - halfRectSize + rad;
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
-}
-
-float circle_sdf(float2 input, float rad) {
-	return length(input) - rad;
 }
 
 vertex VSOutput VSMain(VSInput input [[stage_in]],
@@ -68,18 +65,85 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	output.color = input.color;
 	output.borderColor = input.borderColor;
 	output.params = input.params;
+	output.worldPos = posToPick;
+	output.instanceUv0 = input.uv0;
+	output.instanceUv1 = input.uv1;
+	output.extras = input.extras;
 
 	return output;
 }
 
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
-	float4 outputColor = input.color;
+	uint mode = as_type<uint>(input.params.w);
 	float borderWidth = input.params.x;
-	float cornerRad = input.params.y;
+	float shapeParam = input.params.y;
 	float noTexture = input.params.z;
-	float4 sampleColor = float4(1.0, 1.0, 1.0, 1.0);
+
+	if (mode == 1u) {
+		// Pill (capsule) SDF
+		float2 p0 = input.instanceUv0;
+		float2 p1 = input.instanceUv1;
+		float2 pa = input.worldPos - p0;
+		float2 ba = p1 - p0;
+		float h = saturate(dot(pa, ba) / dot(ba, ba));
+		float d = length(pa - ba * h);
+		float outerSdf = d - shapeParam * 0.5;
+
+		float4 outputColor = input.color;
+		if (borderWidth > 0.0) {
+			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
+			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			outputColor = mix(outputColor, input.borderColor, borderBlend);
+		}
+		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
+		outputColor.a *= 1.0 - mixFactor;
+		return outputColor;
+	}
+
+	if (mode == 2u) {
+		// Arc SDF (Inigo Quilez arc formula)
+		float2 center = input.instanceUv0;
+		float startAngle = input.instanceUv1.x;
+		float endAngle = input.instanceUv1.y;
+		float radius = input.extras.x;
+
+		float2 p = input.worldPos - center;
+		float midAngle = (startAngle + endAngle) * 0.5;
+		float halfSpan = (endAngle - startAngle) * 0.5;
+
+		// Rotate so midAngle direction maps to IQ +Y. With Y-down screen space
+		// this gives 0 = East, increasing CW.
+		float cosM = sin(midAngle);
+		float sinM = cos(midAngle);
+		float2 pr = float2(p.x * cosM - p.y * sinM, p.x * sinM + p.y * cosM);
+		pr.x = abs(pr.x);
+
+		float2 sc = float2(sin(halfSpan), cos(halfSpan));
+		float d;
+		if (sc.y * pr.x > sc.x * pr.y) {
+			d = length(pr - sc * radius);
+		} else {
+			d = abs(length(p) - radius);
+		}
+		float outerSdf = d - shapeParam * 0.5;
+
+		float4 outputColor = input.color;
+		if (borderWidth > 0.0) {
+			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
+			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			outputColor = mix(outputColor, input.borderColor, borderBlend);
+		}
+		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
+		outputColor.a *= 1.0f - mixFactor;
+		return outputColor;
+	}
+
+	// mode == 0: Rect SDF
+	float4 outputColor = input.color;
+	float cornerRad = shapeParam;
+
 	if (noTexture < 1) {
-		sampleColor = tex.sample(sampl, input.uv);
+		float4 sampleColor = tex.sample(sampl, input.uv);
 
 		if (uniformBuffer.singleChannelTexture == 1) {
 			outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
@@ -88,7 +152,6 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		}
 	}
 
-	// SDF corners
 	float outerSdf = rounded_rect_sdf(input.rectPos, input.halfRectSize, cornerRad);
 
 	if (borderWidth > 0.0) {

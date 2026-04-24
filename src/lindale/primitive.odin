@@ -11,7 +11,8 @@ RectI32 :: b.RectI32
 RectF32 :: b.RectF32
 ColorU8 :: b.ColorU8
 ColorF32 :: b.ColorF32
-RectInstance :: b.RectInstance
+DrawInstance :: b.DrawInstance
+ShaderMode   :: b.ShaderMode
 TextureHandle :: b.TextureHandle
 DrawCommand :: b.DrawCommand
 MouseState :: b.MouseState

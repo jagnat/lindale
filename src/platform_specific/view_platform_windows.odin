@@ -243,7 +243,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	}
 
 	// 1MB instance buffer
-	instanceBufferSize := bridge.MAX_INSTANCES * size_of(bridge.RectInstance)
+	instanceBufferSize := bridge.MAX_INSTANCES * size_of(bridge.DrawInstance)
 	instanceBufferDesc := d3d11.BUFFER_DESC{
 		ByteWidth = u32(instanceBufferSize),
 		Usage = .DYNAMIC,
@@ -674,7 +674,7 @@ renderer_end_frame :: proc(r: bridge.Renderer) {
 	renderer.swapChain->Present(1, {})
 }
 
-renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.RectInstance) {
+renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawInstance) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
@@ -684,7 +684,7 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.RectIn
 	hr := renderer.deviceContext->Map(renderer.instanceBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)
 	if hr < 0 do return
 
-	mem.copy(mappedResource.pData, raw_data(instances), len(instances) * size_of(bridge.RectInstance))
+	mem.copy(mappedResource.pData, raw_data(instances), len(instances) * size_of(bridge.DrawInstance))
 	renderer.deviceContext->Unmap(renderer.instanceBuffer, 0)
 }
 
@@ -713,7 +713,7 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
 	renderer.deviceContext->PSSetShader(renderer.pixelShader, nil, 0)
 	renderer.deviceContext->IASetInputLayout(renderer.inputLayout)
 
-	stride := u32(size_of(bridge.RectInstance))
+	stride := u32(size_of(bridge.DrawInstance))
 	offset: u32 = 0
 	renderer.deviceContext->IASetVertexBuffers(0, 1, &renderer.instanceBuffer, &stride, &offset)
 
@@ -875,13 +875,14 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 	if hr < 0 do return false
 
 	inputElements := []d3d11.INPUT_ELEMENT_DESC{
-		{SemanticName = "TEXCOORD", SemanticIndex = 0, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 0, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 1, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 8, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 2, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 16, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 3, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 24, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 4, Format = .R8G8B8A8_UNORM, InputSlot = 0, AlignedByteOffset = 32, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 5, Format = .R8G8B8A8_UNORM, InputSlot = 0, AlignedByteOffset = 36, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32A32_FLOAT, InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 0, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 0,  InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 1, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 8,  InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 2, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 16, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 3, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 24, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 4, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 32, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 5, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 36, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32A32_FLOAT,  InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 56, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 	}
 
 	hr = renderer.device->CreateInputLayout(
