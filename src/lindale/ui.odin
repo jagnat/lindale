@@ -35,6 +35,15 @@ UITheme :: struct {
 slider_width :: 20
 slider_rail_width :: 4
 
+knob_size            :: 64
+knob_arc_thickness   :: 5
+knob_track_thickness :: 3
+knob_indicator_inset :: 2
+knob_endcap_radius   :: 4
+knob_start_angle     :: f32(3 * math.PI / 4)
+knob_sweep_angle     :: f32(3 * math.PI / 2)
+knob_drag_pixels     :: f32(200)
+
 DEFAULT_THEME : UITheme : {
 	bgColor = {0x3c, 0x3f, 0x41, 0xff},
 	panelBgColor = {0x3c, 0x3f, 0x41, 0xff},
@@ -99,6 +108,7 @@ ComponentType :: enum {
 	BUTTON,
 	SLIDER,
 	TOGGLE,
+	KNOB,
 }
 
 PanelData :: struct {
@@ -151,12 +161,31 @@ ToggleData :: struct {
 	},
 }
 
+KnobFloatBinding :: struct {
+	val: ^f32,
+	min, max: f32,
+}
+
+KnobParamBinding :: struct {
+	param_idx: ParamIndex,
+}
+
+KnobData :: struct {
+	label: string,
+	id: u32,
+	binding: union {
+		KnobFloatBinding,
+		KnobParamBinding,
+	},
+}
+
 ComponentData :: union {
 	PanelData,
 	LabelData,
 	ButtonData,
 	SliderData,
 	ToggleData,
+	KnobData,
 }
 
 Component :: struct {
@@ -198,6 +227,8 @@ UIContext :: struct {
 	hoveredId: u32,
 	activeId: u32,
 	lastClickedId: u32,
+	dragAnchorMouseY: f32,
+	dragAnchorNorm: f32,
 	mouse: MouseState,
 	theme: UITheme,
 
@@ -315,13 +346,17 @@ ui_slider_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, o
 	ui_close_component(ctx)
 }
 
-ui_slider_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex) {
+ui_slider_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .VERTICAL
 	comp.child_gaps = 5
 	comp.sizingHoriz = {type = .FIT}
 	comp.sizingVert = {type = .GROW}
+	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
+	paramBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
+	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], param_table[param_idx], paramBuf, enum_to_string)
+	ui_label(ctx, str, alignX = .CENTER, minWidth = maxValWidth)
 	ui_slider_param(ctx, label, param_idx, alignX = .CENTER)
 	ui_label(ctx, label, alignX = .CENTER)
 	ui_close_component(ctx)
@@ -349,22 +384,6 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str).x)
 	}
 	return maxWidth
-}
-
-ui_slider_param_labeled2 :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .VERTICAL
-	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .GROW}
-	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
-	paramBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
-	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], param_table[param_idx], paramBuf, enum_to_string)
-	ui_label(ctx, str, alignX = .CENTER, minWidth = maxValWidth)
-	ui_slider_param(ctx, label, param_idx, alignX = .CENTER)
-	ui_label(ctx, label, alignX = .CENTER)
-	ui_close_component(ctx)
 }
 
 ui_slider_h_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
@@ -424,6 +443,45 @@ ui_toggle_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: Param
 	comp.sizingVert = {type = .FIT}
 	ui_toggle_param(ctx, label, param_idx)
 	ui_label(ctx, label)
+	ui_close_component(ctx)
+}
+
+ui_knob :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, alignX: AlignX = .CENTER) {
+	id := string_hash_u32(label)
+	comp := ui_open_component(ctx)
+	comp.type = .KNOB
+	comp.alignX = alignX
+	comp.sizingHoriz = {type = .FIXED, value = knob_size}
+	comp.sizingVert = {type = .FIXED, value = knob_size}
+	comp.data = KnobData{label, id, KnobFloatBinding{val, min, max}}
+	ui_close_component(ctx)
+}
+
+ui_knob_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, alignX: AlignX = .CENTER) {
+	id := string_hash_u32(label)
+	comp := ui_open_component(ctx)
+	comp.type = .KNOB
+	comp.alignX = alignX
+	comp.sizingHoriz = {type = .FIXED, value = knob_size}
+	comp.sizingVert = {type = .FIXED, value = knob_size}
+	comp.data = KnobData{label, id, KnobParamBinding{param_idx}}
+	ui_close_component(ctx)
+}
+
+ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+	desc := param_table[param_idx]
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .VERTICAL
+	comp.child_gaps = 4
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .FIT}
+	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
+	valBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
+	valStr := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, valBuf, enum_to_string)
+	ui_label(ctx, desc.name, alignX = .CENTER)
+	ui_knob_param(ctx, desc.name, param_idx)
+	ui_label(ctx, valStr, alignX = .CENTER, minWidth = maxValWidth)
 	ui_close_component(ctx)
 }
 
@@ -596,6 +654,57 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 					}
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
+				}
+			}
+			case .KNOB: {
+				d := c.data.(KnobData) or_continue
+				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
+				if mouseOver do ctx.hoveredId = d.id
+				if d.id == ctx.activeId {
+					norm := clamp(ctx.dragAnchorNorm + (ctx.dragAnchorMouseY - ctx.mouse.pos.y) / knob_drag_pixels, 0, 1)
+
+					switch v in d.binding {
+						case KnobFloatBinding: {
+							v.val^ = v.min + norm * (v.max - v.min)
+						}
+						case KnobParamBinding: {
+							inst := ctx.plugin.host
+							if inst != nil && inst.params != nil {
+								desc := param_table[v.param_idx]
+								inst.params.values[v.param_idx] = b.normalized_to_param(f64(norm), desc)
+							}
+							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
+								inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(v.param_idx), f64(norm))
+							}
+						}
+					}
+
+					if .Left not_in ctx.mouse.down {
+						if pb, ok := d.binding.(KnobParamBinding); ok {
+							inst := ctx.plugin.host
+							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
+								inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(pb.param_idx))
+							}
+						}
+						ctx.activeId = 0
+					}
+				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
+					ctx.activeId = d.id
+					curNorm: f32
+					switch v in d.binding {
+					case KnobFloatBinding:
+						curNorm = clamp((v.val^ - v.min) / (v.max - v.min), 0, 1)
+					case KnobParamBinding:
+						inst := ctx.plugin.host
+						if inst != nil && inst.params != nil {
+							curNorm = f32(b.param_to_normalized(inst.params.values[v.param_idx], param_table[v.param_idx]))
+						}
+						if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
+							inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(v.param_idx))
+						}
+					}
+					ctx.dragAnchorMouseY = ctx.mouse.pos.y
+					ctx.dragAnchorNorm = curNorm
 				}
 			}
 		}
@@ -880,6 +989,50 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				thumbX := bounds.x + margin + thumbR + (bounds.w - bounds.h) * (f32(1) if on else f32(0))
 				thumbY := bounds.y + pillRad
 				draw_circle(ctx.plugin.draw, thumbX, thumbY, thumbR, ctx.theme.toggleThumbColor)
+			}
+			case .KNOB: {
+				bounds := c.calcBounds
+				d := c.data.(KnobData) or_continue
+
+				norm: f32
+				switch v in d.binding {
+				case KnobFloatBinding:
+					norm = clamp((v.val^ - v.min) / (v.max - v.min), 0, 1)
+				case KnobParamBinding:
+					inst := ctx.plugin.host
+					if inst != nil && inst.params != nil {
+						desc := param_table[v.param_idx]
+						norm = f32(b.param_to_normalized(inst.params.values[v.param_idx], desc))
+					}
+				}
+
+				arcColor := ctx.theme.sliderColor
+				if d.id == ctx.activeId do arcColor = ctx.theme.sliderActiveColor
+				else if d.id == ctx.hoveredId do arcColor = ctx.theme.sliderHoverColor
+
+				center := Vec2f{bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.5}
+				radius := math.min(bounds.w, bounds.h) * 0.5 - knob_arc_thickness
+
+				// Track arc (full sweep)
+				draw_push_arc(ctx.plugin.draw, center, radius,
+					knob_start_angle, knob_start_angle + knob_sweep_angle,
+					knob_track_thickness, ctx.theme.sliderTrackColor)
+
+				end_fill := knob_start_angle + norm * knob_sweep_angle
+				if norm > 0.001 {
+					draw_push_arc(ctx.plugin.draw, center, radius,
+						knob_start_angle, end_fill,
+						knob_arc_thickness, arcColor)
+				}
+
+				// Indicator line + end-cap dot at the current angle
+				dir := Vec2f{math.cos(end_fill), math.sin(end_fill)}
+				inner := Vec2f{center.x + dir.x * knob_indicator_inset, center.y + dir.y * knob_indicator_inset}
+				outer := Vec2f{center.x + dir.x * (radius - knob_arc_thickness - 4), center.y + dir.y * (radius - knob_arc_thickness - 4)}
+				draw_push_pill(ctx.plugin.draw, inner, outer, knob_track_thickness, arcColor)
+
+				endCap := Vec2f{center.x + dir.x * radius, center.y + dir.y * radius}
+				draw_circle(ctx.plugin.draw, endCap.x, endCap.y, knob_endcap_radius, arcColor)
 			}
 		}
 	}
