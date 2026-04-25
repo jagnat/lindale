@@ -70,14 +70,13 @@ hotload_init :: proc() {
 	// if !_load_api() do return
 
 	ctx.hotload_thread = thread.create(_hotreload_thread_proc)
-	if ctx.hotload_thread != nil {
-		ctx.hotload_thread.init_context = context
-		intrinsics.atomic_store_explicit(&ctx.running, true, .Release)
-		thread.start(ctx.hotload_thread)
-	} else {
+	if ctx.hotload_thread == nil {
 		log.error("Failed to create hotreload thread")
 		return
 	}
+	ctx.hotload_thread.init_context = context
+	intrinsics.atomic_store_explicit(&ctx.running, true, .Release)
+	thread.start(ctx.hotload_thread)
 
 	ctx.initialized = true
 }

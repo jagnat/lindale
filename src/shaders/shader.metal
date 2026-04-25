@@ -15,8 +15,9 @@ struct VSInput {
 	float2 uv1 [[attribute(3)]];
 	float4 color [[attribute(4)]];
 	float4 borderColor [[attribute(5)]];
-	float4 params [[attribute(6)]]; // (borderWidth, shapeParam, noTexture, mode-bits)
-	float2 extras [[attribute(7)]]; // (extra0, extra1)
+	float3 params [[attribute(6)]]; // (borderWidth, shapeParam, noTexture)
+	uint mode [[attribute(7)]];
+	float2 extras [[attribute(8)]]; // (extra0, extra1)
 };
 
 struct VSOutput {
@@ -26,7 +27,8 @@ struct VSOutput {
 	float2 halfRectSize [[flat]];
 	float4 color [[flat]];
 	float4 borderColor [[flat]];
-	float4 params [[flat]];
+	float3 params [[flat]];
+	uint mode [[flat]];
 	float2 worldPos;
 	float2 instanceUv0 [[flat]];
 	float2 instanceUv1 [[flat]];
@@ -65,6 +67,7 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	output.color = input.color;
 	output.borderColor = input.borderColor;
 	output.params = input.params;
+	output.mode = input.mode;
 	output.worldPos = posToPick;
 	output.instanceUv0 = input.uv0;
 	output.instanceUv1 = input.uv1;
@@ -74,7 +77,7 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 }
 
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
-	uint mode = as_type<uint>(input.params.w);
+	uint mode = input.mode;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
 	float noTexture = input.params.z;
@@ -85,7 +88,8 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float2 p1 = input.instanceUv1;
 		float2 pa = input.worldPos - p0;
 		float2 ba = p1 - p0;
-		float h = saturate(dot(pa, ba) / dot(ba, ba));
+		float baLen2 = max(dot(ba, ba), 1e-6);
+		float h = saturate(dot(pa, ba) / baLen2);
 		float d = length(pa - ba * h);
 		float outerSdf = d - shapeParam * 0.5;
 

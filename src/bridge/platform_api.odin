@@ -49,7 +49,7 @@ ShaderMode :: enum u32 {
 // Instance data for SDF draw primitives.
 // pos0/pos1 are always the AABB for the vertex shader quad.
 // uv0/uv1 and extras are reinterpreted per mode.
-// Must match vertex shader input format (64 bytes).
+// Must match vertex shader input format.
 DrawInstance :: struct #packed {
 	pos0: [2]f32, // AABB top-left
 	pos1: [2]f32, // AABB bottom-right

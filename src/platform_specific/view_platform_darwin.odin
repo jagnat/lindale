@@ -675,45 +675,50 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	vertexDesc := F.new(MTL.VertexDescriptor)
 	defer F.release(vertexDesc)
 
-	// Attribute 0: pos0 (float2)
+	// Attribute 0: pos0
 	vertexDesc->attributes()->object(0)->setFormat(.Float2)
 	vertexDesc->attributes()->object(0)->setOffset(0)
 	vertexDesc->attributes()->object(0)->setBufferIndex(1)
 
-	// Attribute 1: pos1 (float2)
+	// Attribute 1: pos1
 	vertexDesc->attributes()->object(1)->setFormat(.Float2)
 	vertexDesc->attributes()->object(1)->setOffset(2 * size_of(f32))
 	vertexDesc->attributes()->object(1)->setBufferIndex(1)
 
-	// Attribute 2: uv0 (float2)
+	// Attribute 2: uv0
 	vertexDesc->attributes()->object(2)->setFormat(.Float2)
 	vertexDesc->attributes()->object(2)->setOffset(4 * size_of(f32))
 	vertexDesc->attributes()->object(2)->setBufferIndex(1)
 
-	// Attribute 3: uv1 (float2)
+	// Attribute 3: uv1
 	vertexDesc->attributes()->object(3)->setFormat(.Float2)
 	vertexDesc->attributes()->object(3)->setOffset(6 * size_of(f32))
 	vertexDesc->attributes()->object(3)->setBufferIndex(1)
 
-	// Attribute 4: color (uchar4 normalized)
+	// Attribute 4: color
 	vertexDesc->attributes()->object(4)->setFormat(.UChar4Normalized)
 	vertexDesc->attributes()->object(4)->setOffset(8 * size_of(f32))
 	vertexDesc->attributes()->object(4)->setBufferIndex(1)
 
-	// Attribute 5: borderColor (uchar4 normalized)
+	// Attribute 5: borderColor
 	vertexDesc->attributes()->object(5)->setFormat(.UChar4Normalized)
 	vertexDesc->attributes()->object(5)->setOffset(8 * size_of(f32) + 4)
 	vertexDesc->attributes()->object(5)->setBufferIndex(1)
 
-	// Attribute 6: params (float4) - borderWidth, shapeParam, noTexture, mode-bits
-	vertexDesc->attributes()->object(6)->setFormat(.Float4)
+	// Attribute 6: params - borderWidth, shapeParam, noTexture
+	vertexDesc->attributes()->object(6)->setFormat(.Float3)
 	vertexDesc->attributes()->object(6)->setOffset(10 * size_of(f32))
 	vertexDesc->attributes()->object(6)->setBufferIndex(1)
 
-	// Attribute 7: extras (float2) - extra0, extra1
-	vertexDesc->attributes()->object(7)->setFormat(.Float2)
-	vertexDesc->attributes()->object(7)->setOffset(14 * size_of(f32))
+	// Attribute 7: mode - shape selector
+	vertexDesc->attributes()->object(7)->setFormat(.UInt)
+	vertexDesc->attributes()->object(7)->setOffset(13 * size_of(f32))
 	vertexDesc->attributes()->object(7)->setBufferIndex(1)
+
+	// Attribute 8: extras - extra0, extra1
+	vertexDesc->attributes()->object(8)->setFormat(.Float2)
+	vertexDesc->attributes()->object(8)->setOffset(14 * size_of(f32))
+	vertexDesc->attributes()->object(8)->setBufferIndex(1)
 
 	// Buffer layout - per instance
 	vertexDesc->layouts()->object(1)->setStride(size_of(bridge.DrawInstance))

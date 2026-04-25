@@ -875,14 +875,24 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 	if hr < 0 do return false
 
 	inputElements := []d3d11.INPUT_ELEMENT_DESC{
+		// Attribute 0: pos0
 		{SemanticName = "TEXCOORD", SemanticIndex = 0, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 0,  InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 1: pos1
 		{SemanticName = "TEXCOORD", SemanticIndex = 1, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 8,  InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 2: uv0
 		{SemanticName = "TEXCOORD", SemanticIndex = 2, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 16, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 3: uv1
 		{SemanticName = "TEXCOORD", SemanticIndex = 3, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 24, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 4: color
 		{SemanticName = "TEXCOORD", SemanticIndex = 4, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 32, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 5: borderColor
 		{SemanticName = "TEXCOORD", SemanticIndex = 5, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 36, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32A32_FLOAT,  InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 56, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 6: params - borderWidth, shapeParam, noTexture
+		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32_FLOAT,     InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 7: mode - shape selector
+		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32_UINT,            InputSlot = 0, AlignedByteOffset = 52, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 8: extras - extra0, extra1
+		{SemanticName = "TEXCOORD", SemanticIndex = 8, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 56, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 	}
 
 	hr = renderer.device->CreateInputLayout(

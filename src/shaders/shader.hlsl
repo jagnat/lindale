@@ -14,8 +14,9 @@ struct VSInput {
 	float2 uv1 : TEXCOORD3;
 	float4 color : TEXCOORD4;
 	float4 borderColor : TEXCOORD5;
-	float4 params : TEXCOORD6; // (borderWidth, shapeParam, noTexture, mode-bits)
-	float2 extras : TEXCOORD7; // (extra0, extra1)
+	float3 params : TEXCOORD6; // (borderWidth, shapeParam, noTexture)
+	uint mode : TEXCOORD7;
+	float2 extras : TEXCOORD8; // (extra0, extra1)
 	uint vertexId : SV_VertexID;
 };
 
@@ -26,11 +27,12 @@ struct VSOutput {
 	nointerpolation float2 halfRectSize : TEXCOORD2;
 	nointerpolation float4 color : TEXCOORD3;
 	nointerpolation float4 borderColor : TEXCOORD4;
-	nointerpolation float4 params : TEXCOORD5;
-	float2 worldPos : TEXCOORD6;
-	nointerpolation float2 instanceUv0 : TEXCOORD7;
-	nointerpolation float2 instanceUv1 : TEXCOORD8;
-	nointerpolation float2 extras : TEXCOORD9;
+	nointerpolation float3 params : TEXCOORD5;
+	nointerpolation uint mode : TEXCOORD6;
+	float2 worldPos : TEXCOORD7;
+	nointerpolation float2 instanceUv0 : TEXCOORD8;
+	nointerpolation float2 instanceUv1 : TEXCOORD9;
+	nointerpolation float2 extras : TEXCOORD10;
 };
 
 float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
@@ -63,6 +65,7 @@ VSOutput VSMain(VSInput input) {
 	output.color = input.color;
 	output.borderColor = input.borderColor;
 	output.params = input.params;
+	output.mode = input.mode;
 	output.worldPos = posToPick;
 	output.instanceUv0 = input.uv0;
 	output.instanceUv1 = input.uv1;
@@ -72,7 +75,7 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-	uint mode = asuint(input.params.w);
+	uint mode = input.mode;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
 	float noTexture = input.params.z;
@@ -83,7 +86,8 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float2 p1 = input.instanceUv1;
 		float2 pa = input.worldPos - p0;
 		float2 ba = p1 - p0;
-		float h = saturate(dot(pa, ba) / dot(ba, ba));
+		float baLen2 = max(dot(ba, ba), 1e-6);
+		float h = saturate(dot(pa, ba) / baLen2);
 		float d = length(pa - ba * h);
 		float outerSdf = d - shapeParam * 0.5;
 

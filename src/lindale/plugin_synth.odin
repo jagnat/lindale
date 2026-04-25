@@ -4,7 +4,6 @@ import "core:log"
 import "core:mem"
 import "core:time"
 import "core:math"
-import "core:slice"
 import "core:c"
 import stbi "vendor:stb/image"
 import b "../bridge"
@@ -374,10 +373,6 @@ plugin_process_audio :: proc(plug: ^PluginProcessor) {
 			sample *= gain
 
 			for c in 0 ..< num_channels {
-				outputLen := len(actx.outputs)
-				outputZLen := len(actx.outputs[0])
-				outputPtr := slice.as_ptr(actx.outputs[0])
-				log.info("outputLen", outputLen, "outputZLen", outputZLen, "outPtr", outputPtr)
 				actx.outputs[c][abs_sample] = sample
 			}
 		}
