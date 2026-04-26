@@ -124,59 +124,44 @@ ButtonData :: struct {
 	id: u32,
 }
 
-SliderFloatBinding :: struct {
+FloatBinding :: struct {
 	val: ^f32,
 	min, max: f32,
 }
 
-SliderParamBinding :: struct {
+ParamBinding :: struct {
 	param_idx: ParamIndex,
 }
 
-SliderData :: struct {
-	label: string,
-	id: u32,
-	orientation: SliderOrientation,
-	binding: union {
-		SliderFloatBinding,
-		SliderParamBinding,
-	},
+ValueBinding :: union {
+	FloatBinding,
+	ParamBinding,
 }
 
 ToggleBoolBinding :: struct {
 	val: ^bool,
 }
 
-ToggleParamBinding :: struct {
-	param_idx: ParamIndex,
+ToggleBinding :: union {
+	ToggleBoolBinding,
+	ParamBinding,
+}
+
+SliderData :: struct {
+	id: u32,
+	orientation: SliderOrientation,
+	binding: ValueBinding,
 }
 
 ToggleData :: struct {
-	label: string,
 	id: u32,
 	t: f32, // reserved for future animation (0 = off, 1 = on)
-	binding: union {
-		ToggleBoolBinding,
-		ToggleParamBinding,
-	},
-}
-
-KnobFloatBinding :: struct {
-	val: ^f32,
-	min, max: f32,
-}
-
-KnobParamBinding :: struct {
-	param_idx: ParamIndex,
+	binding: ToggleBinding,
 }
 
 KnobData :: struct {
-	label: string,
 	id: u32,
-	binding: union {
-		KnobFloatBinding,
-		KnobParamBinding,
-	},
+	binding: ValueBinding,
 }
 
 ComponentData :: union {
@@ -296,41 +281,7 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	return clicked
 }
 
-ui_slider_v :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, alignX: AlignX = .CENTER) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .SLIDER
-	comp.alignX = alignX
-	comp.sizingHoriz = {type = .FIXED, value = slider_width}
-	comp.sizingVert = {type = .GROW, value = 200, min = 200, max = 500}
-	comp.data = SliderData{label, id, .VERTICAL, SliderFloatBinding{val, min, max}}
-	ui_close_component(ctx)
-}
-
-ui_slider_h :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, alignY: AlignY = .CENTER) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .SLIDER
-	comp.alignY = alignY
-	comp.sizingHoriz = {type = .GROW, min = 100, max = 500}
-	comp.sizingVert = {type = .FIXED, value = slider_width}
-	comp.data = SliderData{label, id, .HORIZONTAL, SliderFloatBinding{val, min, max}}
-	ui_close_component(ctx)
-}
-
-ui_slider_labeled :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32) {
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .VERTICAL
-	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .GROW}
-	ui_slider_v(ctx, label, val, min, max, alignX = .CENTER)
-	ui_label(ctx, label, alignX = .CENTER)
-	ui_close_component(ctx)
-}
-
-ui_slider_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, orientation: SliderOrientation = .VERTICAL, alignX: AlignX = .CENTER) {
+ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .VERTICAL, alignX: AlignX = .CENTER, alignY: AlignY = .CENTER) {
 	id := string_hash_u32(label)
 	comp := ui_open_component(ctx)
 	comp.type = .SLIDER
@@ -339,26 +290,87 @@ ui_slider_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, o
 		comp.sizingHoriz = {type = .FIXED, value = slider_width}
 		comp.sizingVert = {type = .GROW, value = 200, min = 200, max = 500}
 	} else {
+		comp.alignY = alignY
 		comp.sizingHoriz = {type = .GROW, min = 100, max = 500}
 		comp.sizingVert = {type = .FIXED, value = slider_width}
 	}
-	comp.data = SliderData{label, id, orientation, SliderParamBinding{param_idx}}
+	comp.data = SliderData{id, orientation, binding}
 	ui_close_component(ctx)
 }
 
-ui_slider_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+	desc := param_table[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .VERTICAL
 	comp.child_gaps = 5
 	comp.sizingHoriz = {type = .FIT}
 	comp.sizingVert = {type = .GROW}
-	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
-	paramBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
-	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], param_table[param_idx], paramBuf, enum_to_string)
-	ui_label(ctx, str, alignX = .CENTER, minWidth = maxValWidth)
-	ui_slider_param(ctx, label, param_idx, alignX = .CENTER)
-	ui_label(ctx, label, alignX = .CENTER)
+	ui_param_value_label(ctx, param_idx, enum_to_string)
+	ui_slider(ctx, desc.name, ParamBinding{param_idx})
+	ui_label(ctx, desc.name, alignX = .CENTER)
+	ui_close_component(ctx)
+}
+
+ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+	desc := param_table[param_idx]
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .HORIZONTAL
+	comp.child_gaps = 5
+	comp.sizingHoriz = {type = .GROW}
+	comp.sizingVert = {type = .FIT}
+	ui_label(ctx, desc.name)
+	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .HORIZONTAL)
+	ui_param_value_label(ctx, param_idx, enum_to_string, alignX = .RIGHT)
+	ui_close_component(ctx)
+}
+
+ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
+	id := string_hash_u32(label)
+	comp := ui_open_component(ctx)
+	comp.type = .TOGGLE
+	comp.sizingHoriz = {type = .FIXED, value = 40}
+	comp.sizingVert = {type = .FIXED, value = 22}
+	comp.data = ToggleData{id = id, binding = binding}
+	ui_close_component(ctx)
+}
+
+ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
+	desc := param_table[param_idx]
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .HORIZONTAL
+	comp.child_gaps = 6
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .FIT}
+	ui_toggle(ctx, desc.name, ParamBinding{param_idx})
+	ui_label(ctx, desc.name)
+	ui_close_component(ctx)
+}
+
+ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, alignX: AlignX = .CENTER) {
+	id := string_hash_u32(label)
+	comp := ui_open_component(ctx)
+	comp.type = .KNOB
+	comp.alignX = alignX
+	comp.sizingHoriz = {type = .FIXED, value = knob_size}
+	comp.sizingVert = {type = .FIXED, value = knob_size}
+	comp.data = KnobData{id, binding}
+	ui_close_component(ctx)
+}
+
+ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+	desc := param_table[param_idx]
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{skipDraw = true}
+	comp.direction = .VERTICAL
+	comp.child_gaps = 4
+	comp.sizingHoriz = {type = .FIT}
+	comp.sizingVert = {type = .FIT}
+	ui_label(ctx, desc.name, alignX = .CENTER)
+	ui_knob(ctx, desc.name, ParamBinding{param_idx})
+	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_close_component(ctx)
 }
 
@@ -386,103 +398,76 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 	return maxWidth
 }
 
-ui_slider_h_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .HORIZONTAL
-	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .GROW}
-	comp.sizingVert = {type = .FIT}
-	ui_label(ctx, label)
-	ui_slider_param(ctx, label, param_idx, orientation = .HORIZONTAL)
-	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
-	paramBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
-	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], param_table[param_idx], paramBuf, enum_to_string)
-	ui_label(ctx, str, alignX = .RIGHT, minWidth = maxValWidth)
-	ui_close_component(ctx)
-}
-
-ui_toggle :: proc(ctx: ^UIContext, label: string, val: ^bool) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .TOGGLE
-	comp.sizingHoriz = {type = .FIXED, value = 40}
-	comp.sizingVert = {type = .FIXED, value = 22}
-	comp.data = ToggleData{label = label, id = id, binding = ToggleBoolBinding{val}}
-	ui_close_component(ctx)
-}
-
-ui_toggle_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .TOGGLE
-	comp.sizingHoriz = {type = .FIXED, value = 40}
-	comp.sizingVert = {type = .FIXED, value = 22}
-	comp.data = ToggleData{label = label, id = id, binding = ToggleParamBinding{param_idx}}
-	ui_close_component(ctx)
-}
-
-ui_toggle_labeled :: proc(ctx: ^UIContext, label: string, val: ^bool) {
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .HORIZONTAL
-	comp.child_gaps = 6
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .FIT}
-	ui_toggle(ctx, label, val)
-	ui_label(ctx, label)
-	ui_close_component(ctx)
-}
-
-ui_toggle_param_labeled :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex) {
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .HORIZONTAL
-	comp.child_gaps = 6
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .FIT}
-	ui_toggle_param(ctx, label, param_idx)
-	ui_label(ctx, label)
-	ui_close_component(ctx)
-}
-
-ui_knob :: proc(ctx: ^UIContext, label: string, val: ^f32, min, max: f32, alignX: AlignX = .CENTER) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .KNOB
-	comp.alignX = alignX
-	comp.sizingHoriz = {type = .FIXED, value = knob_size}
-	comp.sizingVert = {type = .FIXED, value = knob_size}
-	comp.data = KnobData{label, id, KnobFloatBinding{val, min, max}}
-	ui_close_component(ctx)
-}
-
-ui_knob_param :: proc(ctx: ^UIContext, label: string, param_idx: ParamIndex, alignX: AlignX = .CENTER) {
-	id := string_hash_u32(label)
-	comp := ui_open_component(ctx)
-	comp.type = .KNOB
-	comp.alignX = alignX
-	comp.sizingHoriz = {type = .FIXED, value = knob_size}
-	comp.sizingVert = {type = .FIXED, value = knob_size}
-	comp.data = KnobData{label, id, KnobParamBinding{param_idx}}
-	ui_close_component(ctx)
-}
-
-ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+@(private="file")
+ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
+                             enum_to_string: proc(val: f64) -> string = nil,
+                             alignX: AlignX = .CENTER) {
 	desc := param_table[param_idx]
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
-	comp.direction = .VERTICAL
-	comp.child_gaps = 4
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .FIT}
-	maxValWidth := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
-	valBuf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
-	valStr := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, valBuf, enum_to_string)
-	ui_label(ctx, desc.name, alignX = .CENTER)
-	ui_knob_param(ctx, desc.name, param_idx)
-	ui_label(ctx, valStr, alignX = .CENTER, minWidth = maxValWidth)
-	ui_close_component(ctx)
+	maxW := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
+	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
+	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, buf, enum_to_string)
+	ui_label(ctx, str, alignX = alignX, minWidth = maxW)
+}
+
+@(private="file")
+ui_param_get_normalized :: proc(ctx: ^UIContext, idx: ParamIndex) -> f32 {
+	inst := ctx.plugin.host
+	if inst == nil || inst.params == nil do return 0
+	return f32(b.param_to_normalized(inst.params.values[idx], param_table[idx]))
+}
+
+@(private="file")
+ui_param_set_normalized :: proc(ctx: ^UIContext, idx: ParamIndex, norm: f32) {
+	inst := ctx.plugin.host
+	if inst != nil && inst.params != nil {
+		inst.params.values[idx] = b.normalized_to_param(f64(norm), param_table[idx])
+	}
+	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
+		inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(idx), f64(norm))
+	}
+}
+
+@(private="file")
+ui_param_begin_edit :: proc(ctx: ^UIContext, idx: ParamIndex) {
+	inst := ctx.plugin.host
+	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
+		inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(idx))
+	}
+}
+
+@(private="file")
+ui_param_end_edit :: proc(ctx: ^UIContext, idx: ParamIndex) {
+	inst := ctx.plugin.host
+	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
+		inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(idx))
+	}
+}
+
+@(private="file")
+binding_get_norm :: proc(ctx: ^UIContext, binding: ValueBinding) -> f32 {
+	switch v in binding {
+	case FloatBinding: return clamp((v.val^ - v.min) / (v.max - v.min), 0, 1)
+	case ParamBinding: return ui_param_get_normalized(ctx, v.param_idx)
+	}
+	return 0
+}
+
+@(private="file")
+binding_set_norm :: proc(ctx: ^UIContext, binding: ValueBinding, norm: f32) {
+	switch v in binding {
+	case FloatBinding: v.val^ = v.min + norm * (v.max - v.min)
+	case ParamBinding: ui_param_set_normalized(ctx, v.param_idx, norm)
+	}
+}
+
+@(private="file")
+binding_begin_edit :: proc(ctx: ^UIContext, binding: ValueBinding) {
+	if pb, ok := binding.(ParamBinding); ok do ui_param_begin_edit(ctx, pb.param_idx)
+}
+
+@(private="file")
+binding_end_edit :: proc(ctx: ^UIContext, binding: ValueBinding) {
+	if pb, ok := binding.(ParamBinding); ok do ui_param_end_edit(ctx, pb.param_idx)
 }
 
 @(private="file")
@@ -585,40 +570,14 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						mouseP := clamp(ctx.mouse.pos.x, c.calcBounds.x + thumbR, c.calcBounds.x + c.calcBounds.w - thumbR)
 						norm = clamp((mouseP - c.calcBounds.x - thumbR) / trackRange, 0, 1)
 					}
-
-					switch v in d.binding {
-						case SliderFloatBinding: {
-							v.val^ = v.min + norm * (v.max - v.min)
-						}
-						case SliderParamBinding: {
-							inst := ctx.plugin.host
-							if inst != nil && inst.params != nil {
-								desc := param_table[v.param_idx]
-								inst.params.values[v.param_idx] = b.normalized_to_param(f64(norm), desc)
-							}
-							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
-								inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(v.param_idx), f64(norm))
-							}
-						}
-					}
-
+					binding_set_norm(ctx, d.binding, norm)
 					if .Left not_in ctx.mouse.down {
-						if pb, ok := d.binding.(SliderParamBinding); ok {
-							inst := ctx.plugin.host
-							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
-								inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(pb.param_idx))
-							}
-						}
+						binding_end_edit(ctx, d.binding)
 						ctx.activeId = 0
 					}
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
-					if pb, ok := d.binding.(SliderParamBinding); ok {
-						inst := ctx.plugin.host
-						if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
-							inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(pb.param_idx))
-						}
-					}
+					binding_begin_edit(ctx, d.binding)
 				}
 			}
 			case .TOGGLE: {
@@ -632,22 +591,12 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 							switch v in d.binding {
 							case ToggleBoolBinding:
 								v.val^ = !v.val^
-							case ToggleParamBinding:
-								inst := ctx.plugin.host
-								if inst != nil && inst.params != nil {
-									cur_norm := b.param_to_normalized(inst.params.values[v.param_idx], param_table[v.param_idx])
-									new_norm := f64(0) if cur_norm >= 0.5 else f64(1)
-									inst.params.values[v.param_idx] = b.normalized_to_param(new_norm, param_table[v.param_idx])
-									if inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
-										inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(v.param_idx))
-									}
-									if inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
-										inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(v.param_idx), new_norm)
-									}
-									if inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
-										inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(v.param_idx))
-									}
-								}
+							case ParamBinding:
+								cur := ui_param_get_normalized(ctx, v.param_idx)
+								new := f32(0) if cur >= 0.5 else f32(1)
+								ui_param_begin_edit(ctx, v.param_idx)
+								ui_param_set_normalized(ctx, v.param_idx, new)
+								ui_param_end_edit(ctx, v.param_idx)
 							}
 						}
 						ctx.activeId = 0
@@ -662,49 +611,16 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 				if mouseOver do ctx.hoveredId = d.id
 				if d.id == ctx.activeId {
 					norm := clamp(ctx.dragAnchorNorm + (ctx.dragAnchorMouseY - ctx.mouse.pos.y) / knob_drag_pixels, 0, 1)
-
-					switch v in d.binding {
-						case KnobFloatBinding: {
-							v.val^ = v.min + norm * (v.max - v.min)
-						}
-						case KnobParamBinding: {
-							inst := ctx.plugin.host
-							if inst != nil && inst.params != nil {
-								desc := param_table[v.param_idx]
-								inst.params.values[v.param_idx] = b.normalized_to_param(f64(norm), desc)
-							}
-							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
-								inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(v.param_idx), f64(norm))
-							}
-						}
-					}
-
+					binding_set_norm(ctx, d.binding, norm)
 					if .Left not_in ctx.mouse.down {
-						if pb, ok := d.binding.(KnobParamBinding); ok {
-							inst := ctx.plugin.host
-							if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
-								inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(pb.param_idx))
-							}
-						}
+						binding_end_edit(ctx, d.binding)
 						ctx.activeId = 0
 					}
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
-					curNorm: f32
-					switch v in d.binding {
-					case KnobFloatBinding:
-						curNorm = clamp((v.val^ - v.min) / (v.max - v.min), 0, 1)
-					case KnobParamBinding:
-						inst := ctx.plugin.host
-						if inst != nil && inst.params != nil {
-							curNorm = f32(b.param_to_normalized(inst.params.values[v.param_idx], param_table[v.param_idx]))
-						}
-						if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
-							inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(v.param_idx))
-						}
-					}
 					ctx.dragAnchorMouseY = ctx.mouse.pos.y
-					ctx.dragAnchorNorm = curNorm
+					ctx.dragAnchorNorm = binding_get_norm(ctx, d.binding)
+					binding_begin_edit(ctx, d.binding)
 				}
 			}
 		}
@@ -871,17 +787,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				d := c.data.(SliderData) or_continue
 				thumbR := f32(slider_width) / 2
 
-				norm: f32
-				switch v in d.binding {
-				case SliderFloatBinding:
-					norm = (v.val^ - v.min) / (v.max - v.min)
-				case SliderParamBinding:
-					inst := ctx.plugin.host
-					if inst != nil && inst.params != nil {
-						desc := param_table[v.param_idx]
-						norm = f32(b.param_to_normalized(inst.params.values[v.param_idx], desc))
-					}
-				}
+				norm := binding_get_norm(ctx, d.binding)
 
 				thumbColor := ctx.theme.sliderColor
 				if d.id == ctx.activeId do thumbColor = ctx.theme.sliderActiveColor
@@ -967,11 +873,8 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				switch v in d.binding {
 				case ToggleBoolBinding:
 					on = v.val^
-				case ToggleParamBinding:
-					inst := ctx.plugin.host
-					if inst != nil && inst.params != nil {
-						on = b.param_to_normalized(inst.params.values[v.param_idx], param_table[v.param_idx]) >= 0.5
-					}
+				case ParamBinding:
+					on = ui_param_get_normalized(ctx, v.param_idx) >= 0.5
 				}
 
 				bgColor := ctx.theme.toggleOnColor if on else ctx.theme.toggleOffColor
@@ -994,17 +897,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				bounds := c.calcBounds
 				d := c.data.(KnobData) or_continue
 
-				norm: f32
-				switch v in d.binding {
-				case KnobFloatBinding:
-					norm = clamp((v.val^ - v.min) / (v.max - v.min), 0, 1)
-				case KnobParamBinding:
-					inst := ctx.plugin.host
-					if inst != nil && inst.params != nil {
-						desc := param_table[v.param_idx]
-						norm = f32(b.param_to_normalized(inst.params.values[v.param_idx], desc))
-					}
-				}
+				norm := binding_get_norm(ctx, d.binding)
 
 				arcColor := ctx.theme.sliderColor
 				if d.id == ctx.activeId do arcColor = ctx.theme.sliderActiveColor

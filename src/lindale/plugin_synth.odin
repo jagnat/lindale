@@ -461,16 +461,16 @@ plugin_draw :: proc(plug: ^PluginController) {
 	}
 
 	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10) {
-			// Horizontal sliders for envelope
-			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
-				ui_slider_h_param_labeled(plug.ui, "Attack", PARAM_ATTACK)
-				ui_slider_h_param_labeled(plug.ui, "Decay", PARAM_DECAY)
-				ui_slider_h_param_labeled(plug.ui, "Sustain", PARAM_SUSTAIN)
-				ui_slider_h_param_labeled(plug.ui, "Release", PARAM_RELEASE)
-				ui_slider_h_param_labeled(plug.ui, "Gain", PARAM_GAIN)
+		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
+			// Envelope params
+			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+				ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
+				ui_knob_param_labeled(plug.ui, PARAM_DECAY)
+				ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
+				ui_knob_param_labeled(plug.ui, PARAM_RELEASE)
+				ui_knob_param_labeled(plug.ui, PARAM_GAIN)
 			}
-			// Vertical sliders for oscillator params
+			// Oscillator param
 			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 0, skipDraw = true) {
 				ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
 				ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
@@ -479,8 +479,8 @@ plugin_draw :: proc(plug: ^PluginController) {
 			}
 			// Arp controls
 			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
-				ui_toggle_param_labeled(plug.ui, "Arp", PARAM_ARP_ON)
-				ui_slider_h_param_labeled(plug.ui, "Rate", PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
+				ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
+				ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
 			}
 		}
 	}
