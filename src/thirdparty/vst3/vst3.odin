@@ -508,7 +508,7 @@ IEventList :: struct {
 	using lpVtbl: ^IEventListVtbl
 }
 
-IAttributeList :: struct {
+IAttributeListVtbl :: struct {
 	using funknown: FUnknownVtbl,
 
 	/* methods defined in "Steinberg_Vst_IAttributeList": */
@@ -520,6 +520,10 @@ IAttributeList :: struct {
 	getString : proc "system" (this: rawptr, id: AttrID, str: ^u8, sizeInBytes: u32) -> TResult,
 	setBinary : proc "system" (this: rawptr, id: AttrID, data: rawptr, sizeInBytes: u32) -> TResult,
 	getBinary : proc "system" (this: rawptr, id: AttrID, data: ^rawptr, sizeInBytes: ^u32) -> TResult,
+}
+
+IAttributeList :: struct {
+	using lpVtbl: ^IAttributeListVtbl
 }
 
 IMessageVtbl :: struct {

@@ -5,13 +5,8 @@ import "core:mem"
 import "core:time"
 import "core:math"
 import "core:c"
-import stbi "vendor:stb/image"
 import b "../bridge"
 import dsp "../dsp"
-
-@(private="file") test_tex_loaded: bool
-@(private="file") test_tex_handle: TextureHandle
-@(private="file") test_love_png := #load("../../resources/love.png")
 
 // Voice
 MAX_VOICES :: 16
@@ -72,74 +67,48 @@ PARAM_ARP_RATE  :: ParamIndex(10)
 
 @(rodata) param_table := [?]b.ParamDescriptor {
 	{
-		name = "Osc1 Wave", short_name = "Osc1",
-		min = 0, max = 4, default_value = 0,
-		step_count = 4, unit = .None,
-		flags = {.Automatable, .List},
-		smooth_ms = NO_SMOOTHING,
+		name = "Osc1 Wave", short_name = "Osc1", min = 0, max = 4, default_value = 0,
+		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
 	},
 	{
-		name = "Osc2 Wave", short_name = "Osc2",
-		min = 0, max = 4, default_value = 1,
-		step_count = 4, unit = .None,
-		flags = {.Automatable, .List},
-		smooth_ms = NO_SMOOTHING,
+		name = "Osc2 Wave", short_name = "Osc2", min = 0, max = 4, default_value = 1,
+		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
 	},
 	{
-		name = "Osc Mix", short_name = "Mix",
-		min = -1, max = 1, default_value = 0,
-		unit = .None,
-		flags = {.Automatable},
+		name = "Osc Mix", short_name = "Mix", min = -1, max = 1, default_value = 0,
+		unit = .None, flags = {.Automatable},
 	},
 	{
-		name = "Osc2 Detune", short_name = "Det",
-		min = -100, max = 100, default_value = 7,
-		step_count = 0, unit = .None,
-		flags = {.Automatable},
+		name = "Osc2 Detune", short_name = "Det", min = -100, max = 100, default_value = 7,
+		step_count = 0, unit = .None, flags = {.Automatable},
 	},
 	{
-		name = "Attack", short_name = "Atk",
-		min = 1, max = 5000, default_value = 10,
-		step_count = 0, unit = .Milliseconds,
-		flags = {.Automatable},
+		name = "Attack", short_name = "Atk", min = 1, max = 5000, default_value = 10,
+		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
 	{
-		name = "Decay", short_name = "Dec",
-		min = 1, max = 5000, default_value = 100,
-		step_count = 0, unit = .Milliseconds,
-		flags = {.Automatable},
+		name = "Decay", short_name = "Dec", min = 1, max = 5000, default_value = 100,
+		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
 	{
-		name = "Sustain", short_name = "Sus",
-		min = 0, max = 100, default_value = 70,
-		step_count = 0, unit = .Percentage,
-		flags = {.Automatable},
+		name = "Sustain", short_name = "Sus", min = 0, max = 100, default_value = 70,
+		step_count = 0, unit = .Percentage, flags = {.Automatable},
 	},
 	{
-		name = "Release", short_name = "Rel",
-		min = 1, max = 10000, default_value = 200,
-		step_count = 0, unit = .Milliseconds,
-		flags = {.Automatable},
+		name = "Release", short_name = "Rel", min = 1, max = 10000, default_value = 200,
+		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
 	{
-		name = "Gain", short_name = "Gain",
-		min = -60, max = 12, default_value = -6,
-		step_count = 0, unit = .Decibel,
-		flags = {.Automatable},
+		name = "Gain", short_name = "Gain", min = -60, max = 12, default_value = -6,
+		step_count = 0, unit = .Decibel, flags = {.Automatable},
 	},
 	{
-		name = "Arp On", short_name = "Arp",
-		min = 0, max = 1, default_value = 0,
-		step_count = 1, unit = .None,
-		flags = {.Automatable, .List},
-		smooth_ms = NO_SMOOTHING,
+		name = "Arp On", short_name = "Arp", min = 0, max = 1, default_value = 0,
+		step_count = 1, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
 	},
 	{
-		name = "Arp Rate", short_name = "Rate",
-		min = 0, max = 3, default_value = 1,
-		step_count = 3, unit = .None,
-		flags = {.Automatable, .List},
-		smooth_ms = NO_SMOOTHING,
+		name = "Arp Rate", short_name = "Rate", min = 0, max = 3, default_value = 1,
+		step_count = 3, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
 	},
 }
 
@@ -484,63 +453,5 @@ plugin_draw :: proc(plug: ^PluginController) {
 			}
 		}
 	}
-
-	// {
-	// 	r := plug.host.renderer
-	// 	p := plug.host.platform
-	// 	dctx := plug.draw
-
-	// 	if !test_tex_loaded {
-	// 		w, h, ch: c.int
-	// 		pixels := stbi.load_from_memory(raw_data(test_love_png), c.int(len(test_love_png)), &w, &h, &ch, 4)
-	// 		if pixels != nil {
-	// 			test_tex_handle = p.create_texture(r, u32(w), u32(h), .RGBA8)
-	// 			p.upload_texture(r, test_tex_handle, pixels[:int(w)*int(h)*4])
-	// 			stbi.image_free(pixels)
-	// 			test_tex_loaded = true
-	// 			log.infof("loaded love.png: %dx%d", w, h)
-	// 		} else {
-	// 			log.error("failed to decode love.png")
-	// 		}
-	// 	}
-
-	// 	draw_filled_rect(dctx, 0, 0, 800, 600, {30, 30, 40, 255})
-	// 	draw_filled_rect(dctx, 20, 20, 360, 260, {50, 50, 70, 255})
-	// 	draw_filled_rect(dctx, 300, 200, 300, 260, {70, 50, 50, 255})
-
-	// 	if test_tex_loaded {
-	// 		scissorA := RectI32{20, 20, 360, 260}
-	// 		draw_set_scissor(dctx, scissorA)
-	// 		draw_set_texture(dctx, test_tex_handle, false)
-	// 		img := RectInstance{
-	// 			pos0 = {40, 40},
-	// 			pos1 = {500, 440},
-	// 			uv0 = {0, 0},
-	// 			uv1 = {1, 1},
-	// 			color = {255, 255, 255, 255},
-	// 			noTexture = 0,
-	// 		}
-	// 		draw_push_instance(dctx, img)
-	// 		draw_text(dctx, "love clipped by scissor A", 30, 30, {255, 255, 255, 255})
-
-	// 		scissorB := RectI32{300, 200, 300, 260}
-	// 		draw_set_scissor(dctx, scissorB)
-	// 		draw_set_texture(dctx, test_tex_handle, false)
-	// 		img2 := RectInstance{
-	// 			pos0 = {260, 180},
-	// 			pos1 = {700, 520},
-	// 			uv0 = {0, 0},
-	// 			uv1 = {1, 1},
-	// 			color = {255, 255, 255, 255},
-	// 			noTexture = 0,
-	// 		}
-	// 		draw_push_instance(dctx, img2)
-	// 		draw_text(dctx, "scissor B text", 320, 220, {255, 255, 255, 255})
-
-	// 		draw_remove_scissor(dctx)
-	// 		draw_text(dctx, "unclipped control text", 20, 560, {200, 255, 200, 255})
-	// 	}
-	// }
-
 	draw_submit(plug.draw)
 }

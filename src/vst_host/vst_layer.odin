@@ -96,6 +96,8 @@ LindaleProcessor :: struct {
 	audioProcessorVtable: vst3.IAudioProcessorVtbl,
 	processContextRequirements: vst3.IProcessContextRequirements,
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
+	connectionPoint: vst3.IConnectionPoint,
+	connectionPointVtable: vst3.IConnectionPointVtbl,
 	refCount: u32,
 
 	plugin: lin.PluginProcessor,
@@ -105,6 +107,8 @@ LindaleProcessor :: struct {
 	bypassParamIdx: int,
 	bypassed: bool,
 
+	peer: ^vst3.IConnectionPoint,
+	hostApplication: ^vst3.IHostApplication,
 	hostContext: ^vst3.FUnknown,
 	ctx: runtime.Context,
 
@@ -143,6 +147,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		setState = lp_comp_setState,
 		getState = lp_comp_getState,
 	}
+	processor.component.lpVtbl = &processor.componentVtable
 
 	processor.audioProcessorVtable = {
 		queryInterface = lp_ap_queryInterface,
@@ -158,6 +163,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		process = lp_ap_process,
 		getTailSamples = lp_ap_getTailSamples,
 	}
+	processor.audioProcessor.lpVtbl = &processor.audioProcessorVtable
 
 	processor.processContextRequirementsVtable = {
 		queryInterface = lp_pcr_queryInterface,
@@ -165,10 +171,18 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		release = lp_pcr_release,
 		getProcessContextRequirements = lp_pcr_getProcessContextRequirements,
 	}
-
-	processor.component.lpVtbl = &processor.componentVtable
-	processor.audioProcessor.lpVtbl = &processor.audioProcessorVtable
 	processor.processContextRequirements.lpVtbl = &processor.processContextRequirementsVtable
+
+	processor.connectionPointVtable = {
+		queryInterface = lp_cp_queryInterface,
+		addRef = lp_cp_addRef,
+		release = lp_cp_release,
+
+		connect = lp_cp_connect,
+		disconnect = lp_cp_disconnect,
+		notify = lp_cp_notify,
+	}
+	processor.connectionPoint.lpVtbl = &processor.connectionPointVtable
 
 	processor.ctx = context
 	processor.ctx.logger = get_mutex_logger(.Processor)
@@ -209,6 +223,8 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			obj^ = &this.audioProcessor
 		} else if iid^ == vst3.iid_IProcessContextRequirements {
 			obj^ = &this.processContextRequirements
+		} else if iid^ == vst3.iid_IConnectionPoint {
+			obj^ = &this.connectionPoint
 		} else {
 			obj^ = nil
 			return vst3.kNoInterface
@@ -217,6 +233,24 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		this.refCount += 1
 
 		return vst3.kResultOk
+	}
+
+	lp_releaseImplementation :: proc(this: ^LindaleProcessor) -> u32 {
+		this.refCount -= 1
+		if this.refCount == 0 {
+			log.info("LindaleProcessor teardown")
+			if this.hostApplication != nil {
+				this.hostApplication->release()
+			}
+			if this.hostContext != nil {
+				this.hostContext->release()
+			}
+			runtime.default_temp_allocator_destroy(&this.frameTemp)
+			vm.arena_destroy(&this.sessionArena)
+			free(this)
+			return 0
+		}
+		return this.refCount
 	}
 
 	// IComponent
@@ -238,14 +272,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
 		log.info("lp_comp_release")
-		processor.refCount -= 1
-		if processor.refCount == 0 {
-			log.info("lp_comp_release free")
-			runtime.default_temp_allocator_destroy(&processor.frameTemp)
-			vm.arena_destroy(&processor.sessionArena)
-			free(processor)
-		}
-		return processor.refCount
+		return lp_releaseImplementation(processor)
 	}
 	lp_comp_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
@@ -253,6 +280,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor.hostContext = ctx
 		if ctx != nil {
 			ctx->addRef()
+			hostApp : rawptr
+			if ctx->queryInterface(&vst3.iid_IHostApplication, &hostApp) == vst3.kResultOk {
+				processor.hostApplication = cast(^vst3.IHostApplication)hostApp
+			}
 		}
 		log.info("lp_comp_initialize")
 		return vst3.kResultOk
@@ -392,11 +423,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audioProcessor")
 		context = processor.ctx
 		log.info("lp_ap_release")
-		processor.refCount -= 1
-		if processor.refCount == 0 {
-			free(processor)
-		}
-		return processor.refCount
+		return lp_releaseImplementation(processor)
 	}
 	lp_ap_setBusArrangements :: proc "system" (
 		this: rawptr,
@@ -734,11 +761,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor := container_of(cast(^vst3.IProcessContextRequirements)this, LindaleProcessor, "processContextRequirements")
 		context = processor.ctx
 		log.info("lp_pcr_release")
-		processor.refCount -= 1
-		if processor.refCount == 0 {
-			free(processor)
-		}
-		return processor.refCount
+		return lp_releaseImplementation(processor)
 	}
 
 	lp_pcr_getProcessContextRequirements :: proc "system" (this: rawptr) -> vst3.IProcessContextRequirementsFlagSet {
@@ -755,6 +778,49 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			.NeedCycleMusic,
 		}
 	}
+	lp_cp_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		log.info("lp_cp_queryInterface")
+
+		return lp_queryInterfaceImplementation(processor, iid, obj)
+	}
+	lp_cp_addRef :: proc "system" (this: rawptr) -> u32 {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		log.info("lp_cp_addRef")
+		processor.refCount += 1
+		return processor.refCount
+	}
+	lp_cp_release :: proc "system" (this: rawptr) -> u32 {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		log.info("lp_cp_release")
+		return lp_releaseImplementation(processor)
+	}
+	lp_cp_connect :: proc "system" (this: rawptr, other: ^vst3.IConnectionPoint) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		log.info("lp_cp_connect")
+		processor.peer = other
+		return vst3.kResultOk
+	}
+	lp_cp_disconnect :: proc "system" (this: rawptr, other: ^vst3.IConnectionPoint) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		log.info("lp_cp_disconnect")
+		processor.peer = nil
+		return vst3.kResultOk
+	}
+	// Notify may run on any thread: funnel anything bound for the audio path through a
+	// lock-free queue drained at the top of lp_ap_process, never touch processor.plugin here.
+	lp_cp_notify :: proc "system" (this: rawptr, message: ^vst3.IMessage) -> vst3.TResult {
+		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
+		context = processor.ctx
+		id := message->getMessageID()
+		log.info("lp_cp_notify: {}", id)
+		return vst3.kResultOk
+	}
 }
 
 LindaleController :: struct {
@@ -762,6 +828,8 @@ LindaleController :: struct {
 	editControllerVtable: vst3.IEditControllerVtbl,
 	editController2: vst3.IEditController2,
 	editController2Vtable: vst3.IEditController2Vtbl,
+	connectionPoint: vst3.IConnectionPoint,
+	connectionPointVtable: vst3.IConnectionPointVtbl,
 
 	refCount: u32,
 
@@ -773,6 +841,9 @@ LindaleController :: struct {
 	paramValues: bridge.ParamValues,
 	bypassParamIdx: int,
 
+	peer: ^vst3.IConnectionPoint,
+	hostApplication: ^vst3.IHostApplication,
+	hostContext: ^vst3.FUnknown,
 	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
 	view: LindaleView,
@@ -786,9 +857,6 @@ createLindaleController :: proc () -> ^LindaleController {
 	log.info("createLindaleController")
 	controller := new(LindaleController)
 	controller.refCount = 0
-
-	controller.editController.lpVtbl = &controller.editControllerVtable
-	controller.editController2.lpVtbl = &controller.editController2Vtable
 
 	controller.editControllerVtable = {
 		queryInterface = lc_ec_queryInterface,
@@ -812,6 +880,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		setComponentHandler = lc_ec_setComponentHandler,
 		createView = lc_ec_createView,
 	}
+	controller.editController.lpVtbl = &controller.editControllerVtable
 
 	controller.editController2Vtable = {
 		queryInterface = lc_ec2_queryInterface,
@@ -822,6 +891,18 @@ createLindaleController :: proc () -> ^LindaleController {
 		openHelp = lc_ec2_openHelp,
 		openAboutBox = lc_ec2_openAboutBox,
 	}
+	controller.editController2.lpVtbl = &controller.editController2Vtable
+
+	controller.connectionPointVtable = {
+		queryInterface = lc_cp_queryInterface,
+		addRef = lc_cp_addRef,
+		release = lc_cp_release,
+
+		connect = lc_cp_connect,
+		disconnect = lc_cp_disconnect,
+		notify = lc_cp_notify,
+	}
+	controller.connectionPoint.lpVtbl = &controller.connectionPointVtable
 
 	controller.ctx = context
 	controller.ctx.logger = get_mutex_logger(.Controller)
@@ -890,6 +971,8 @@ createLindaleController :: proc () -> ^LindaleController {
 			obj^ = &this.editController
 		} else if iid^ == vst3.iid_IEditController2 {
 			obj^ = &this.editController2
+		} else if iid^ == vst3.iid_IConnectionPoint {
+			obj^ = &this.connectionPoint
 		} else {
 			obj^ = nil
 			return vst3.kNoInterface
@@ -899,35 +982,57 @@ createLindaleController :: proc () -> ^LindaleController {
 		return vst3.kResultOk
 	}
 
+	lc_releaseImplementation :: proc(this: ^LindaleController) -> u32 {
+		this.refCount -= 1
+		if this.refCount == 0 {
+			log.info("LindaleController teardown")
+			if this.hostApplication != nil {
+				this.hostApplication->release()
+			}
+			if this.hostContext != nil {
+				this.hostContext->release()
+			}
+			runtime.default_temp_allocator_destroy(&this.frameTemp)
+			vm.arena_destroy(&this.sessionArena)
+			free(this)
+			return 0
+		}
+		return this.refCount
+	}
+
 	// EditController
 	lc_ec_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		log.info("lc_queryInterface")
+		log.info("lc_ec_queryInterface")
 
 		return lc_queryInterface(controller, iid, obj)
 	}
 	lc_ec_addRef :: proc "system" (this: rawptr) -> u32 {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		log.info("lc_addRef")
+		log.info("lc_ec_addRef")
 		controller.refCount += 1
 		return controller.refCount
 	}
 	lc_ec_release :: proc "system" (this: rawptr) -> u32 {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
 		context = controller.ctx
-		log.info("lc_release")
-		controller.refCount -= 1
-		if controller.refCount == 0 {
-			runtime.default_temp_allocator_destroy(&controller.frameTemp)
-			vm.arena_destroy(&controller.sessionArena)
-			free(controller)
-		}
-		return controller.refCount
+		log.info("lc_ec_release")
+		return lc_releaseImplementation(controller)
 	}
 	lc_ec_initialize :: proc "system" (this: rawptr, ctx: ^vst3.FUnknown) -> vst3.TResult {
-
+		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "editController")
+		context = controller.ctx
+		log.info("lc_ec_initialize")
+		controller.hostContext = ctx
+		if ctx != nil {
+			ctx->addRef()
+			hostApp: rawptr
+			if ctx->queryInterface(&vst3.iid_IHostApplication, &hostApp) == vst3.kResultOk {
+				controller.hostApplication = cast(^vst3.IHostApplication)hostApp
+			}
+		}
 		return vst3.kResultOk
 	}
 	lc_ec_terminate  :: proc "system" (this: rawptr) -> vst3.TResult {
@@ -1076,11 +1181,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
 		context = controller.ctx
 		log.info("lc_ec2_release")
-		controller.refCount -= 1
-		if controller.refCount == 0 {
-			free(controller)
-		}
-		return controller.refCount
+		return lc_releaseImplementation(controller)
 	}
 	lc_ec2_setKnobMode :: proc "system" (this: rawptr, mode: vst3.KnobMode) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController2)this, LindaleController, "editController2")
@@ -1100,6 +1201,66 @@ createLindaleController :: proc () -> ^LindaleController {
 		log.info("lc_openAboutBox")
 		return vst3.kResultOk
 	}
+	lc_cp_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		log.info("lc_cp_queryInterface")
+
+		return lc_queryInterface(controller, iid, obj)
+	}
+	lc_cp_addRef :: proc "system" (this: rawptr) -> u32 {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		log.info("lc_cp_addRef")
+		controller.refCount += 1
+		return controller.refCount
+	}
+	lc_cp_release :: proc "system" (this: rawptr) -> u32 {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		log.info("lc_cp_release")
+		return lc_releaseImplementation(controller)
+	}
+	lc_cp_connect :: proc "system" (this: rawptr, other: ^vst3.IConnectionPoint) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		log.info("lc_cp_connect")
+		controller.peer = other
+		return vst3.kResultOk
+	}
+	lc_cp_disconnect :: proc "system" (this: rawptr, other: ^vst3.IConnectionPoint) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		log.info("lc_cp_disconnect")
+		controller.peer = nil
+		return vst3.kResultOk
+	}
+	// notify may run on any thread: route UI mutations through the same channel as
+	// componentHandler callbacks, never touch view state directly here.
+	lc_cp_notify :: proc "system" (this: rawptr, message: ^vst3.IMessage) -> vst3.TResult {
+		controller := container_of(cast(^vst3.IConnectionPoint)this, LindaleController, "connectionPoint")
+		context = controller.ctx
+		id := message->getMessageID()
+		log.info("lc_cp_notify: {}", id)
+		return vst3.kResultOk
+	}
+}
+
+// Caller owns the returned message and must release() it after send_to_peer
+make_message :: proc(hostApp: ^vst3.IHostApplication, id: cstring) -> ^vst3.IMessage {
+	if hostApp == nil do return nil
+	obj: rawptr
+	if hostApp->createInstance(vst3.iid_IMessage, vst3.iid_IMessage, &obj) != vst3.kResultOk {
+		return nil
+	}
+	msg := cast(^vst3.IMessage)obj
+	msg->setMessageID(id)
+	return msg
+}
+
+send_to_peer :: proc(peer: ^vst3.IConnectionPoint, msg: ^vst3.IMessage) {
+	if peer == nil || msg == nil do return
+	peer->notify(msg)
 }
 
 LindaleView :: struct {

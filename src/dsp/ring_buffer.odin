@@ -4,18 +4,16 @@ import "base:intrinsics"
 import "core:testing"
 
 // SPSC (single-producer, single-consumer) lock-free ring buffer.
-// Audio thread writes, UI thread reads. No locks, no allocations.
 // Buffer must be power-of-2 sized, externally provided.
 
 RingBuffer :: struct {
-	data:      []Sample,
-	mask:      int,
-	write_pos: int, // Only producer (audio thread) writes this
-	read_pos:  int, // Only consumer (UI thread) writes this
+	data: []Sample,
+	mask: int,
+	write_pos: int, // Only producer writes this
+	read_pos: int, // Only consumer writes this
 }
 
 ring_init :: proc(r: ^RingBuffer, buffer: []Sample) {
-	#assert(size_of(int) == 8 || size_of(int) == 4)
 	assert(len(buffer) > 0 && len(buffer) & (len(buffer) - 1) == 0, "ring buffer size must be power of 2")
 	r.data = buffer
 	r.mask = len(buffer) - 1
@@ -24,14 +22,14 @@ ring_init :: proc(r: ^RingBuffer, buffer: []Sample) {
 	buf_clear(buffer)
 }
 
-// Audio thread: write one sample
+// Write one sample
 ring_write :: proc(r: ^RingBuffer, sample: Sample) {
 	pos := intrinsics.atomic_load_explicit(&r.write_pos, .Relaxed)
 	r.data[pos & r.mask] = sample
 	intrinsics.atomic_store_explicit(&r.write_pos, pos + 1, .Release)
 }
 
-// Audio thread: write a block of samples
+// Write a block of samples
 ring_write_buf :: proc(r: ^RingBuffer, samples: []Sample) {
 	pos := intrinsics.atomic_load_explicit(&r.write_pos, .Relaxed)
 	for s in samples {
@@ -41,14 +39,14 @@ ring_write_buf :: proc(r: ^RingBuffer, samples: []Sample) {
 	intrinsics.atomic_store_explicit(&r.write_pos, pos, .Release)
 }
 
-// UI thread: how many unread samples are available
+// How many unread samples are available
 ring_available :: proc(r: ^RingBuffer) -> int {
 	wp := intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
 	rp := intrinsics.atomic_load_explicit(&r.read_pos, .Relaxed)
 	return wp - rp
 }
 
-// UI thread: copy the most recent `count` samples into dest.
+// Copy the most recent `count` samples into dest.
 // Does NOT advance read_pos — this is a snapshot for visualization.
 // Returns number of samples actually copied (may be less than count
 // if fewer than count samples have been written total).
@@ -122,7 +120,7 @@ test_ring_read_latest_is_snapshot :: proc(t: ^testing.T) {
 	ring_write(&r, 1)
 	ring_write(&r, 2)
 
-	// Reading twice gives the same result — read_pos not advanced
+	// Reading twice gives the same result - read_pos not advanced
 	dest1, dest2: [4]Sample
 	n1 := ring_read_latest(&r, dest1[:])
 	n2 := ring_read_latest(&r, dest2[:])
@@ -155,7 +153,7 @@ test_ring_wraparound :: proc(t: ^testing.T) {
 	r: RingBuffer
 	ring_init(&r, buf[:])
 
-	// Write 6 samples into a 4-slot buffer — wraps around
+	// Write 6 samples into a 4-slot buffer - wraps around
 	for i in 0 ..< 6 {
 		ring_write(&r, Sample(i))
 	}
