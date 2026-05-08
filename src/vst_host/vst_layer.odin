@@ -33,6 +33,10 @@ import "../bridge"
 lindaleProcessorCid := vst3.SMTG_INLINE_UID(0x68C2EAE3, 0x418443BC, 0x80F06C5E, 0x428D44C4)
 lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051, 0xDAB98786)
 
+// Used in establishing connection between processor and controller.
+lindaleConnectionCid := vst3.SMTG_INLINE_UID(0xf51b3ac9, 0xb51e4e72, 0xbf2e3049, 0x787e8d4f)
+
+
 LindalePluginFactory :: struct {
 	vtablePtr: vst3.IPluginFactory3,
 	vtable: vst3.IPluginFactory3Vtbl,
@@ -98,7 +102,10 @@ LindaleProcessor :: struct {
 	processContextRequirementsVtable: vst3.IProcessContextRequirementsVtbl,
 	connectionPoint: vst3.IConnectionPoint,
 	connectionPointVtable: vst3.IConnectionPointVtbl,
+
 	refCount: u32,
+
+	controllerLink: ^LindaleController,
 
 	plugin: lin.PluginProcessor,
 	hostCtx: bridge.HostContext,
@@ -225,6 +232,9 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			obj^ = &this.processContextRequirements
 		} else if iid^ == vst3.iid_IConnectionPoint {
 			obj^ = &this.connectionPoint
+		} else if iid^ == lindaleConnectionCid {
+			obj^ = this
+			return vst3.kResultOk // Skip ref count for connection
 		} else {
 			obj^ = nil
 			return vst3.kNoInterface
@@ -818,6 +828,16 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		processor := container_of(cast(^vst3.IConnectionPoint)this, LindaleProcessor, "connectionPoint")
 		context = processor.ctx
 		id := message->getMessageID()
+		if runtime.cstring_eq(id, "LindaleVST3EditController") {
+			val: i64 = 0
+			if message->getAttributes()->getInt("LindaleVST3EditController", &val) == vst3.kResultOk {
+				if val != 0 {
+					processor.controllerLink = transmute(^LindaleController)(val)
+					processor.controllerLink.processorLink = processor
+					log.info("Notify: Link to controller established in processor notify.")
+				}
+			}
+		}
 		log.info("lp_cp_notify: {}", id)
 		return vst3.kResultOk
 	}
@@ -832,6 +852,8 @@ LindaleController :: struct {
 	connectionPointVtable: vst3.IConnectionPointVtbl,
 
 	refCount: u32,
+
+	processorLink: ^LindaleProcessor,
 
 	plugin: lin.PluginController,
 	hostCtx: bridge.HostContext,
@@ -1226,6 +1248,14 @@ createLindaleController :: proc () -> ^LindaleController {
 		context = controller.ctx
 		log.info("lc_cp_connect")
 		controller.peer = other
+		processor: rawptr
+		if other->queryInterface(&lindaleConnectionCid, &processor) == vst3.kResultOk {
+			controller.processorLink = cast(^LindaleProcessor)processor
+			controller.processorLink.controllerLink = controller
+			log.info("lc_cp_connect: Connection with processor established.")
+		} else { // Query interface on processor failed - send message to processor instead
+			send_int_message(controller.hostApplication, controller.peer, "LindaleVST3EditController", transmute(i64)uintptr(controller))
+		}
 		return vst3.kResultOk
 	}
 	lc_cp_disconnect :: proc "system" (this: rawptr, other: ^vst3.IConnectionPoint) -> vst3.TResult {
@@ -1246,21 +1276,25 @@ createLindaleController :: proc () -> ^LindaleController {
 	}
 }
 
-// Caller owns the returned message and must release() it after send_to_peer
-make_message :: proc(hostApp: ^vst3.IHostApplication, id: cstring) -> ^vst3.IMessage {
+send_int_message :: proc(hostApp: ^vst3.IHostApplication, peer: ^vst3.IConnectionPoint, id: cstring, value: i64) {
+	if peer == nil do return
+	msg := make_message(hostApp)
+	if msg == nil do return
+	defer msg->release()
+	msg->setMessageID(id)
+	msg->getAttributes()->setInt(id, value)
+	peer->notify(msg)
+}
+
+// Caller owns the returned message and must release() it after sending
+make_message :: proc(hostApp: ^vst3.IHostApplication) -> ^vst3.IMessage {
 	if hostApp == nil do return nil
 	obj: rawptr
-	if hostApp->createInstance(vst3.iid_IMessage, vst3.iid_IMessage, &obj) != vst3.kResultOk {
+	if hostApp->createInstance(&vst3.iid_IMessage, &vst3.iid_IMessage, &obj) != vst3.kResultOk {
 		return nil
 	}
 	msg := cast(^vst3.IMessage)obj
-	msg->setMessageID(id)
 	return msg
-}
-
-send_to_peer :: proc(peer: ^vst3.IConnectionPoint, msg: ^vst3.IMessage) {
-	if peer == nil || msg == nil do return
-	peer->notify(msg)
 }
 
 LindaleView :: struct {

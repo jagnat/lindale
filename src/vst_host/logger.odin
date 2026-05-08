@@ -74,7 +74,7 @@ get_logger :: proc(source: LogSource) -> runtime.Logger {
 // Internal
 
 MAX_LOG_LENGTH :: 256
-LOG_BUFFER_COUNT :: 64
+LOG_BUFFER_COUNT :: 2048
 FILE_BUFFER_SIZE :: 8192
 
 Log :: [MAX_LOG_LENGTH]u8

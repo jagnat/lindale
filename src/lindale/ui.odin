@@ -923,9 +923,6 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				inner := Vec2f{center.x + dir.x * knob_indicator_inset, center.y + dir.y * knob_indicator_inset}
 				outer := Vec2f{center.x + dir.x * (radius - knob_arc_thickness - 4), center.y + dir.y * (radius - knob_arc_thickness - 4)}
 				draw_push_pill(ctx.plugin.draw, inner, outer, knob_track_thickness, arcColor)
-
-				endCap := Vec2f{center.x + dir.x * radius, center.y + dir.y * radius}
-				draw_circle(ctx.plugin.draw, endCap.x, endCap.y, knob_endcap_radius, arcColor)
 			}
 		}
 	}

@@ -557,7 +557,7 @@ IHostApplicationVtbl :: struct {
 
 	/* methods defined in "Steinberg_Vst_IHostApplication": */
 	getName : proc "system" (this: rawptr, name: ^String128) -> TResult,
-	createInstance : proc "system" (this: rawptr, cid, iid: TUID, obj: ^rawptr) -> TResult,
+	createInstance : proc "system" (this: rawptr, cid, iid: ^TUID, obj: ^rawptr) -> TResult,
 }
 
 IHostApplication :: struct {
