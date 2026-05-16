@@ -8,6 +8,8 @@ import "core:c"
 import b "../bridge"
 import dsp "../dsp"
 
+when ACTIVE_PLUGIN == "synth" {
+
 // Voice
 MAX_VOICES :: 16
 MAX_ARP_NOTES :: 16
@@ -33,7 +35,7 @@ ArpNote :: struct {
 // State
 
 // Processor thread
-PluginProcessState :: struct {
+SynthProcessState :: struct {
 	voices: [MAX_VOICES]Voice,
 	pitch_bend: f32, // -1 to +1
 
@@ -47,7 +49,7 @@ PluginProcessState :: struct {
 }
 
 // Controller thread
-PluginControlState :: struct {
+SynthControlState :: struct {
 	test: bool,
 }
 
@@ -65,7 +67,7 @@ PARAM_GAIN      :: ParamIndex(8)
 PARAM_ARP_ON    :: ParamIndex(9)
 PARAM_ARP_RATE  :: ParamIndex(10)
 
-@(rodata) param_table := [?]b.ParamDescriptor {
+@(rodata) synth_param_table := [?]b.ParamDescriptor {
 	{
 		name = "Osc1 Wave", short_name = "Osc1", min = 0, max = 4, default_value = 0,
 		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
@@ -114,22 +116,20 @@ PARAM_ARP_RATE  :: ParamIndex(10)
 
 // Descriptor
 
-get_plugin_descriptor :: proc() -> PluginDescriptor {
+synth_get_plugin_descriptor :: proc() -> PluginDescriptor {
 	return {
 		name = "Lindale Synth",
 		vendor = "JagI",
 		version = "0.0.1",
 		plugin_type = .Instrument,
-		params = param_table[:],
+		params = synth_param_table[:],
 		max_channels = 2,
-		latency = 0,
-		tail = 0,
 	}
 }
 
 // Lifecycle
 
-plugin_init_state :: proc(state: ^PluginProcessState, sample_rate: f32, alloc: mem.Allocator) {
+synth_init_state :: proc(state: ^SynthProcessState, sample_rate: f32, alloc: mem.Allocator) {
 	for &v in state.voices {
 		dsp.osc_init(&v.osc1, sample_rate)
 		dsp.osc_init(&v.osc2, sample_rate)
@@ -138,7 +138,7 @@ plugin_init_state :: proc(state: ^PluginProcessState, sample_rate: f32, alloc: m
 	state.arp_synth_note_id = -1000
 }
 
-plugin_reset_state :: proc(state: ^PluginProcessState) {
+synth_reset_state :: proc(state: ^SynthProcessState) {
 	state.pitch_bend = 0
 	for &v in state.voices {
 		v.active = false
@@ -167,7 +167,7 @@ waveform_from_param :: proc(val: f32) -> dsp.Waveform {
 
 // Arp helpers
 
-arp_insert_note :: proc(state: ^PluginProcessState, pitch: i16, velocity: f32, note_id: i32) {
+arp_insert_note :: proc(state: ^SynthProcessState, pitch: i16, velocity: f32, note_id: i32) {
 	if state.arp_note_count >= MAX_ARP_NOTES do return
 	// Insert in pitch-ascending order
 	insert_at := state.arp_note_count
@@ -188,7 +188,7 @@ arp_insert_note :: proc(state: ^PluginProcessState, pitch: i16, velocity: f32, n
 	}
 }
 
-arp_remove_note :: proc(state: ^PluginProcessState, note_id: i32, pitch: i16) {
+arp_remove_note :: proc(state: ^SynthProcessState, note_id: i32, pitch: i16) {
 	for i in 0 ..< state.arp_note_count {
 		n := state.arp_notes[i]
 		if (note_id >= 0 && n.note_id == note_id) || (note_id < 0 && n.pitch == pitch) {
@@ -223,7 +223,7 @@ arp_step_samples :: proc(rate_param: f32, tempo: f64, sample_rate: f64) -> int {
 	return max(1, int(quarter_notes * 60.0 / bpm * sample_rate))
 }
 
-arp_gate_off_all :: proc(state: ^PluginProcessState) {
+arp_gate_off_all :: proc(state: ^SynthProcessState) {
 	for &v in state.voices {
 		if v.active && v.is_arp {
 			dsp.adsr_gate_off(&v.env)
@@ -233,7 +233,7 @@ arp_gate_off_all :: proc(state: ^PluginProcessState) {
 
 // Audio
 
-plugin_process_audio :: proc(plug: ^PluginProcessor) {
+synth_process_audio :: proc(plug: ^PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
@@ -348,7 +348,7 @@ plugin_process_audio :: proc(plug: ^PluginProcessor) {
 	}
 }
 
-note_on :: proc(state: ^PluginProcessState, evt: b.NoteOn, is_arp: bool = false) {
+note_on :: proc(state: ^SynthProcessState, evt: b.NoteOn, is_arp: bool = false) {
 	// Find a free voice, or steal the oldest idle one
 	slot: ^Voice = nil
 	for &v in state.voices {
@@ -382,7 +382,7 @@ note_on :: proc(state: ^PluginProcessState, evt: b.NoteOn, is_arp: bool = false)
 	dsp.adsr_gate_on(&slot.env)
 }
 
-note_off :: proc(state: ^PluginProcessState, evt: b.NoteOff) {
+note_off :: proc(state: ^SynthProcessState, evt: b.NoteOff) {
 	for &v in state.voices {
 		if v.active && (evt.note_id >= 0 ? v.note_id == evt.note_id : v.pitch == evt.pitch) {
 			dsp.adsr_gate_off(&v.env)
@@ -390,9 +390,17 @@ note_off :: proc(state: ^PluginProcessState, evt: b.NoteOff) {
 	}
 }
 
+synth_get_latency_samples :: proc(plug: ^PluginProcessor) -> u32 {
+	return 0
+}
+
+synth_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
+	return 0
+}
+
 // UI
 
-plugin_draw :: proc(plug: ^PluginController) {
+synth_draw :: proc(plug: ^PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
 	if plug.inDraw {
@@ -455,3 +463,31 @@ plugin_draw :: proc(plug: ^PluginController) {
 	}
 	draw_submit(plug.draw)
 }
+
+// Vtable hooks
+
+synth_setup_processor :: proc(plug: ^PluginProcessor) {
+	synth_init_state(plug.state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+}
+
+synth_reset :: proc(plug: ^PluginProcessor) {
+	synth_reset_state(plug.state)
+}
+
+synth_api :: PluginApi {
+	get_plugin_descriptor = synth_get_plugin_descriptor,
+	process_audio         = synth_process_audio,
+	draw                  = synth_draw,
+
+	setup_controller      = nil,
+	view_attached         = nil,
+	view_removed          = nil,
+	view_resized          = nil,
+
+	setup_processor       = synth_setup_processor,
+	get_latency_samples   = synth_get_latency_samples,
+	get_tail_samples      = synth_get_tail_samples,
+	reset                 = synth_reset,
+}
+
+} // when ACTIVE_PLUGIN == "synth"

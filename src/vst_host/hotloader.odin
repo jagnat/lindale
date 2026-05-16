@@ -85,15 +85,16 @@ hotload_api :: proc() -> lin.PluginApi {
 	// Initialize in order so compiler throws an error if a function is missing
 	api : lin.PluginApi = {
 		buffer_get_plugin_descriptor,
+		buffer_process_audio,
+		buffer_draw,
 
 		buffer_setup_controller,
-		buffer_draw,
+
 		buffer_view_attached,
 		buffer_view_removed,
 		buffer_view_resized,
 
 		buffer_setup_processor,
-		buffer_process_audio,
 		buffer_get_latency_samples,
 		buffer_get_tail_samples,
 		buffer_reset,

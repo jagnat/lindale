@@ -36,7 +36,6 @@ lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051,
 // Used in establishing connection between processor and controller.
 lindaleConnectionCid := vst3.SMTG_INLINE_UID(0xf51b3ac9, 0xb51e4e72, 0xbf2e3049, 0x787e8d4f)
 
-
 LindalePluginFactory :: struct {
 	vtablePtr: vst3.IPluginFactory3,
 	vtable: vst3.IPluginFactory3Vtbl,
@@ -1475,7 +1474,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 
 		controller.hostCtx.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
 
-		lin.plugin_view_attached(view.plugin)
+		pluginApi.view_attached(view.plugin)
 
 		if !plat.timer_running(view.timer) {
 			view.parent = parent
