@@ -132,6 +132,7 @@ LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Left}
 	self.mouse.pressed += {.Left}
+	if event->clickCount() >= 2 do self.mouse.doubleClicked += {.Left}
 	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
@@ -164,6 +165,7 @@ LindaleMetalView_rightMouseDown :: proc (self: ^LindaleMetalView, event: ^F.Even
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Right}
 	self.mouse.pressed += {.Right}
+	if event->clickCount() >= 2 do self.mouse.doubleClicked += {.Right}
 	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
@@ -191,6 +193,20 @@ LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, newSize: F.Size)
 	sup := ObjC_Super{auto_cast self, cls}
 	sel := intrinsics.objc_find_selector("setFrameSize:")
 	objc_msgSendSuper2(&sup, sel, newSize)
+
+	// Keep the drawable in lock-step with the view; otherwise the projection
+	// (logical bounds) and viewport (drawable pixels) disagree for a frame
+	// during live resize and the UI appears to warp
+	layer := cast(^CA.MetalLayer)self->layer()
+	if layer != nil {
+		scale: F.Float = 1.0
+		window := intrinsics.objc_send(^F.Window, self, "window")
+		if window != nil {
+			scale = intrinsics.objc_send(F.Float, window, "backingScaleFactor")
+		}
+		layer->setDrawableSize(F.Size{newSize.width * scale, newSize.height * scale})
+	}
+
 	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
 }
 
@@ -250,6 +266,8 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	layer->setDevice(device)
 	layer->setPixelFormat(.BGRA8Unorm)
 	layer->setFramebufferOnly(true)
+	// Couple Metal present to the same CA transaction as the host's window resize
+	layer->setPresentsWithTransaction(true)
 
 	if parent != nil {
 		parentView := cast(^F.View)(parent)
@@ -513,15 +531,16 @@ renderer_end_frame :: proc(r: bridge.Renderer) {
 	if renderer == nil do return
 	if renderer.commandBuffer == nil do return
 
+	// With presentsWithTransaction, commit + wait + present manually so the
+	// surface lands in the same CA transaction as the host's window-resize update
+	renderer.commandBuffer->commit()
 	if renderer.currentDrawable != nil {
-		renderer.commandBuffer->presentDrawable(renderer.currentDrawable)
+		renderer.commandBuffer->waitUntilScheduled()
+		(cast(^MTL.Drawable)renderer.currentDrawable)->present()
 	}
 
-	renderer.commandBuffer->commit()
 	renderer.commandBuffer = nil
 	renderer.currentDrawable = nil
-
-	// CA.Transaction.flush()
 }
 
 renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawInstance) {

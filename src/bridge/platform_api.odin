@@ -36,6 +36,7 @@ MouseState :: struct {
 	down: bit_set[MouseButton],
 	pressed: bit_set[MouseButton],
 	released: bit_set[MouseButton],
+	doubleClicked: bit_set[MouseButton],
 	scrollDelta: Vec2f,
 	modifiers: KeyModifierSet,
 }

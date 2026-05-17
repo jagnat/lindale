@@ -101,6 +101,7 @@ register_window_class :: proc() {
 
 	wcex := win.WNDCLASSEXW{
 		cbSize = size_of(win.WNDCLASSEXW),
+		style = win.CS_DBLCLKS,
 		lpfnWndProc = lindale_wndproc,
 		hInstance = hInstance,
 		lpszClassName = class_name,
@@ -413,6 +414,9 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		win.SetCapture(hwnd)
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
 
+	case win.WM_LBUTTONDBLCLK:
+		renderer.mouse.doubleClicked += {.Left}
+
 	case win.WM_LBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Left}
@@ -426,6 +430,9 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		renderer.mouse.pressed += {.Right}
 		win.SetCapture(hwnd)
 		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+
+	case win.WM_RBUTTONDBLCLK:
+	renderer.mouse.doubleClicked += {.Right}
 
 	case win.WM_RBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)

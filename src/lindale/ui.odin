@@ -471,6 +471,17 @@ binding_end_edit :: proc(ctx: ^UIContext, binding: ValueBinding) {
 }
 
 @(private="file")
+binding_reset_to_default :: proc(ctx: ^UIContext, binding: ValueBinding) {
+	if pb, ok := binding.(ParamBinding); ok {
+		idx := pb.param_idx
+		ui_param_begin_edit(ctx, idx)
+		default_normalized := f32(b.param_to_normalized(param_table[idx].default_value, param_table[idx]))
+		ui_param_set_normalized(ctx, pb.param_idx, default_normalized)
+		ui_param_end_edit(ctx, idx)
+	}
+}
+
+@(private="file")
 ui_alloc_component :: proc(ctx: ^UIContext) -> ^Component {
 	assert(ctx.componentCount + 1 <= UI_MAX_COMPONENTS)
 	comp := &ctx.componentPool[ctx.componentCount]
@@ -518,6 +529,7 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse
 	ctx.plugin.mouse.pressed = {}
 	ctx.plugin.mouse.released = {}
+	ctx.plugin.mouse.doubleClicked = {}
 	ctx.plugin.mouse.scrollDelta = {}
 	ctx.hoveredId = 0
 	ctx.componentCount = 0
@@ -575,6 +587,9 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						binding_end_edit(ctx, d.binding)
 						ctx.activeId = 0
 					}
+				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.doubleClicked {
+					// Reset param to default on double click
+					binding_reset_to_default(ctx, d.binding)
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
 					binding_begin_edit(ctx, d.binding)
@@ -616,6 +631,9 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						binding_end_edit(ctx, d.binding)
 						ctx.activeId = 0
 					}
+				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.doubleClicked {
+					// Reset param to default on double click
+					binding_reset_to_default(ctx, d.binding)
 				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
 					ctx.activeId = d.id
 					ctx.dragAnchorMouseY = ctx.mouse.pos.y
