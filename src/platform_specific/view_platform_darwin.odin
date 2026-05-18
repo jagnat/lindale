@@ -194,9 +194,9 @@ LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, newSize: F.Size)
 	sel := intrinsics.objc_find_selector("setFrameSize:")
 	objc_msgSendSuper2(&sup, sel, newSize)
 
-	// Keep the drawable in lock-step with the view; otherwise the projection
-	// (logical bounds) and viewport (drawable pixels) disagree for a frame
-	// during live resize and the UI appears to warp
+	// Keep the drawable in lock-step with the view; otherwise the
+	// logical bounds and drawable pixels disagree for a frame
+	// during live resize, and the UI appears to warp
 	layer := cast(^CA.MetalLayer)self->layer()
 	if layer != nil {
 		scale: F.Float = 1.0
