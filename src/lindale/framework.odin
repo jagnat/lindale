@@ -55,17 +55,28 @@ AudioProcessContext :: struct {
 	changeIndices: []int,
 }
 
+// Stable for the entire lifetime of a plugin instance
 PluginProcessor :: struct {
 	host: ^b.HostContext,
 
-	state: ^PluginProcessState, // User code state
+	// Lin
+	controller_peer: ^PluginController,
+
+	// User code state
+	// Will get reset (through setup_processor) on hotreload
+	state: ^PluginProcessState,
 	audioProcessor: ^AudioProcessContext,
 }
 
 PluginController :: struct {
 	host: ^b.HostContext,
 
+	processor_peer: ^PluginProcessor,
+
+	// User code state
+	// Will get reset (through setup_controller) on hotreload
 	state: ^PluginControlState,
+
 	draw: ^DrawContext,
 	ui: ^UIContext,
 	mouse: b.MouseState,
@@ -213,7 +224,7 @@ framework_reset :: proc(plug: ^PluginProcessor) {
 	}
 }
 
-// Lifecycle
+// Lifecycle (not hot loaded)
 
 plugin_init_processor :: proc(plugin: ^PluginProcessor) {
 	desc := active_plugin_api.get_plugin_descriptor()

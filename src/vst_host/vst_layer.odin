@@ -833,6 +833,10 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 				if val != 0 {
 					processor.controllerLink = transmute(^LindaleController)(val)
 					processor.controllerLink.processorLink = processor
+					// Wire up user-visible links
+					processor.plugin.controller_peer = &processor.controllerLink.plugin
+					processor.controllerLink.plugin.processor_peer = &processor.plugin
+
 					log.info("Notify: Link to controller established in processor notify.")
 				}
 			}
