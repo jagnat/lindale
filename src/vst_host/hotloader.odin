@@ -261,6 +261,7 @@ hotload_deinit :: proc() {
 		if fail != nil && fail != .Not_Exist {
 			log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 		}
+		_remove_debug_info(oldSlotFilename)
 	}
 
 	ctx.initialized = false
@@ -293,14 +294,44 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 	if fail != nil && fail != .Not_Exist {
 		log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 	}
+	_remove_debug_info(oldSlotFilename)
 
 	err := os.copy_file(newDllPath, ctx.lindaleHotDll)
 	if err == nil {
 		log.info("Copied hotloaded dll to", newDllPath)
+		_copy_debug_info(ctx.lindaleHotDll, newDllPath)
 		return true
 	} else {
 		log.error("Failed to copy hotloaded dll", newDllPath, err)
 		return false
+	}
+}
+
+// Mac only required for now.
+// Copies a dSYM bundle alongside a renamed dylib. The DWARF file inside the
+// bundle must be renamed to match the new binary or LLDB won't associate it.
+_copy_debug_info :: proc(srcDll, dstDll: string) {
+	when ODIN_OS == .Darwin {
+		srcDsym := fmt.tprintf("%s.dSYM", srcDll)
+		if !os.exists(srcDsym) do return
+
+		dstDsym := fmt.tprintf("%s.dSYM", dstDll)
+		cmd := fmt.ctprintf(
+			"rm -rf '%s' && cp -R '%s' '%s' && mv '%s/Contents/Resources/DWARF/%s' '%s/Contents/Resources/DWARF/%s'",
+			dstDsym, srcDsym, dstDsym,
+			dstDsym, filepath.base(srcDll),
+			dstDsym, filepath.base(dstDll))
+		if libc.system(cmd) != 0 {
+			log.error("Failed to copy dSYM for", dstDll)
+		} else {
+			log.info("Copied dSYM for", dstDll)
+		}
+	}
+}
+
+_remove_debug_info :: proc(dllPath: string) {
+	when ODIN_OS == .Darwin {
+		libc.system(fmt.ctprintf("rm -rf '%s.dSYM'", dllPath))
 	}
 }
 
