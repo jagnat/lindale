@@ -338,6 +338,15 @@ draw_measure_text :: proc(ctx: ^DrawContext, text: string) -> Vec2f {
 	return font_measure_bounds(&ctx.fontState, text)
 }
 
+draw_polyline :: proc(ctx: ^DrawContext, endpts: []Vec2f, color: ColorU8 = {255, 255, 255, 255}, thickness: f32 = 1, border_width: f32 = 0, border_color: ColorU8 = {}) {
+	if len(endpts) < 2 do return
+	startPt := endpts[0]
+	for endPt in endpts[1:] {
+		draw_push_pill(ctx, startPt, endPt, thickness, color, border_width, border_color)
+		startPt = endPt
+	}
+}
+
 draw_filled_rect :: proc(ctx: ^DrawContext, x, y, w, h: f32, color: ColorU8, cornerRad: f32 = 0) {
 	draw_push_rect(ctx, SimpleUIRect{x = x, y = y, width = w, height = h, color = color, cornerRad = cornerRad})
 }

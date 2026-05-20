@@ -1,6 +1,7 @@
 package platform
 
 // import "core:os"
+import "core:c/libc"
 import "core:os"
 import "core:dynlib"
 import "core:thread"

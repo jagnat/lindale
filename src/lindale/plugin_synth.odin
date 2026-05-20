@@ -1,9 +1,12 @@
 package lindale
 
+import "base:intrinsics"
 import "core:log"
 import "core:mem"
 import "core:time"
 import "core:math"
+import "core:math/linalg"
+import dit "../thirdparty/uFFT_DIT"
 import "core:c"
 import b "../bridge"
 import dsp "../dsp"
@@ -34,6 +37,8 @@ ArpNote :: struct {
 
 // State
 
+ANALYSIS_BUFFER_SIZE :: 2048
+
 // Processor thread
 SynthProcessState :: struct {
 	voices: [MAX_VOICES]Voice,
@@ -46,11 +51,16 @@ SynthProcessState :: struct {
 	arp_synth_note_id: i32, // synthetic counter for arp-triggered voice note_ids
 	arp_samples_since: int, // samples elapsed since last arp trigger
 	arp_active: bool, // is the arp currently triggering notes
+
+	// SPSC Queue for FFT
+	backingBuf: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
+	buffer: dsp.RingBuffer,
 }
 
 // Controller thread
 SynthControlState :: struct {
 	test: bool,
+	hit: bool,
 }
 
 // Parameters
@@ -136,6 +146,7 @@ synth_init_state :: proc(state: ^SynthProcessState, sample_rate: f32, alloc: mem
 		dsp.adsr_init(&v.env, sample_rate)
 	}
 	state.arp_synth_note_id = -1000
+	dsp.ring_init(&state.buffer, state.backingBuf[:])
 }
 
 synth_reset_state :: proc(state: ^SynthProcessState) {
@@ -344,8 +355,11 @@ synth_process_audio :: proc(plug: ^PluginProcessor) {
 			for c in 0 ..< num_channels {
 				actx.outputs[c][abs_sample] = sample
 			}
+			dsp.ring_write(&state.buffer, sample)
 		}
 	}
+
+
 }
 
 note_on :: proc(state: ^SynthProcessState, evt: b.NoteOn, is_arp: bool = false) {
@@ -400,6 +414,11 @@ synth_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
 
 // UI
 
+
+log_like_tween :: proc(i: int, N: int) -> f32 {
+	return math.pow_f32(f32(i) / f32(N), 0.3)
+}
+
 synth_draw :: proc(plug: ^PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
@@ -411,6 +430,22 @@ synth_draw :: proc(plug: ^PluginController) {
 	defer plug.inDraw = false
 
 	plug.lastDrawTime = time.tick_now()
+
+	vec: [ANALYSIS_BUFFER_SIZE]complex64
+	// Read FFT buffer (TODO kinda hacky, not at all atomic)
+	if plug.processor_peer != nil {
+		plug.state.hit = true
+		tmpBuf : [ANALYSIS_BUFFER_SIZE]f32 = plug.processor_peer.state.backingBuf
+		writeIdx := intrinsics.atomic_load_explicit(&plug.processor_peer.state.buffer.write_pos, .Relaxed)
+		writeIdx %= ANALYSIS_BUFFER_SIZE
+		// Re-linearize
+		tmpBuf2 : [ANALYSIS_BUFFER_SIZE]f32
+		firstLen := ANALYSIS_BUFFER_SIZE - writeIdx
+		copy(tmpBuf2[:firstLen], tmpBuf[writeIdx:])
+		copy(tmpBuf2[firstLen:], tmpBuf[:writeIdx])
+		for val, i in tmpBuf2 do vec[i] = complex64(val)
+		dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
+	}
 
 	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
 	draw_clear(plug.draw)
@@ -461,6 +496,48 @@ synth_draw :: proc(plug: ^PluginController) {
 			}
 		}
 	}
+
+	if plug.state.hit {
+		// Generate some rectangles corresponding to FFT result
+		startX : f32 = 50
+		endX : f32 = 800 - 50
+		startY : f32 = 600 - 50
+		fft_height :: 500
+		fft_bin_width :: 4
+		MIN_FREQ : f32 : 20
+		MAX_FREQ : f32 : 22050
+
+		// draw_clear(plug.draw)
+		pts: [ANALYSIS_BUFFER_SIZE / 2]Vec2f
+		for i in 2 ..< ANALYSIS_BUFFER_SIZE / 2 {
+			val := vec[i]
+			mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
+			adjusted := math.log2(mag + 1) / math.log2(f32(1025))
+			height := (adjusted * fft_height) + 5
+			freq := f32(i) * 44100.0 / ANALYSIS_BUFFER_SIZE
+			t := log_like_tween(i, 1024)
+			alpha := 1.0 - t
+			width := max(fft_bin_width * 2 * (1 - 0.8 * t), fft_bin_width)
+			if freq < MIN_FREQ || freq > MAX_FREQ do continue
+			x := linalg.lerp(startX, endX, math.log10(freq / MIN_FREQ) / math.log10(MAX_FREQ / MIN_FREQ))
+			y0 := startY - height
+			pts[i] = {x - (fft_bin_width / 2), y0}
+			rect := SimpleUIRect{
+				x - (fft_bin_width / 2), y0,
+				width, height,
+				0, 0, 0, 0,
+				ColorU8{255, 255, 255, u8(alpha * 255)}, width / 2,
+				{}, 0
+			}
+			// draw_push_rect(plug.draw, rect)
+		}
+		// pts[0] = {0, startY}
+		draw_polyline(plug.draw, pts[10:], thickness = 4)
+	}
+
+	// endpts : []Vec2f = {{0, 0}, {100, 100}, {100, 200}, {200, 200}, {600, 200}}
+	// draw_polyline(plug.draw, endpts, thickness = 2)
+
 	draw_submit(plug.draw)
 }
 

@@ -1255,6 +1255,8 @@ createLindaleController :: proc () -> ^LindaleController {
 		if other->queryInterface(&lindaleConnectionCid, &processor) == vst3.kResultOk {
 			controller.processorLink = cast(^LindaleProcessor)processor
 			controller.processorLink.controllerLink = controller
+			controller.plugin.processor_peer = &controller.processorLink.plugin
+			controller.processorLink.plugin.controller_peer = &controller.plugin
 			log.info("lc_cp_connect: Connection with processor established.")
 		} else { // Query interface on processor failed - send message to processor instead
 			send_int_message(controller.hostApplication, controller.peer, "LindaleVST3EditController", transmute(i64)uintptr(controller))
