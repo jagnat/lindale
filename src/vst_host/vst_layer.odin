@@ -1334,6 +1334,8 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	if gen != view.controller.lastGeneration {
 		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
+		vm.arena_free_all(&view.controller.sessionArena)
+		pluginApi.setup_controller(&view.controller.plugin)
 	}
 
 	pluginApi.draw(view.plugin)
@@ -1351,6 +1353,8 @@ repaint_callback :: proc "c" (data: rawptr) {
 	if gen != view.controller.lastGeneration {
 		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
+		vm.arena_free_all(&view.controller.sessionArena)
+		pluginApi.setup_controller(&view.controller.plugin)
 	}
 
 	pluginApi.draw(view.plugin)

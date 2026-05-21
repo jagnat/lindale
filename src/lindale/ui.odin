@@ -1,6 +1,7 @@
 package lindale
 
 import "core:math"
+import "core:log"
 import "core:testing"
 import b "../bridge"
 
@@ -109,6 +110,7 @@ ComponentType :: enum {
 	SLIDER,
 	TOGGLE,
 	KNOB,
+	CUSTOM_PANEL,
 }
 
 PanelData :: struct {
@@ -164,6 +166,11 @@ KnobData :: struct {
 	binding: ValueBinding,
 }
 
+CustomPanelData :: struct {
+	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
+	data: rawptr
+}
+
 ComponentData :: union {
 	PanelData,
 	LabelData,
@@ -171,6 +178,7 @@ ComponentData :: union {
 	SliderData,
 	ToggleData,
 	KnobData,
+	CustomPanelData,
 }
 
 Component :: struct {
@@ -251,6 +259,37 @@ _ui_panel_close :: proc(ctx: ^UIContext,
 	sizingHoriz: AxisSizing = {type = .FIT},
 	sizingVert: AxisSizing = {type = .FIT},
 	skipDraw: bool = false,) {
+	ui_close_component(ctx)
+}
+
+@(deferred_in = _ui_custom_draw_panel_close)
+ui_custom_draw_panel :: proc(ctx: ^UIContext,
+	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
+	data: rawptr,
+	dir: LayoutDirection = .HORIZONTAL,
+	child_gaps: f32 = 10,
+	padding: f32 = 10,
+	sizingHoriz: AxisSizing = {type = .FIT},
+	sizingVert: AxisSizing = {type = .FIT},) -> bool {
+	comp := ui_open_component(ctx)
+	comp.type = .CUSTOM_PANEL
+	comp.data = CustomPanelData{draw_proc, data}
+	comp.direction = dir
+	comp.sizingHoriz = sizingHoriz
+	comp.sizingHoriz.padding = padding
+	comp.sizingVert = sizingVert
+	comp.sizingVert.padding = padding
+	comp.child_gaps = child_gaps
+	return true
+}
+_ui_custom_draw_panel_close :: proc(ctx: ^UIContext,
+	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
+	data: rawptr,
+	dir: LayoutDirection = .HORIZONTAL,
+	child_gaps: f32 = 10,
+	padding: f32 = 10,
+	sizingHoriz: AxisSizing = {type = .FIT},
+	sizingVert: AxisSizing = {type = .FIT}) {
 	ui_close_component(ctx)
 }
 
@@ -553,6 +592,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 		if c == ctx.root do continue
 		switch c.type {
 			case .PANEL, .LABEL: break
+			case .CUSTOM_PANEL: break // TODO: Custom panel interact?
 			case .BUTTON: {
 				d := c.data.(ButtonData) or_continue
 				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
@@ -941,6 +981,10 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				inner := Vec2f{center.x + dir.x * knob_indicator_inset, center.y + dir.y * knob_indicator_inset}
 				outer := Vec2f{center.x + dir.x * (radius - knob_arc_thickness - 4), center.y + dir.y * (radius - knob_arc_thickness - 4)}
 				draw_push_pill(ctx.plugin.draw, inner, outer, knob_track_thickness, arcColor)
+			}
+			case .CUSTOM_PANEL: {
+				d := c.data.(CustomPanelData) or_continue
+				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
 			}
 		}
 	}

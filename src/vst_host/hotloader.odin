@@ -261,7 +261,7 @@ hotload_deinit :: proc() {
 		if fail != nil && fail != .Not_Exist {
 			log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 		}
-		_remove_debug_info(oldSlotFilename)
+		when ODIN_DEBUG do _remove_debug_info(oldSlotFilename)
 	}
 
 	ctx.initialized = false
@@ -294,12 +294,12 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 	if fail != nil && fail != .Not_Exist {
 		log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
 	}
-	_remove_debug_info(oldSlotFilename)
+	when ODIN_DEBUG do _remove_debug_info(oldSlotFilename)
 
 	err := os.copy_file(newDllPath, ctx.lindaleHotDll)
 	if err == nil {
 		log.info("Copied hotloaded dll to", newDllPath)
-		_copy_debug_info(ctx.lindaleHotDll, newDllPath)
+		when ODIN_DEBUG do _copy_debug_info(ctx.lindaleHotDll, newDllPath)
 		return true
 	} else {
 		log.error("Failed to copy hotloaded dll", newDllPath, err)

@@ -121,6 +121,14 @@ window_fill :: proc(buf: []Sample, type: WindowType) {
 	}
 }
 
+window_coherent_gain :: proc(window: []Sample) -> f32 {
+	sum: f32
+	for s in window {
+		sum += s
+	}
+	return sum / f32(len(window))
+}
+
 // Parameter smoother (one-pole)
 
 Smoother :: struct {

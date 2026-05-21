@@ -61,6 +61,8 @@ SynthProcessState :: struct {
 SynthControlState :: struct {
 	test: bool,
 	hit: bool,
+	fft_window: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
+	fft_window_gain: f32
 }
 
 // Parameters
@@ -414,11 +416,6 @@ synth_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
 
 // UI
 
-
-log_like_tween :: proc(i: int, N: int) -> f32 {
-	return math.pow_f32(f32(i) / f32(N), 0.3)
-}
-
 synth_draw :: proc(plug: ^PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
@@ -431,10 +428,10 @@ synth_draw :: proc(plug: ^PluginController) {
 
 	plug.lastDrawTime = time.tick_now()
 
-	vec: [ANALYSIS_BUFFER_SIZE]complex64
 	// Read FFT buffer (TODO kinda hacky, not at all atomic)
+	dbs: [ANALYSIS_BUFFER_SIZE / 2]f32
 	if plug.processor_peer != nil {
-		plug.state.hit = true
+		vec: [ANALYSIS_BUFFER_SIZE]complex64
 		tmpBuf : [ANALYSIS_BUFFER_SIZE]f32 = plug.processor_peer.state.backingBuf
 		writeIdx := intrinsics.atomic_load_explicit(&plug.processor_peer.state.buffer.write_pos, .Relaxed)
 		writeIdx %= ANALYSIS_BUFFER_SIZE
@@ -443,8 +440,15 @@ synth_draw :: proc(plug: ^PluginController) {
 		firstLen := ANALYSIS_BUFFER_SIZE - writeIdx
 		copy(tmpBuf2[:firstLen], tmpBuf[writeIdx:])
 		copy(tmpBuf2[firstLen:], tmpBuf[:writeIdx])
+		tmpBuf2 = tmpBuf2 * plug.state.fft_window
 		for val, i in tmpBuf2 do vec[i] = complex64(val)
 		dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
+
+		for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
+			val := vec[i]
+			mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
+			dbs[i] = math.log2(mag + 1) / math.log2(f32(ANALYSIS_BUFFER_SIZE / 2 + 1))
+		}
 	}
 
 	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
@@ -472,6 +476,48 @@ synth_draw :: proc(plug: ^PluginController) {
 		return "1/8"
 	}
 
+	FftData :: struct {
+		vals: []f32,
+		sample_rate: f32
+	}
+	fft_data := FftData {
+		vals = dbs[:],
+	}
+	if plug.processor_peer != nil && plug.processor_peer.audioProcessor != nil {
+		fft_data.sample_rate = f32(plug.processor_peer.audioProcessor.sampleRate)
+	}
+
+	scope_draw :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+		fft := cast(^FftData)data
+		if fft == nil do return
+		bounds := comp.calcBounds
+
+		if fft.sample_rate <= 0 || len(fft.vals) < 2 do return
+
+		FMIN :: f32(20)
+		FMAX :: f32(20000)
+
+		fft_size := f32(len(fft.vals) * 2)
+		log_span := math.log10(FMAX / FMIN)
+
+		pts: [ANALYSIS_BUFFER_SIZE / 2]Vec2f
+		n := 0
+		for val, i in fft.vals {
+			freq := f32(i) * fft.sample_rate / fft_size
+			if freq < FMIN do continue
+			if freq > FMAX do break
+
+			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
+			t := clamp(val, 0, 1)
+			y := bounds.y + bounds.h * (1 - t)
+			pts[n] = {x, y}
+			n += 1
+		}
+		if n >= 2 {
+			draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1)
+		}
+	}
+
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
 			// Envelope params
@@ -489,6 +535,9 @@ synth_draw :: proc(plug: ^PluginController) {
 				ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
 				ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
 			}
+			if ui_custom_draw_panel(plug.ui, scope_draw, &fft_data, dir = .HORIZONTAL, sizingHoriz = {type = .GROW},sizingVert = {type = .GROW}) {
+
+			}
 			// Arp controls
 			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
 				ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
@@ -497,47 +546,6 @@ synth_draw :: proc(plug: ^PluginController) {
 		}
 	}
 
-	if plug.state.hit {
-		// Generate some rectangles corresponding to FFT result
-		startX : f32 = 50
-		endX : f32 = 800 - 50
-		startY : f32 = 600 - 50
-		fft_height :: 500
-		fft_bin_width :: 4
-		MIN_FREQ : f32 : 20
-		MAX_FREQ : f32 : 22050
-
-		// draw_clear(plug.draw)
-		pts: [ANALYSIS_BUFFER_SIZE / 2]Vec2f
-		for i in 2 ..< ANALYSIS_BUFFER_SIZE / 2 {
-			val := vec[i]
-			mag := math.sqrt(real(val) * real(val) + imag(val) * imag(val))
-			adjusted := math.log2(mag + 1) / math.log2(f32(1025))
-			height := (adjusted * fft_height) + 5
-			freq := f32(i) * 44100.0 / ANALYSIS_BUFFER_SIZE
-			t := log_like_tween(i, 1024)
-			alpha := 1.0 - t
-			width := max(fft_bin_width * 2 * (1 - 0.8 * t), fft_bin_width)
-			if freq < MIN_FREQ || freq > MAX_FREQ do continue
-			x := linalg.lerp(startX, endX, math.log10(freq / MIN_FREQ) / math.log10(MAX_FREQ / MIN_FREQ))
-			y0 := startY - height
-			pts[i] = {x - (fft_bin_width / 2), y0}
-			rect := SimpleUIRect{
-				x - (fft_bin_width / 2), y0,
-				width, height,
-				0, 0, 0, 0,
-				ColorU8{255, 255, 255, u8(alpha * 255)}, width / 2,
-				{}, 0
-			}
-			// draw_push_rect(plug.draw, rect)
-		}
-		// pts[0] = {0, startY}
-		draw_polyline(plug.draw, pts[10:], thickness = 4)
-	}
-
-	// endpts : []Vec2f = {{0, 0}, {100, 100}, {100, 200}, {200, 200}, {600, 200}}
-	// draw_polyline(plug.draw, endpts, thickness = 2)
-
 	draw_submit(plug.draw)
 }
 
@@ -545,6 +553,11 @@ synth_draw :: proc(plug: ^PluginController) {
 
 synth_setup_processor :: proc(plug: ^PluginProcessor) {
 	synth_init_state(plug.state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+}
+
+synth_setup_controller :: proc(plug: ^PluginController) {
+	dsp.window_fill(plug.state.fft_window[:], .Hann)
+	plug.state.fft_window_gain = dsp.window_coherent_gain(plug.state.fft_window[:])
 }
 
 synth_reset :: proc(plug: ^PluginProcessor) {
@@ -556,7 +569,7 @@ synth_api :: PluginApi {
 	process_audio         = synth_process_audio,
 	draw                  = synth_draw,
 
-	setup_controller      = nil,
+	setup_controller      = synth_setup_controller,
 	view_attached         = nil,
 	view_removed          = nil,
 	view_resized          = nil,
