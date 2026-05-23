@@ -4,7 +4,6 @@
 *.rdi
 *.rdbg
 *.vst3
-!Lindale.vst3/
 *.sublime-workspace
 *.DS_Store
 *.dSYM
@@ -12,3 +11,4 @@ lindale.dylib
 lindale.dll
 lindale.lib
 lindale.exp
+/out/

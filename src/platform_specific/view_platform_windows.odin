@@ -13,6 +13,17 @@ import win "core:sys/windows"
 
 import "../bridge"
 
+// GetModuleHandleExW isn't bound in core:sys/windows
+foreign import kernel32 "system:Kernel32.lib"
+
+@(default_calling_convention="system")
+foreign kernel32 {
+	GetModuleHandleExW :: proc(flags: win.DWORD, module_name: win.LPCWSTR, module: ^win.HMODULE) -> win.BOOL ---
+}
+
+GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT :: 0x00000002
+GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS       :: 0x00000004
+
 shader_source := #load("../shaders/shader.hlsl", string)
 
 @(private="file")
@@ -91,13 +102,30 @@ parent_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPAR
 
 // Renderer lifecycle
 
+// The plugin DLL's own module handle. Registering the window class against
+// this (rather than the host's, via GetModuleHandleW(nil)) keys the class to
+// this module, so Windows unregisters it automatically when the DLL unloads.
+// FROM_ADDRESS resolves the module owning any address; window_class_atom is
+// just a file-local symbol that lives in this DLL.
+@(private="file")
+self_module :: proc() -> win.HINSTANCE {
+	hmod: win.HMODULE
+	GetModuleHandleExW(
+		GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		win.LPCWSTR(rawptr(&window_class_atom)),
+		&hmod)
+	return win.HINSTANCE(hmod)
+}
+
 @(private)
 register_window_class :: proc() {
 	if window_class_atom != 0 do return
 
-	hInstance := win.HINSTANCE(win.GetModuleHandleW(nil))
+	hInstance := self_module()
 	arrow_cursor = win.LoadCursorW(nil, transmute(win.LPCWSTR)uintptr(32512))
-	class_name := win.utf8_to_wstring(fmt.tprintf("LindalePlugin_%x\x00", hInstance))
+	// Per-plugin class name: a Win32 window class is process-global, so two
+	// Lindale plugins in one host must not register the same name.
+	class_name := win.utf8_to_wstring(fmt.tprintf("LindalePlugin_%s\x00", bridge.ACTIVE_PLUGIN))
 
 	wcex := win.WNDCLASSEXW{
 		cbSize = size_of(win.WNDCLASSEXW),
@@ -131,7 +159,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	renderer.physicalWidth = i32(f32(width) * renderer.scaleFactor)
 	renderer.physicalHeight = i32(f32(height) * renderer.scaleFactor)
 
-	hInstance := win.HINSTANCE(win.GetModuleHandleW(nil))
+	hInstance := self_module()
 
 	renderer.hwnd = win.CreateWindowExW(
 		0,

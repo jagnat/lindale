@@ -21,6 +21,7 @@ import "base:runtime"
 import "base:builtin"
 import "core:log"
 import "core:time"
+import "core:hash"
 import "core:sys/windows"
 import vm "core:mem/virtual"
 
@@ -35,6 +36,16 @@ lindaleControllerCid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x85210051,
 
 // Used in establishing connection between processor and controller.
 lindaleConnectionCid := vst3.SMTG_INLINE_UID(0xf51b3ac9, 0xb51e4e72, 0xbf2e3049, 0x787e8d4f)
+
+// Per-plugin UID: byte [13] marks the Lindale family, bytes [14..16)
+// carry a hash of the plugin token so each plugin reports distinct class UIDs.
+patch_cid_for_plugin :: proc(cid: ^vst3.TUID, plugin: string) {
+	h := hash.fnv32a(transmute([]byte)plugin)
+	h16 := u16(h) ~ u16(h >> 16)
+	cid[13] = 0x4C // 'L': Lindalë framework family
+	cid[14] = u8(h16 >> 8)
+	cid[15] = u8(h16)
+}
 
 LindalePluginFactory :: struct {
 	vtablePtr: vst3.IPluginFactory3,
@@ -1592,7 +1603,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	mutex_log_init(get_config().runtimeFolderPath)
+	mutex_log_init(get_config().runtimeFolderPath, bridge.ACTIVE_PLUGIN)
 	context.logger = get_mutex_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
@@ -1827,6 +1838,11 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 		pluginFactory.ctx = context
 		pluginApi = hotload_api()
 		pluginFactory.desc = pluginApi.get_plugin_descriptor()
+
+		patch_cid_for_plugin(&lindaleProcessorCid, bridge.ACTIVE_PLUGIN)
+		patch_cid_for_plugin(&lindaleControllerCid, bridge.ACTIVE_PLUGIN)
+		patch_cid_for_plugin(&lindaleConnectionCid, bridge.ACTIVE_PLUGIN)
+
 		pluginFactory.initialized = true
 	}
 

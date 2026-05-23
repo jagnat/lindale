@@ -40,23 +40,25 @@ PluginApi :: struct {
 }
 
 // Compile-time selector to pick which plugin's vtable + state types are used.
-// To add new plugins, just add all the required plugin definition structs
-// and add a branch to the when clauses.
-// Selected plugin can be set by changing the default here, or adding a
-// compile flag: -define:ACTIVE_PLUGIN=plugin_name
-// Note: Changing this and hotloading is probably a very bad idea
-ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "synth")
-
-when ACTIVE_PLUGIN == "synth" {
+// To add new plugins, add the required definition structs and a branch below.
+// b.ACTIVE_PLUGIN lives in bridge; rewrite it via set_plugin or override with
+// -define:ACTIVE_PLUGIN=<name>. Changing it mid-session and hotloading is
+// probably a very bad idea.
+when b.ACTIVE_PLUGIN == "beepboop" {
 	PluginProcessState :: SynthProcessState
 	PluginControlState :: SynthControlState
 	active_plugin_api  :: synth_api
 	param_table := synth_param_table
-} else when ACTIVE_PLUGIN == "delay" {
+} else when b.ACTIVE_PLUGIN == "delay" {
 	PluginProcessState :: DelayProcessState
 	PluginControlState :: DelayControlState
 	active_plugin_api  :: delay_api
 	param_table := delay_param_table
+} else when b.ACTIVE_PLUGIN == "template" {
+	PluginProcessState :: TemplateProcessState
+	PluginControlState :: TemplateControlState
+	active_plugin_api  :: template_api
+	param_table := template_param_table
 } else {
-	#panic("Unknown ACTIVE_PLUGIN: " + ACTIVE_PLUGIN)
+	#panic("Unknown ACTIVE_PLUGIN: " + b.ACTIVE_PLUGIN)
 }

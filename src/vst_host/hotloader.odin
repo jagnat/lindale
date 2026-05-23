@@ -31,9 +31,9 @@ HotloadState :: struct {
 	initialized: bool,
 	running: bool,
 	dllSuffix: int,
-	lindaleHotDllBuf: [128]u8,
+	lindaleHotDllBuf: [512]u8,
 	lindaleHotDll: string,
-	hotloadedDllFmtBuf: [128]u8,
+	hotloadedDllFmtBuf: [512]u8,
 	hotloadedDllFmt: string,
 	generation: u64,
 }
@@ -53,7 +53,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		"LindaleHot.",
+		b.ACTIVE_PLUGIN, "Hot.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 	log.info("hotload dll:", ctx.lindaleHotDll)
 
@@ -62,7 +62,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		"LindaleHot%03d.",
+		b.ACTIVE_PLUGIN, "Hot%03d.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
 	ctx.dllSuffix = 1
@@ -253,7 +253,7 @@ hotload_deinit :: proc() {
 		ctx.hotload_thread = nil
 	}
 
-	buf: [128]u8
+	buf: [512]u8
 	for i in ctx.suffixes {
 		if i == 0 do continue
 		oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, i)
@@ -272,7 +272,7 @@ hotload_deinit :: proc() {
 //////////////
 
 _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
-	buf: [128]u8
+	buf: [512]u8
 
 	ctx.apis[toIdx] = lin.PluginApi{}
 	defer free_all(context.temp_allocator)
@@ -369,7 +369,7 @@ _load_api :: proc() -> bool {
 		return false
 	}
 
-	buf:[128]u8
+	buf:[512]u8
 	nextDll := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, ctx.dllSuffix)
 	log.info("next dll:", nextDll)
 

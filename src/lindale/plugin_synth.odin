@@ -11,7 +11,7 @@ import "core:c"
 import b "../bridge"
 import dsp "../dsp"
 
-when ACTIVE_PLUGIN == "synth" {
+when b.ACTIVE_PLUGIN == "beepboop" {
 
 // Voice
 MAX_VOICES :: 16
@@ -580,4 +580,4 @@ synth_api :: PluginApi {
 	reset                 = synth_reset,
 }
 
-} // when ACTIVE_PLUGIN == "synth"
+} // when block

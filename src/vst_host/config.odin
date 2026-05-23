@@ -1,6 +1,7 @@
 package platform
 
 import plat "../platform_specific"
+import b "../bridge"
 
 PlatformConfig :: struct {
 	initialized: bool,
@@ -14,7 +15,7 @@ get_config :: proc() -> ^PlatformConfig {
 	if !config.initialized {
 		config = PlatformConfig {
 			initialized = true,
-			runtimeFolderPath = plat.get_pref_path("jagi", "Lindale"),
+			runtimeFolderPath = plat.get_pref_path("jagi", b.ACTIVE_PLUGIN),
 		}
 	}
 	return &config

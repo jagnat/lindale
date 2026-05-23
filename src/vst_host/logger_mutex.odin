@@ -14,7 +14,7 @@ import "core:testing"
 
 // Interface
 
-mutex_log_init :: proc(log_folder: string) {
+mutex_log_init :: proc(log_folder: string, log_name: string) {
 	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) do return
 
 	// Timestamp file prefix
@@ -27,16 +27,8 @@ mutex_log_init :: proc(log_folder: string) {
 	timestampBuf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
 	tsStr := strings.string_from_ptr(&timestampBuf[0], 19)
 
-	logFolderLen := len(log_folder)
-
-	copy(ctx.outputFilenameBuf[:], log_folder)
-	copy(ctx.outputFilenameBuf[logFolderLen:], tsStr)
-	copy(ctx.outputFilenameBuf[logFolderLen + len(tsStr):], "_"[:])
-	copy(ctx.outputFilenameBuf[logFolderLen + len(tsStr)+1:], "lindale.log")
-
-	ctx.outputFilename = strings.string_from_null_terminated_ptr(
-		&ctx.outputFilenameBuf[0],
-		len(ctx.outputFilenameBuf))
+	ctx.outputFilename = fmt.bprintf(
+		ctx.outputFilenameBuf[:], "%s%s_%s.log", log_folder, tsStr, log_name)
 
 	t := thread.create(log_mutex_reader_thread_proc)
 	if t != nil {
@@ -71,7 +63,7 @@ MutexLoggerContext :: struct {
 	logBuf: LogRingBuffer,
 	readerThread: ^thread.Thread,
 	lock: sync.Atomic_Mutex,
-	outputFilenameBuf: [128]u8,
+	outputFilenameBuf: [512]u8,
 	outputFilename: string,
 	loggerRunning : bool,
 	logWriteBuffer: [FILE_BUFFER_SIZE]u8,
@@ -196,7 +188,7 @@ test_start_mutex_thread :: proc() {
 @(test)
 test_mutex_logger :: proc(t: ^testing.T) {
 
-	mutex_log_init("")
+	mutex_log_init("", "test")
 	defer {
 		mutex_log_exit()
 		os.remove(ctx.outputFilename)

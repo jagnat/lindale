@@ -7,7 +7,7 @@ import "core:time"
 import b "../bridge"
 import dsp "../dsp"
 
-when ACTIVE_PLUGIN == "delay" {
+when b.ACTIVE_PLUGIN == "delay" {
 
 MAX_DELAY_MS :: 2000.0
 
@@ -180,4 +180,4 @@ delay_api :: PluginApi {
 	reset                 = delay_reset,
 }
 
-} // when ACTIVE_PLUGIN == "delay"
+}  // when block
