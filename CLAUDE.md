@@ -20,7 +20,7 @@ Symlink `out/Lindale.vst3` into the system VST3 folder:
 - Tabs, not spaces.
 - This is Odin — not C, not Go.
 - Prefer extending existing files over creating new ones.
-- No vertical alignment of field types in structs, except in vtable structs.
+- No space-padded vertical alignment anywhere — one space between tokens, even if surrounding code does otherwise. Vtable struct declarations are the only exception.
 - Route virtually all allocations through `HostContext`'s allocators — don't fall back to the default. `persistent_allocator` survives hot-reloads (lives until component destruction), `session_allocator` is freed on hot-reload or view close, `frame_allocator` is cleared per frame (controller) or per process call (processor).
 
 ### Comments

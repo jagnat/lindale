@@ -224,6 +224,14 @@ framework_reset :: proc(plug: ^PluginProcessor) {
 	}
 }
 
+// default_* falls back to min_*, then DEFAULT_VIEW_*. min_*/max_* stay zero
+resolve_view_config :: proc(v: ViewConfig) -> (cfg: ViewConfig) {
+	cfg = v
+	if cfg.default_width == 0 do cfg.default_width = cfg.min_width if cfg.min_width > 0 else DEFAULT_VIEW_WIDTH
+	if cfg.default_height == 0 do cfg.default_height = cfg.min_height if cfg.min_height > 0 else DEFAULT_VIEW_HEIGHT
+	return
+}
+
 // Lifecycle (not hot loaded)
 
 plugin_init_processor :: proc(plugin: ^PluginProcessor) {

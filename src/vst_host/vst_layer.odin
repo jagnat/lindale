@@ -883,6 +883,7 @@ LindaleController :: struct {
 	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
 	view: LindaleView,
+	viewConfig: lin.ViewConfig,
 
 	frameTemp: runtime.Default_Temp_Allocator,
 	sessionArena: vm.Arena,
@@ -974,7 +975,8 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.hostCtx.hostApi = &controller.hostApi
 	controller.plugin.host = &controller.hostCtx
 
-	controller.plugin.viewBounds = {0, 0, 800, 600}
+	controller.viewConfig = lin.resolve_view_config(pluginApi.get_plugin_descriptor().view)
+	controller.plugin.viewBounds = {0, 0, controller.viewConfig.default_width, controller.viewConfig.default_height}
 
 	lin.plugin_init_controller(&controller.plugin)
 	pluginApi.setup_controller(&controller.plugin)
@@ -1473,7 +1475,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 
 		controller := container_of(view, LindaleController, "view")
 
-		view.renderer = plat.renderer_create(parent, 800, 600)
+		view.renderer = plat.renderer_create(parent, controller.viewConfig.default_width, controller.viewConfig.default_height)
 
 		controller.platformApi = bridge.PlatformApi{
 			create_texture = plat.renderer_create_texture,
@@ -1560,6 +1562,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 		context = view.ctx
 		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
 		log.debug("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
+		plat.renderer_resize(view.renderer, rect.w, rect.h)
 		pluginApi.view_resized(view.plugin, rect)
 		return vst3.kResultOk
 	}
@@ -1580,25 +1583,59 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 	lv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
-		log.info("lv_canResize")
-		return vst3.kResultTrue
+		controller := container_of(view, LindaleController, "view")
+		return vst3.kResultTrue if controller.viewConfig.resizable else vst3.kResultFalse
 	}
 	lv_checkSizeConstraint :: proc "system" (this: rawptr, rect: ^vst3.ViewRect) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
-		log.debug("lv_checkSizeConstraint r:", rect.right, "l:", rect.left, "b:", rect.bottom, "t:", rect.top)
-		if rect.right - rect.left < 800 {
-			rect.right = 800
-			rect.left = 0
-			log.info("lv_checkSizeConstraint: adjusting w to 800")
-		}
-		if rect.bottom - rect.top < 600 {
-			rect.bottom = 600
-			rect.top = 0
-			log.info("lv_checkSizeConstraint: adjusting h to 600")
-		}
+		controller := container_of(view, LindaleController, "view")
+		cur := view.plugin.viewBounds
+		clamp_to_view_config(rect, cur.w, cur.h, controller.viewConfig)
+		log.debug("lv_checkSizeConstraint -> r:", rect.right, "b:", rect.bottom)
 		return vst3.kResultOk
 	}
+}
+
+// Ratio-compare aspect lock : comparing deltas instead would
+// flicker against hosts that anchor their drag baseline
+// independently of our returned size.
+clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.ViewConfig) {
+	w := rect.right - rect.left
+	h := rect.bottom - rect.top
+
+	if cfg.aspect_ratio > 0 && h > 0 && cur_h > 0 {
+		old_ratio := f32(cur_w) / f32(cur_h)
+		new_ratio := f32(w) / f32(h)
+		if new_ratio > old_ratio {
+			h = i32(f32(w) / cfg.aspect_ratio + 0.5)
+		} else {
+			w = i32(f32(h) * cfg.aspect_ratio + 0.5)
+		}
+	}
+
+	// Re-snap the other dim after each clamp so it doesn't drift out of ratio
+	if cfg.min_width > 0 && w < cfg.min_width {
+		w = cfg.min_width
+		if cfg.aspect_ratio > 0 do h = i32(f32(w) / cfg.aspect_ratio + 0.5)
+	}
+	if cfg.min_height > 0 && h < cfg.min_height {
+		h = cfg.min_height
+		if cfg.aspect_ratio > 0 do w = i32(f32(h) * cfg.aspect_ratio + 0.5)
+	}
+	if cfg.max_width > 0 && w > cfg.max_width {
+		w = cfg.max_width
+		if cfg.aspect_ratio > 0 do h = i32(f32(w) / cfg.aspect_ratio + 0.5)
+	}
+	if cfg.max_height > 0 && h > cfg.max_height {
+		h = cfg.max_height
+		if cfg.aspect_ratio > 0 do w = i32(f32(h) * cfg.aspect_ratio + 0.5)
+	}
+
+	rect.left = 0
+	rect.top = 0
+	rect.right = w
+	rect.bottom = h
 }
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {

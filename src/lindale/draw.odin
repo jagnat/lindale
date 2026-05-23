@@ -8,8 +8,6 @@ import "core:math/linalg"
 
 DRAW_CHUNK_COUNT :: 128
 
-WINDOW_WIDTH, WINDOW_HEIGHT : i32 : 800, 600
-
 RectDrawChunk :: struct {
 	next: ^RectDrawChunk,
 	instanceCount: u32,
@@ -249,8 +247,9 @@ draw_generate_random_rects :: proc(ctx: ^DrawContext) {
 	draw_clear(ctx)
 	alph :: 100
 	colors := []ColorU8{{255, 255, 255, alph}}
+	w, h := f32(ctx.plugin.viewBounds.w), f32(ctx.plugin.viewBounds.h)
 	for i in 0 ..< NUM_RECTS {
-		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
+		rect := SimpleUIRect{rand.float32() * w, rand.float32() * h,
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			0, 0, 0, 0, // UVs
 			 rand.choice(colors), 20, {}, 0}
@@ -263,10 +262,11 @@ draw_generate_random_textured_rects :: proc(ctx: ^DrawContext) {
 	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{255, 255, 255, alph}}
+	w, h := f32(ctx.plugin.viewBounds.w), f32(ctx.plugin.viewBounds.h)
 	for i in 0 ..< NUM_RECTS {
 		u := rand.choice([]f32{0, 0.5});
 		v := rand.choice([]f32{0, 0.5});
-		rect := SimpleUIRect{rand.float32() * f32(WINDOW_WIDTH), rand.float32() * f32(WINDOW_HEIGHT),
+		rect := SimpleUIRect{rand.float32() * w, rand.float32() * h,
 			rand.float32() * 300 + 10, rand.float32() * 300 + 10,
 			u, v, 0.5, 0.5, // UVs
 			rand.choice(colors), 0, {}, 0}
@@ -279,11 +279,12 @@ draw_generate_random_spheres :: proc(ctx: ^DrawContext) {
 	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{139, 139, 139, alph}}
+	w, h := f32(ctx.plugin.viewBounds.w), f32(ctx.plugin.viewBounds.h)
 	for i in 0 ..< NUM_SPHERES {
 		// rad := rand.float32() * 40 + 10
 		rad :: 7
-		x := math.floor(rand.float32() * f32(WINDOW_WIDTH))
-		y := math.floor(rand.float32() * f32(WINDOW_HEIGHT))
+		x := math.floor(rand.float32() * w)
+		y := math.floor(rand.float32() * h)
 		rect := SimpleUIRect{x, y,
 			2 * rad, 2 * rad,
 			0, 0, 0, 0,
@@ -297,10 +298,11 @@ draw_generate_random_subpixelrects :: proc(ctx: ^DrawContext) {
 	draw_clear(ctx)
 	alph :: 255
 	colors := []ColorU8{{139, 139, 139, alph}}
+	w, h := f32(ctx.plugin.viewBounds.w), f32(ctx.plugin.viewBounds.h)
 	for i in 0 ..< NUM {
 		rad :: 7
-		x := math.floor(rand.float32() * f32(WINDOW_WIDTH))
-		y := math.floor(rand.float32() * f32(WINDOW_HEIGHT))
+		x := math.floor(rand.float32() * w)
+		y := math.floor(rand.float32() * h)
 		rect := SimpleUIRect{x, y,
 			1.5, 4.5,
 			0, 0, 0, 0,

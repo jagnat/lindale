@@ -27,6 +27,10 @@ template_get_plugin_descriptor :: proc() -> PluginDescriptor {
 		plugin_type = .Effect,
 		params = template_param_table[:],
 		max_channels = 2,
+		view = {
+			min_width = 640, min_height = 480,
+			resizable = true,
+		}
 	}
 }
 
