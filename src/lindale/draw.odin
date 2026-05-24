@@ -320,13 +320,13 @@ draw_one_rect :: proc(ctx: ^DrawContext) {
 	draw_push_rect(ctx, rect)
 }
 
-draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {255, 255, 255, 255}) {
+draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {255, 255, 255, 255}, size: f32 = FONT_SIZE_DEFAULT) {
 	strLen := len(text)
 	buf := make([dynamic]DrawInstance, strLen, allocator = context.temp_allocator)
 
-	ascent, _, _ := font_get_vertical_metrics(&ctx.fontState)
+	ascent, _, _ := font_get_vertical_metrics(&ctx.fontState, size)
 
-	counts := font_get_text_quads(&ctx.fontState, text, x, y + ascent, buf[:])
+	counts := font_get_text_quads(&ctx.fontState, text, x, y + ascent, size, buf[:])
 
 	draw_set_texture(ctx, ctx.plugin.host.font_atlas, true)
 
@@ -336,8 +336,8 @@ draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {
 	}
 }
 
-draw_measure_text :: proc(ctx: ^DrawContext, text: string) -> Vec2f {
-	return font_measure_bounds(&ctx.fontState, text)
+draw_measure_text :: proc(ctx: ^DrawContext, text: string, size: f32 = FONT_SIZE_DEFAULT) -> Vec2f {
+	return font_measure_bounds(&ctx.fontState, text, size)
 }
 
 draw_polyline :: proc(ctx: ^DrawContext, endpts: []Vec2f, color: ColorU8 = {255, 255, 255, 255}, thickness: f32 = 1, border_width: f32 = 0, border_color: ColorU8 = {}) {

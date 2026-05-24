@@ -535,9 +535,8 @@ synth_draw :: proc(plug: ^PluginController) {
 				ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
 				ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
 			}
-			if ui_custom_draw_panel(plug.ui, scope_draw, &fft_data, dir = .HORIZONTAL, sizingHoriz = {type = .GROW},sizingVert = {type = .GROW}) {
-
-			}
+			ui_canvas(plug.ui, scope_draw, &fft_data)
+			
 			// Arp controls
 			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
 				ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)

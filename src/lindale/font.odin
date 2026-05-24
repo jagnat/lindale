@@ -9,7 +9,7 @@ import fs "vendor:fontstash"
 font_NotoSans := #load("../../resources/MapleMono-SemiBold.ttf")
 
 FONT_ATLAS_SIZE :: 1024
-FONT_SIZE :: 22
+FONT_SIZE_DEFAULT :: 22
 
 FontState :: struct {
 	fontContext: fs.FontContext,
@@ -22,10 +22,10 @@ font_init :: proc(ctx: ^FontState) {
 	fs.AddFontMem(&ctx.fontContext, "Noto Sans", font_NotoSans, false)
 }
 
-font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []DrawInstance) -> int {
+font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, size: f32, rects: []DrawInstance) -> int {
 	scale := ctx.scale
 	state := fs.__getState(&ctx.fontContext)
-	state.size = FONT_SIZE * scale
+	state.size = size * scale
 
 	// Fontstash works in scaled coordinates, convert input to scaled space
 	iter := fs.TextIterInit(&ctx.fontContext, x * scale, y * scale, text)
@@ -49,7 +49,9 @@ font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, rects: []D
 	return i
 }
 
-font_measure_bounds :: proc(ctx: ^FontState, text: string) -> Vec2f {
+font_measure_bounds :: proc(ctx: ^FontState, text: string, size: f32) -> Vec2f {
+	state := fs.__getState(&ctx.fontContext)
+	state.size = size * ctx.scale
 	invScale := 1.0 / ctx.scale
 	ret: Vec2f
 	ret.x = fs.TextBounds(&ctx.fontContext, text) * invScale
@@ -58,10 +60,10 @@ font_measure_bounds :: proc(ctx: ^FontState, text: string) -> Vec2f {
 	return ret
 }
 
-font_get_vertical_metrics :: proc(ctx: ^FontState) -> (ascender, descender, lineHeight: f32) {
+font_get_vertical_metrics :: proc(ctx: ^FontState, size: f32) -> (ascender, descender, lineHeight: f32) {
 	invScale := 1.0 / ctx.scale
 	state := fs.__getState(&ctx.fontContext)
-	state.size = FONT_SIZE * ctx.scale
+	state.size = size * ctx.scale
 	ascender, descender, lineHeight = fs.VerticalMetrics(&ctx.fontContext)
 	ascender *= invScale
 	descender *= invScale

@@ -47,19 +47,15 @@
 			}
 		},
 		{
-			"name": "Odin Compile Shaders",
-			"working_dir": "${project_path}/src/shaders",
+			"name": "Check all plugins",
+			"working_dir": "${project_path}",
 			"windows":
 			{
-				"shell_cmd": "compile_dxil.bat",
+				"shell_cmd": "check_all_plugins.bat",
 			},
 			"osx":
 			{
-				"shell_cmd": "sh ./compile_osx.sh",
-			},
-			"linux":
-			{
-				"shell_cmd": "compile_osx.sh",
+				"shell_cmd": "sh ./check_all_plugins.command",
 			}
 		},
 		{

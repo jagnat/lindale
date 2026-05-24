@@ -30,6 +30,7 @@ UITheme :: struct {
 	itemSpacing: f32,
 	cornerRadius: f32,
 	borderWidth: f32,
+	fontSize: f32,
 }
 
 // Todo: Part of theme
@@ -65,6 +66,7 @@ DEFAULT_THEME : UITheme : {
 	itemSpacing = 10,
 	cornerRadius = 10,
 	borderWidth = 1.5,
+	fontSize = FONT_SIZE_DEFAULT,
 }
 
 THEME_JQ : UITheme : {
@@ -87,13 +89,14 @@ THEME_JQ : UITheme : {
 	itemSpacing = 10,
 	cornerRadius = 10,
 	borderWidth = 1.2,
+	fontSize = FONT_SIZE_DEFAULT,
 }
 
 LayoutDirection :: enum { VERTICAL, HORIZONTAL, }
 SliderOrientation :: enum { VERTICAL, HORIZONTAL }
 
 AlignX :: enum { LEFT, CENTER, RIGHT, }
-AlignY :: enum { TOP,   CENTER, BOTTOM, }
+AlignY :: enum { TOP, CENTER, BOTTOM, }
 SizingType :: enum { FIXED, FIT, GROW }
 
 AxisSizing :: struct {
@@ -110,7 +113,7 @@ ComponentType :: enum {
 	SLIDER,
 	TOGGLE,
 	KNOB,
-	CUSTOM_PANEL,
+	CANVAS,
 }
 
 PanelData :: struct {
@@ -119,6 +122,7 @@ PanelData :: struct {
 
 LabelData :: struct {
 	text: string,
+	size: f32,
 }
 
 ButtonData :: struct {
@@ -166,7 +170,7 @@ KnobData :: struct {
 	binding: ValueBinding,
 }
 
-CustomPanelData :: struct {
+CanvasData :: struct {
 	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
 	data: rawptr
 }
@@ -178,7 +182,7 @@ ComponentData :: union {
 	SliderData,
 	ToggleData,
 	KnobData,
-	CustomPanelData,
+	CanvasData,
 }
 
 Component :: struct {
@@ -262,45 +266,29 @@ _ui_panel_close :: proc(ctx: ^UIContext,
 	ui_close_component(ctx)
 }
 
-@(deferred_in = _ui_custom_draw_panel_close)
-ui_custom_draw_panel :: proc(ctx: ^UIContext,
+ui_canvas :: proc(ctx: ^UIContext,
 	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
 	data: rawptr,
-	dir: LayoutDirection = .HORIZONTAL,
-	child_gaps: f32 = 10,
-	padding: f32 = 10,
-	sizingHoriz: AxisSizing = {type = .FIT},
-	sizingVert: AxisSizing = {type = .FIT},) -> bool {
+	sizingHoriz: AxisSizing = {type = .GROW},
+	sizingVert: AxisSizing = {type = .GROW},) 
+{
 	comp := ui_open_component(ctx)
-	comp.type = .CUSTOM_PANEL
-	comp.data = CustomPanelData{draw_proc, data}
-	comp.direction = dir
+	comp.type = .CANVAS
+	comp.data = CanvasData{draw_proc, data}
 	comp.sizingHoriz = sizingHoriz
-	comp.sizingHoriz.padding = padding
 	comp.sizingVert = sizingVert
-	comp.sizingVert.padding = padding
-	comp.child_gaps = child_gaps
-	return true
-}
-_ui_custom_draw_panel_close :: proc(ctx: ^UIContext,
-	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
-	data: rawptr,
-	dir: LayoutDirection = .HORIZONTAL,
-	child_gaps: f32 = 10,
-	padding: f32 = 10,
-	sizingHoriz: AxisSizing = {type = .FIT},
-	sizingVert: AxisSizing = {type = .FIT}) {
 	ui_close_component(ctx)
 }
 
-ui_label :: proc(ctx: ^UIContext, text: string, alignX: AlignX = .LEFT, minWidth: f32 = 0) {
+ui_label :: proc(ctx: ^UIContext, text: string, alignX: AlignX = .LEFT, minWidth: f32 = 0, size: f32 = 0) {
 	comp := ui_open_component(ctx)
 	comp.type = .LABEL
 	comp.alignX = alignX
-	textSize := draw_measure_text(ctx.plugin.draw, text)
+	resolvedSize := size if size > 0 else ctx.theme.fontSize
+	textSize := draw_measure_text(ctx.plugin.draw, text, resolvedSize)
 	comp.sizingHoriz = {type = .FIXED, value = math.max(textSize.x, minWidth)}
 	comp.sizingVert = {type = .FIXED, value = textSize.y}
-	comp.data = LabelData{text = text}
+	comp.data = LabelData{text = text, size = resolvedSize}
 	ui_close_component(ctx)
 }
 
@@ -311,8 +299,8 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 
 	comp := ui_open_component(ctx)
 	comp.type = .BUTTON
-	textSize := draw_measure_text(ctx.plugin.draw, label)
-	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.fontState)
+	textSize := draw_measure_text(ctx.plugin.draw, label, ctx.theme.fontSize)
+	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.fontState, ctx.theme.fontSize)
 	comp.sizingHoriz = {type = .FIXED, value = textSize.x + ctx.theme.padding * 2}
 	comp.sizingVert = {type = .FIXED, value = (ascent - descent) + ctx.theme.padding * 2}
 	comp.data = ButtonData{label = label, id = id}
@@ -425,14 +413,14 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 			norm := f64(i) / f64(desc.step_count) if desc.step_count > 0 else 0
 			val := b.normalized_to_param(norm, desc)
 			str := b.param_format_value_with_unit(val, desc, buf, enum_to_string)
-			w := draw_measure_text(ctx.plugin.draw, str).x
+			w := draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x
 			maxWidth = math.max(maxWidth, w)
 		}
 	} else {
 		str := b.param_format_value_with_unit(desc.min, desc, buf, nil)
-		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str).x)
+		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x)
 		str = b.param_format_value_with_unit(desc.max, desc, buf, nil)
-		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str).x)
+		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x)
 	}
 	return maxWidth
 }
@@ -592,7 +580,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 		if c == ctx.root do continue
 		switch c.type {
 			case .PANEL, .LABEL: break
-			case .CUSTOM_PANEL: break // TODO: Custom panel interact?
+			case .CANVAS: break // TODO: Canvas interact callback?
 			case .BUTTON: {
 				d := c.data.(ButtonData) or_continue
 				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
@@ -812,14 +800,14 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			}
 			case .LABEL: {
 				d := c.data.(LabelData) or_continue
-				textSize := draw_measure_text(ctx.plugin.draw, d.text)
+				textSize := draw_measure_text(ctx.plugin.draw, d.text, d.size)
 				textX := c.calcBounds.x
 				switch c.alignX {
 				case .LEFT:
 				case .CENTER: textX = c.calcBounds.x + (c.calcBounds.w - textSize.x) * 0.5
 				case .RIGHT:  textX = c.calcBounds.x + c.calcBounds.w - textSize.x
 				}
-				draw_text(ctx.plugin.draw, d.text, textX, c.calcBounds.y, ctx.theme.textColor)
+				draw_text(ctx.plugin.draw, d.text, textX, c.calcBounds.y, ctx.theme.textColor, d.size)
 			}
 			case .BUTTON: {
 				bgColor := ctx.theme.buttonColor
@@ -834,11 +822,11 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 					borderColor = ctx.theme.borderColor,
 					borderWidth = ctx.theme.borderWidth,
 				})
-				textSize := draw_measure_text(ctx.plugin.draw, d.label)
+				textSize := draw_measure_text(ctx.plugin.draw, d.label, ctx.theme.fontSize)
 				draw_text(ctx.plugin.draw, d.label,
 					c.calcBounds.x + (c.calcBounds.w - textSize.x) * 0.5,
 					c.calcBounds.y + (c.calcBounds.h - textSize.y) * 0.5,
-					ctx.theme.textColor)
+					ctx.theme.textColor, ctx.theme.fontSize)
 			}
 			case .SLIDER: {
 				bounds := c.calcBounds
@@ -982,8 +970,8 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				outer := Vec2f{center.x + dir.x * (radius - knob_arc_thickness - 4), center.y + dir.y * (radius - knob_arc_thickness - 4)}
 				draw_push_pill(ctx.plugin.draw, inner, outer, knob_track_thickness, arcColor)
 			}
-			case .CUSTOM_PANEL: {
-				d := c.data.(CustomPanelData) or_continue
+			case .CANVAS: {
+				d := c.data.(CanvasData) or_continue
 				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
 			}
 		}
