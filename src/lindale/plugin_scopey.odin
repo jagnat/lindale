@@ -1,5 +1,6 @@
 package lindale
 
+import "core:fmt"
 import "core:math"
 import "core:log"
 import b "../bridge"
@@ -13,8 +14,7 @@ RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot r
 MAX_CHANNELS :: 2
 
 DB_FLOOR :: f32(-100)
-SMOOTH_ALPHA :: f32(0.5)
-
+SMOOTH_ALPHA :: f32(0.3)
 
 ScopeyProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
@@ -153,21 +153,14 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	a := cast(^AnalysisFrame)data
 	if a == nil || a.sample_rate <= 0 do return
 
-	spectrum_offset_px :: 19
+	spectrum_offset_x :: 12
+	spectrum_offset_y :: 20
 
 	// Adjust bounds to leave room for axes labels
-	bounds.x += spectrum_offset_px
+	bounds.x += spectrum_offset_x
 	bounds.y += 2
-	bounds.w -= spectrum_offset_px + 2
-	bounds.h -= spectrum_offset_px
-
-	// draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-	// 	x = bounds.x, y = bounds.y,
-	// 	width = bounds.w, height = bounds.h,
-	// 	color = {0, 0, 0, 90},
-	// })
-
-	draw_text(ctx.plugin.draw, "1000k22", bounds.x + bounds.w / 2, bounds.y + bounds.h + 1, color = {80, 80, 80, 255}, size = 16)
+	bounds.w -= spectrum_offset_x + 2
+	bounds.h -= spectrum_offset_y
 
 	FMIN :: f32(10)
 	FMAX :: f32(20000)
@@ -175,6 +168,34 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 
 	log_span := math.log10(FMAX / FMIN)
 	fft_size := f32(FFT_SIZE)
+
+	label_color := ColorU8{80, 80, 80, 255}
+	grid_color := ColorU8{50, 50, 50, 255}
+	label_size := f32(16)
+
+	decades := [?]struct{f: f32, label: string}{{10, "10"}, {100, "100"}, {1000, "1k"}, {10000, "10k"}}
+	for decade in decades {
+		// 9 gridlines per decade: the decade itself (k*1) plus k*2..k*9
+		for k in 1 ..= 9 {
+			f := decade.f * f32(k)
+			if f >= FMAX do break
+			x := bounds.x + bounds.w * (math.log10(f / FMIN) / log_span)
+			draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, grid_color)
+		}
+		x := bounds.x + bounds.w * (math.log10(decade.f / FMIN) / log_span)
+		tw := draw_measure_text(ctx.plugin.draw, decade.label, label_size).x
+		draw_text(ctx.plugin.draw, decade.label, x - tw / 2, bounds.y + bounds.h + 1, color = label_color, size = label_size)
+	}
+
+	// dBFS gridlines and labels every 20db
+	for db := DB_TOP; db >= DB_FLOOR; db -= 20 {
+		t := (db - DB_FLOOR) / (DB_TOP - DB_FLOOR)
+		y := bounds.y + bounds.h * (1 - t)
+		if db != DB_TOP do draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
+		s := fmt.tprintf("%d", int(db))
+		tsz := draw_measure_text(ctx.plugin.draw, s, label_size)
+		if db != DB_FLOOR do draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
+	}
 
 	cols :[]ColorU8= {{255,100, 100, 255}, {100, 100, 255, 255}}
 
@@ -187,13 +208,13 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 			if freq > FMAX do break
 			db := a.fft_smooth_db[c][i]
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
-			if n == 0 do x = bounds.x // snap first plotted bin to the left edge (bin 1 at FMIN=10 falls ~2% in)
+			if n == 0 do x = bounds.x // snap first plotted bin to the left edge (bin 1 slightly past fmin=10)
 			t := clamp((db - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1)
 			y := bounds.y + bounds.h * (1 - t)
 			pts[n] = {x, y}
 			n += 1
 		}
-		if n >= 2 do draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1, color = cols[c],)
+		if n >= 2 do draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1.4, color = cols[c],)
 	}
 }
 

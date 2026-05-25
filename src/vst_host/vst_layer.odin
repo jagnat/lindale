@@ -1475,7 +1475,8 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 
 		controller := container_of(view, LindaleController, "view")
 
-		view.renderer = plat.renderer_create(parent, controller.viewConfig.default_width, controller.viewConfig.default_height)
+		bounds := view.plugin.viewBounds
+		view.renderer = plat.renderer_create(parent, bounds.w, bounds.h)
 
 		controller.platformApi = bridge.PlatformApi{
 			create_texture = plat.renderer_create_texture,
