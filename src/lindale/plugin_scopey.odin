@@ -19,6 +19,7 @@ SMOOTH_ALPHA :: f32(0.5)
 ScopeyProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
 	rings: [MAX_CHANNELS]dsp.RingBuffer,
+	dc_blockers: [MAX_CHANNELS]dsp.DCBlocker,
 }
 
 ScopeyControlState :: struct {
@@ -74,8 +75,14 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 
 	for c in 0 ..< num_channels {
 		if actx.inputs[c] == nil || actx.outputs[c] == nil do continue
-		copy(actx.outputs[c][:n], actx.inputs[c][:n])
-		dsp.ring_write_buf(&plug.state.rings[c], actx.inputs[c][:n])
+		copy(actx.outputs[c][:n], actx.inputs[c][:n]) // raw passthrough out to host
+
+		// dsp.ring_write_buf(&plug.state.rings[c], actx.inputs[c][:n])
+
+		blocked_buf: [RING_SIZE]f32
+		copy(blocked_buf[:n], actx.inputs[c][:n])
+		dsp.dc_blocker_process_buf(&plug.state.dc_blockers[c], blocked_buf[:n])
+		dsp.ring_write_buf(&plug.state.rings[c], blocked_buf[:n])
 	}
 }
 
@@ -108,20 +115,13 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 
 		if n < FFT_SIZE do continue
 
-		// mean: f32 = 0
-		// for s in a.time[c] do mean += s
-		// mean /= f32(FFT_SIZE)
-		// for &s in a.time[c] do s -= mean
-		// for &s in windowed do s -= mean
-
-		// for i in 0 ..< FFT_SIZE do fft_buf[i] = complex64((a.time[c][i] - mean) * plug.state.fft_window[i])
 		windowed := a.time[c] * plug.state.fft_window
 		for v, i in windowed do fft_buf[i] = complex64(v)
 		dit.fft(&fft_buf[0], FFT_SIZE)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
 		norm := f32(FFT_SIZE / 2) * plug.state.fft_window_gain
-		for i in 0 ..< FFT_SIZE / 2 {
+		for i in 1 ..< FFT_SIZE / 2 {
 			v := fft_buf[i]
 			mag := math.sqrt(real(v) * real(v) + imag(v) * imag(v)) / norm
 			// Bin 0 (DC) has no negative-frequency mirror; the 2x baked into `norm`
@@ -133,10 +133,6 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 			prev := a.fft_smooth_db[c][i]
 			a.fft_smooth_db[c][i] = SMOOTH_ALPHA * db + (1 - SMOOTH_ALPHA) * prev
 		}
-		// if c == 0 {
-		// 	log.debugf("bin 0 dB: %.1f  bin 1 dB: %.1f  bin 2 dB: %.1f  bin 5 dB: %.1f  mean: %.4f",
-		// 		a.fft_db[c][0], a.fft_db[c][1], a.fft_db[c][2], a.fft_db[c][5], mean)
-		// }
 	}
 }
 
@@ -157,12 +153,21 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	a := cast(^AnalysisFrame)data
 	if a == nil || a.sample_rate <= 0 do return
 
-	// bounds.x += 5
-	// bounds.y -= 5
-	// bounds.w -= 10
-	// bounds.h -= 10
+	spectrum_offset_px :: 19
 
-	draw_text(ctx.plugin.draw, "1k", bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, color = {80, 80, 80, 255}, size = 16)
+	// Adjust bounds to leave room for axes labels
+	bounds.x += spectrum_offset_px
+	bounds.y += 2
+	bounds.w -= spectrum_offset_px + 2
+	bounds.h -= spectrum_offset_px
+
+	// draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+	// 	x = bounds.x, y = bounds.y,
+	// 	width = bounds.w, height = bounds.h,
+	// 	color = {0, 0, 0, 90},
+	// })
+
+	draw_text(ctx.plugin.draw, "1000k22", bounds.x + bounds.w / 2, bounds.y + bounds.h + 1, color = {80, 80, 80, 255}, size = 16)
 
 	FMIN :: f32(10)
 	FMAX :: f32(20000)
@@ -188,7 +193,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 			pts[n] = {x, y}
 			n += 1
 		}
-		if n >= 2 do draw_polyline(ctx.plugin.draw, pts[:n], thickness = 5, color = cols[c], border_width = 1, border_color = {255, 255, 255, 255})
+		if n >= 2 do draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1, color = cols[c],)
 	}
 }
 
@@ -237,6 +242,7 @@ scopey_setup_controller :: proc(plug: ^PluginController) {
 scopey_setup_processor :: proc(plug: ^PluginProcessor) {
 	for c in 0 ..< MAX_CHANNELS {
 		dsp.ring_init(&plug.state.rings[c], plug.state.backing_bufs[c][:])
+		dsp.dc_blocker_init(&plug.state.dc_blockers[c], 0.999) // ~7.6 Hz cutoff at 48k
 	}
 }
 
