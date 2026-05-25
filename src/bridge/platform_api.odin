@@ -94,8 +94,8 @@ DrawCommand :: struct {
 	scissor: RectI32,     // {0,0,0,0} means no scissor
 }
 
-// Maximum instances per frame (1MB / 64 bytes)
-MAX_INSTANCES :: 1024 * 1024 / size_of(DrawInstance)
+// Maximum instances per frame (256MB / 64 bytes)
+MAX_INSTANCES :: 256 * 1024 * 1024 / size_of(DrawInstance)
 MAX_TEXTURES :: 64
 
 // Renderer handle - platform specific implementation

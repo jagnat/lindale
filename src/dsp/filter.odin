@@ -1,6 +1,8 @@
 package dsp
 
+import "base:intrinsics"
 import "core:math"
+import "core:simd"
 import "core:testing"
 
 // Biquad — transposed direct form II
@@ -256,6 +258,106 @@ svf_reset :: proc(f: ^SVF) {
 	f.ic2eq = 0
 }
 
+// Hilbert FIR — windowed-sinc, antisymmetric, half-band, SIMD inner loop.
+//
+// Returns the analytic signal as a (real, imag) pair: real is the input delayed
+// by the filter's group delay (N-1)/2; imag is the Hilbert transform (90° phase
+// shift). Together they let you plot a Lissajous of the analytic signal.
+//
+// Phase is always exactly 90° (antisymmetry guarantees it). N controls the lower
+// edge of the magnitude-flat band — below it, output radius sags. Hann window at
+// 48 kHz: N=63 flat above ~2.5 kHz, N=255 above ~600 Hz, N=511 above ~300 Hz.
+//
+// Storage layout, both caller-provided:
+//   coeffs_buf — length M = (N+1)/2, holds nonzero taps packed in reverse so
+//                coeffs[j] multiplies the sample at window position (N-1) - 2j.
+//                Packed walks forward as the read window walks forward.
+//   delay_buf  — length 2N + 8. Double-written (delay[i] == delay[i+N] for i in
+//                [0,N)) so any length-N read starting in [0,N] is contiguous,
+//                no wrap mask needed. The +8 lets the final 4-wide iteration's
+//                8-float load run past the active window into padding (unused
+//                trailing lanes get shuffled away).
+//
+// Conv loop loads 8 contiguous delay samples, shuffles out the 4 even-offset
+// stride-2 taps, FMA against 4 packed coeffs. Horizontal-sum at the end.
+//
+// Assumes N ≡ 3 (mod 4) so the nonzero taps start at window position 0.
+// (Both N=63 and N=511 satisfy this.)
+
+HilbertFIR :: struct {
+	coeffs: []Sample, // length M = (N+1)/2, packed-reverse
+	delay:  []Sample, // length 2N + 8, double-written
+	N:      int,
+	M:      int,
+	center: int,      // (N-1)/2, real-out group delay
+	idx:    int,      // position of most recent write, in [0, N)
+}
+
+hilbert_fir_init :: proc(h: ^HilbertFIR, coeffs_buf, delay_buf: []Sample, window: WindowType = .Hann) {
+	assert(len(delay_buf) >= 9, "delay_buf too small")
+	N := (len(delay_buf) - 8) / 2
+	assert(N % 2 == 1, "N must be odd")
+	assert(N % 4 == 3, "SIMD Hilbert requires N ≡ 3 (mod 4)")
+	M := (N + 1) / 2
+	assert(len(coeffs_buf) >= M, "coeffs_buf must hold (N+1)/2 packed taps")
+
+	h.coeffs = coeffs_buf[:M]
+	h.delay  = delay_buf
+	h.N      = N
+	h.M      = M
+	h.center = (N - 1) / 2
+	h.idx    = N - 1 // first process call increments to 0
+
+	M_orig := (N - 1) / 2
+	inv_span := 1.0 / f32(N - 1)
+	for j in 0 ..< M {
+		k := N - 1 - 2 * j     // original (unpacked) tap index
+		n := k - M_orig         // sinc argument; always odd here
+		ideal := 2.0 / (PI * f32(n))
+		w := window_sample(window, f32(k) * inv_span)
+		h.coeffs[j] = ideal * w
+	}
+	for i in 0 ..< len(h.delay) do h.delay[i] = 0
+}
+
+hilbert_fir_process :: proc(h: ^HilbertFIR, input: Sample) -> (real_out, imag_out: Sample) {
+	h.idx = (h.idx + 1) % h.N
+	h.delay[h.idx]       = input
+	h.delay[h.idx + h.N] = input
+
+	// Read window [start, start+N): ascending in array == ascending in time.
+	// Even within-window positions (0, 2, 4, …) are the stride-2 nonzero taps.
+	start := h.idx + 1
+
+	// `simd.from_slice` is a regular (non-inlined) proc with an assert + element loop, so in
+	// debug it shows up as ~9M function calls/sec at 48 kHz × 64 iters × 3 loads. Skip it and
+	// reinterpret pointers via `intrinsics.unaligned_load`, which is a true intrinsic and
+	// lowers to one vector load. f32 has no alignment requirement on ARM64 or x86 vector loads.
+	acc: #simd[4]f32
+	j := 0
+	for ; j + 4 <= h.M; j += 4 {
+		p := start + 2 * j
+		lo := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p])
+		hi := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p + 4])
+		d4 := simd.shuffle(lo, hi, 0, 2, 4, 6)
+		c4 := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.coeffs[j])
+		acc = simd.fma(c4, d4, acc)
+	}
+	sum := simd.reduce_add_ordered(acc)
+	for ; j < h.M; j += 1 {
+		sum += h.coeffs[j] * h.delay[start + 2 * j]
+	}
+
+	real_out = h.delay[h.idx + h.N - h.center]
+	imag_out = sum
+	return
+}
+
+hilbert_fir_reset :: proc(h: ^HilbertFIR) {
+	for i in 0 ..< len(h.delay) do h.delay[i] = 0
+	h.idx = h.N - 1
+}
+
 // Tests
 
 @(test)
@@ -292,6 +394,33 @@ test_dc_blocker_removes_dc :: proc(t: ^testing.T) {
 	}
 	// DC should be removed — output near 0
 	testing.expect(t, math.abs(out) < 0.01)
+}
+
+@(test)
+test_hilbert_fir_circle :: proc(t: ^testing.T) {
+	// A 1 kHz sine at 48 kHz should produce real² + imag² ≈ 1 after the filter primes.
+	N :: 63
+	coeffs: [(N + 1) / 2]Sample // packed nonzero taps
+	delay:  [2 * N + 8]Sample   // double-write + 8-float SIMD tail pad
+	h: HilbertFIR
+	hilbert_fir_init(&h, coeffs[:], delay[:])
+
+	sr := f32(48000)
+	freq := f32(2500)
+	worst: f32 = 0
+	for i in 0 ..< 2048 {
+		phase := TAU * freq * f32(i) / sr
+		_, _ = hilbert_fir_process(&h, math.sin(phase))
+	}
+	// After priming, measure radius deviation over one full cycle
+	for i in 0 ..< 1024 {
+		phase := TAU * freq * f32(2048 + i) / sr
+		r, im := hilbert_fir_process(&h, math.sin(phase))
+		radius := math.sqrt(r * r + im * im)
+		dev := math.abs(radius - 1)
+		if dev > worst do worst = dev
+	}
+	testing.expectf(t, worst < 0.02, "worst radius deviation = %f", worst)
 }
 
 @(test)

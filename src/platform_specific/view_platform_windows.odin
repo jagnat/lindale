@@ -713,7 +713,11 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawIn
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instanceCapacity do return
+	if u32(len(instances)) > renderer.instanceCapacity {
+		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instanceCapacity)
+		assert(false, "draw instance count exceeded MAX_INSTANCES")
+		return
+	}
 
 	mappedResource: d3d11.MAPPED_SUBRESOURCE
 	hr := renderer.deviceContext->Map(renderer.instanceBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)

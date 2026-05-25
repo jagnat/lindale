@@ -11,11 +11,11 @@ BUNDLE="out/$PLUGIN.vst3"
 mkdir -p out/hot "$BUNDLE/Contents/MacOS"
 
 # Build hotloaded dll
-odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=$PLUGIN -debug -no-entry-point -build-mode:dynamic -out:out/hot/${PLUGIN}Hot.dylib
+odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=$PLUGIN -debug -o:speed -no-entry-point -build-mode:dynamic -out:out/hot/${PLUGIN}Hot.dylib
 codesign --force --sign - out/hot/${PLUGIN}Hot.dylib
 
 # Build plugin dll
-odin build src/vst_host -define:HOT_DLL=true -define:ACTIVE_PLUGIN=$PLUGIN -debug -no-entry-point -extra-linker-flags:"-install_name @loader_path/$PLUGIN" -build-mode:dynamic -out:"$BUNDLE/Contents/MacOS/$PLUGIN.dylib"
+odin build src/vst_host -define:HOT_DLL=true -define:ACTIVE_PLUGIN=$PLUGIN -debug -o:speed -no-entry-point -extra-linker-flags:"-install_name @loader_path/$PLUGIN" -build-mode:dynamic -out:"$BUNDLE/Contents/MacOS/$PLUGIN.dylib"
 mv "$BUNDLE/Contents/MacOS/$PLUGIN.dylib" "$BUNDLE/Contents/MacOS/$PLUGIN"
 
 mkdir -p "$BUNDLE/Contents/MacOS/$PLUGIN.dSYM/Contents/Resources/DWARF"

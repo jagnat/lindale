@@ -1,6 +1,7 @@
 package platform_specific
 
 import "base:runtime"
+import "core:log"
 import "core:math/linalg"
 
 import F "core:sys/darwin/Foundation"
@@ -552,7 +553,11 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawIn
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instanceCapacity do return
+	if u32(len(instances)) > renderer.instanceCapacity {
+		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instanceCapacity)
+		assert(false, "draw instance count exceeded MAX_INSTANCES")
+		return
+	}
 
 	bufferPtr := renderer.instanceBuffer->contentsAsSlice([]bridge.DrawInstance)
 	copy(bufferPtr, instances)

@@ -570,8 +570,21 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 ui_frame_end :: proc(ctx: ^UIContext) {
 	ui_size_grow_components(ctx)
 	ui_position_components(ctx)
+	ui_snap_components_to_pixels(ctx)
 	ui_interact_components(ctx)
 	ui_generate_draw_calls(ctx)
+}
+
+// Endpoint-round so siblings stay flush
+ui_snap_components_to_pixels :: proc(ctx: ^UIContext) {
+	it := ui_iterate_pre_order(ctx)
+	for c in ui_next_pre_order(&it) {
+		x0 := math.round(c.calcBounds.x)
+		y0 := math.round(c.calcBounds.y)
+		x1 := math.round(c.calcBounds.x + c.calcBounds.w)
+		y1 := math.round(c.calcBounds.y + c.calcBounds.h)
+		c.calcBounds = {x0, y0, x1 - x0, y1 - y0}
+	}
 }
 
 ui_interact_components :: proc(ctx: ^UIContext) {
@@ -972,7 +985,10 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			}
 			case .CANVAS: {
 				d := c.data.(CanvasData) or_continue
+				b := c.calcBounds
+				draw_set_scissor(ctx.plugin.draw, RectI32{i32(b.x), i32(b.y), i32(b.w), i32(b.h)})
 				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
+				draw_remove_scissor(ctx.plugin.draw)
 			}
 		}
 	}

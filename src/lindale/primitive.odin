@@ -42,13 +42,25 @@ ColorF32_from_ColorU8 :: proc(col: ColorU8) -> ColorF32 {
 	return {r, g, b, a}
 }
 
-decibels_to_linear :: proc(decibels: f64) -> f64 {
+decibels_to_linear_f64 :: proc(decibels: f64) -> f64 {
 	return math.pow10_f64(decibels / 20)
 }
 
-linear_to_decibels :: proc(linear: f64) -> f64 {
+decibels_to_linear_f32 :: proc(decibels: f32) -> f32 {
+	return math.pow10_f32(decibels / 20)
+}
+
+decibels_to_linear :: proc {decibels_to_linear_f64, decibels_to_linear_f32}
+
+linear_to_decibels_f64 :: proc(linear: f64) -> f64 {
 	return 20 * math.log10(linear)
 }
+
+linear_to_decibels_f32 :: proc(linear: f32) -> f32 {
+	return 20 * math.log10(linear)
+}
+
+linear_to_decibels :: proc { linear_to_decibels_f64, linear_to_decibels_f32 }
 
 collide_vec2_rect :: proc(v: Vec2f, r: RectF32) -> bool {
 	return v.x >= r.x && v.x <= r.x + r.w &&

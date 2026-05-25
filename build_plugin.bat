@@ -13,8 +13,8 @@ set BUNDLE=out\%PLUGIN%.vst3
 if not exist out\hot mkdir out\hot
 if not exist "%BUNDLE%\Contents\x86_64-win" mkdir "%BUNDLE%\Contents\x86_64-win"
 
-odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%PLUGIN% -debug -build-mode:dynamic -out:out/hot/%PLUGIN%Hot.dll
-odin build src/vst_host -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%PLUGIN% -debug -build-mode:dynamic -out:%BUNDLE%\Contents\x86_64-win\%PLUGIN%.vst3
+odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%PLUGIN% -debug -o:speed -build-mode:dynamic -out:out/hot/%PLUGIN%Hot.dll
+odin build src/vst_host -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%PLUGIN% -debug -o:speed -build-mode:dynamic -out:%BUNDLE%\Contents\x86_64-win\%PLUGIN%.vst3
 
 rem Install junctions into the system folders. rmdir drops a stale junction
 rem first (it never follows into the target) so switching plugins self-heals.
