@@ -17,7 +17,7 @@ import "core:testing"
 log_init :: proc(log_folder: string) {
 	// automatically zeroed
 	ringBufs := make([]LogRingBuffer, len(LogSource))
-	ctx.loggerRunning = true
+	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
 
 	// Timestamp file prefix
 	timestampBuf: [32]u8
@@ -53,8 +53,8 @@ log_init :: proc(log_folder: string) {
 
 @(private="file") // temp disable
 log_exit :: proc() {
-	if ctx.loggerRunning {
-		ctx.loggerRunning = false
+	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
+		intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
 		thread.join(ctx.readerThread)
 		thread.destroy(ctx.readerThread)
 	}
@@ -170,7 +170,7 @@ LOG_FLUSH_TIME :: time.Millisecond * 1000
 log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	lastFlush := time.now()
 
-	for ctx.loggerRunning {
+	for intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
 		msg: Log
 
 		shouldFlush := time.since(lastFlush) > LOG_FLUSH_TIME
@@ -243,7 +243,7 @@ logger_proc :: proc(
 
 @(private)
 test_stop_thread :: proc() {
-	ctx.loggerRunning = false
+	intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
 	thread.join(ctx.readerThread)
 	thread.destroy(ctx.readerThread)
 	ctx.readerThread = thread.create(log_reader_thread_proc)
@@ -252,7 +252,7 @@ test_stop_thread :: proc() {
 
 @(private)
 test_start_thread :: proc() {
-	ctx.loggerRunning = true
+	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
 	thread.start(ctx.readerThread)
 }
 
@@ -303,5 +303,80 @@ test_logger :: proc(t: ^testing.T) {
 		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
 		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
 		testing.expect(t, strings.contains(string(content), "This should not be dropped"), "Post-flushed log not present")
+	}
+
+	// Test 3: Concurrent producers, one per LogSource, each writing to its own SPSC ring
+	// while the reader thread drains all four in parallel. Validates per-source FIFO order.
+	{
+		PRODUCER_MSGS :: 200
+
+		Producer :: struct {
+			source: LogSource,
+			count: int,
+		}
+
+		producers: [LogSource]Producer
+		for src in LogSource {
+			producers[src] = {source = src, count = PRODUCER_MSGS}
+		}
+
+		threads: [LogSource]^thread.Thread
+		for src in LogSource {
+			threads[src] = thread.create(proc(th: ^thread.Thread) {
+				p := cast(^Producer)th.data
+				context.logger = get_logger(p.source)
+				for i in 0 ..< p.count {
+					log.info("TSAN_MARKER", p.source, i)
+				}
+			})
+			threads[src].data = &producers[src]
+			thread.start(threads[src])
+		}
+
+		for src in LogSource {
+			thread.join(threads[src])
+			thread.destroy(threads[src])
+		}
+
+		// Reader pulls one msg per source per ~10ms loop; let it drain plus a flush window.
+		time.sleep(3 * LOG_FLUSH_TIME)
+
+		// Per source: parse TSAN_MARKER lines, assert seq numbers strictly increase.
+		for src in LogSource {
+			content_bytes, err := os.read_entire_file(ctx.logPools[src].outputFilename, allocator = context.temp_allocator)
+			testing.expect(t, err == nil, "Failed to read log file")
+			content := string(content_bytes)
+
+			last_seq := -1
+			seen := 0
+			rest := content
+			for {
+				idx := strings.index(rest, "TSAN_MARKER")
+				if idx < 0 do break
+				rest = rest[idx:]
+				// Format: "TSAN_MARKER <Source> <seq>\n"
+				eol := strings.index(rest, "\n")
+				if eol < 0 do break
+				line := rest[:eol]
+				rest = rest[eol+1:]
+
+				space2 := strings.last_index(line, " ")
+				if space2 < 0 do continue
+				seq_str := line[space2+1:]
+				seq := 0
+				ok := true
+				for ch in seq_str {
+					if ch < '0' || ch > '9' { ok = false; break }
+					seq = seq * 10 + int(ch - '0')
+				}
+				if !ok do continue
+
+				testing.expectf(t, seq > last_seq, "non-monotonic seq for %v: %d after %d", src, seq, last_seq)
+				last_seq = seq
+				seen += 1
+			}
+
+			testing.expectf(t, seen == PRODUCER_MSGS, "expected %d messages for %v, got %d", PRODUCER_MSGS, src, seen)
+		}
 	}
 }

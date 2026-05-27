@@ -28,10 +28,6 @@ AGC_TARGET_FILL :: f32(0.8) // peak |z| mapped to this fraction of canvas radius
 AGC_NOISE_FLOOR :: f32(0.05) // below this, gain saturates so silence stays a dot
 AGC_RELEASE :: f32(0.04) // smoothing toward larger gains (quieter signal); ~400 ms at 60 fps
 
-// TrailPoint :: struct {
-// 	r, im: f32,
-// }
-
 ScopeyProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
 	rings: [MAX_CHANNELS]dsp.RingBuffer,
@@ -68,7 +64,7 @@ AnalysisFrame :: struct {
 	peak: [MAX_CHANNELS]f32,
 	rms: [MAX_CHANNELS]f32,
 
-	goniometer_trail: [TRAIL_HISTORY][2]f32,
+	goniometer_trail: [2][TRAIL_HISTORY]f32,
 	goniometer_trail_write: int,
 	goniometer_trail_count: int,
 
@@ -114,7 +110,7 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 	rms_input_gain := 1.0 - rms_decay
 
 	// Accumulate the mono mix as we DC-block each channel. Only [0..n) is used.
-	mono_buf: [RING_SIZE]f32
+	mono_buf: []f32 = make([]f32, RING_SIZE, allocator=context.temp_allocator)
 	inv_chan := 1.0 / f32(num_channels)
 
 	for c in 0 ..< num_channels {
@@ -165,16 +161,38 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		a.rms[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.rms[c], .Acquire)
 	}
 
-	fft_buf: [FFT_SIZE]complex64
+	fft_buf := make([]complex64, FFT_SIZE, allocator=context.temp_allocator)
+
+	{ // Fetch stereo samples to use for goniometer
+		g_write := a.goniometer_trail_write
+		head_cap := TRAIL_HISTORY - g_write
+
+		n_l := dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][g_write:])
+		n_r := dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][g_write:])
+		n := min(n_l, n_r)
+
+		if n == head_cap { // Handle wrapping, maybe more samples available
+			n_l = dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][:g_write])
+			n_r = dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][:n_l])
+			m := min(n_l, n_r)
+			a.goniometer_trail_write = m
+			n += m
+		} else {
+			a.goniometer_trail_write = g_write + n
+		}
+		a.goniometer_trail_count = min(a.goniometer_trail_count + n, TRAIL_HISTORY)
+	}
 
 	// FFT: snapshot the latest FFT_SIZE samples of each ring
 	for c in 0 ..< a.num_channels {
 		time_slice: [FFT_SIZE]f32
 		n := dsp.ring_read_latest(&plug.processor_peer.state.rings[c], time_slice[:])
-		if n < FFT_SIZE do continue
+		if n < FFT_SIZE {
+			// log.info("Not hitting fft size, we got ", n, "and we need", FFT_SIZE)
+			continue
+		}
 
-		windowed := time_slice * plug.state.fft_window
-		for v, i in windowed do fft_buf[i] = complex64(v)
+		for v, i in time_slice do fft_buf[i] = complex64(v * plug.state.fft_window[i])
 		dit.fft(&fft_buf[0], FFT_SIZE)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
@@ -191,7 +209,7 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	}
 
 	// Drain newly-produced analytic pairs into the controller-side trail ring.
-	drain_buf: [RING_SIZE]f32
+	drain_buf := make([]f32, RING_SIZE, allocator=context.temp_allocator)
 	got := dsp.ring_read(&plug.processor_peer.state.analytic_ring, drain_buf[:])
 	pairs := got / 2
 	peak2: f32 = 0 // track squared magnitude to skip per-sample sqrt
@@ -278,7 +296,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 
 	cols :[]ColorU8= {{255,100, 100, 255}, {100, 100, 255, 255}}
 
-	pts: [FFT_SIZE / 2]Vec2f
+	pts := make([]Vec2f, FFT_SIZE / 2, context.temp_allocator)
 	for c in 0 ..< a.num_channels {
 		n := 0
 		for i in 1 ..< FFT_SIZE / 2 { // skip DC

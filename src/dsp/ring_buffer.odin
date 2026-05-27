@@ -2,6 +2,7 @@ package dsp
 
 import "base:intrinsics"
 import "core:testing"
+import "core:thread"
 
 // SPSC (single-producer, single-consumer) lock-free ring buffer.
 // Buffer must be power-of-2 sized, externally provided.
@@ -205,4 +206,71 @@ test_ring_empty :: proc(t: ^testing.T) {
 	dest: [4]Sample
 	testing.expect_value(t, ring_read_latest(&r, dest[:]), 0)
 	testing.expect_value(t, ring_read(&r, dest[:]), 0)
+}
+
+// SPSC torture test. Producer throttles itself so it never overruns the consumer,
+// so we can assert every sample arrives exactly once and in order.
+// Note: ring_read_latest is intentionally NOT exercised here — it's a deliberate-tear
+// snapshot path for visualization and will trip TSan by design.
+@(test)
+test_ring_spsc_threaded :: proc(t: ^testing.T) {
+	BUF_SIZE :: 256
+	TOTAL :: 200_000
+
+	Shared :: struct {
+		r: RingBuffer,
+		buf: [BUF_SIZE]Sample,
+		consumer_ok: bool,
+		consumer_count: int,
+	}
+
+	s := new(Shared)
+	defer free(s)
+	ring_init(&s.r, s.buf[:])
+	s.consumer_ok = true
+
+	prod := thread.create(proc(t: ^thread.Thread) {
+		s := cast(^Shared)t.data
+		for i in 1 ..= TOTAL {
+			for {
+				wp := intrinsics.atomic_load_explicit(&s.r.write_pos, .Relaxed)
+				rp := intrinsics.atomic_load_explicit(&s.r.read_pos, .Acquire)
+				if wp - rp < BUF_SIZE do break
+				thread.yield()
+			}
+			ring_write(&s.r, Sample(i))
+		}
+	})
+	prod.data = s
+
+	cons := thread.create(proc(t: ^thread.Thread) {
+		s := cast(^Shared)t.data
+		dest: [32]Sample
+		expected: int = 1
+		for s.consumer_count < TOTAL {
+			n := ring_read(&s.r, dest[:])
+			if n == 0 {
+				thread.yield()
+				continue
+			}
+			for i in 0 ..< n {
+				if int(dest[i]) != expected {
+					s.consumer_ok = false
+				}
+				expected += 1
+			}
+			s.consumer_count += n
+		}
+	})
+	cons.data = s
+
+	thread.start(prod)
+	thread.start(cons)
+	thread.join(prod)
+	thread.join(cons)
+	thread.destroy(prod)
+	thread.destroy(cons)
+
+	testing.expect(t, s.consumer_ok, "consumer saw out-of-order sample")
+	testing.expect_value(t, s.consumer_count, TOTAL)
 }

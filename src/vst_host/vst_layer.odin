@@ -1562,7 +1562,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
 		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
-		log.debug("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
+		// log.debug("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
 		plat.renderer_resize(view.renderer, rect.w, rect.h)
 		pluginApi.view_resized(view.plugin, rect)
 		return vst3.kResultOk
@@ -1593,7 +1593,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 		controller := container_of(view, LindaleController, "view")
 		cur := view.plugin.viewBounds
 		clamp_to_view_config(rect, cur.w, cur.h, controller.viewConfig)
-		log.debug("lv_checkSizeConstraint -> r:", rect.right, "b:", rect.bottom)
+		// log.debug("lv_checkSizeConstraint -> r:", rect.right, "b:", rect.bottom)
 		return vst3.kResultOk
 	}
 }

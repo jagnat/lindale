@@ -172,16 +172,16 @@ mutex_logger_proc :: proc(
 
 @(private)
 test_stop_mutex_thread :: proc() {
-	ctx.loggerRunning = false
+	intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
 	thread.join(ctx.readerThread)
 	thread.destroy(ctx.readerThread)
-	ctx.readerThread = thread.create(log_reader_thread_proc)
+	ctx.readerThread = thread.create(log_mutex_reader_thread_proc)
 	ctx.readerThread.init_context = context
 }
 
 @(private)
 test_start_mutex_thread :: proc() {
-	ctx.loggerRunning = true
+	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
 	thread.start(ctx.readerThread)
 }
 
@@ -230,5 +230,79 @@ test_mutex_logger :: proc(t: ^testing.T) {
 		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
 		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
 		testing.expect(t, strings.contains(string(content), "This should not be dropped"), "Post-flushed log not present")
+	}
+
+	// Test 3: Concurrent producers sharing the single mutex-protected ring.
+	// All four sources funnel into one file; per-source seqs must remain in order.
+	{
+		PRODUCER_MSGS :: 200
+
+		Producer :: struct {
+			source: LogSource,
+			count: int,
+		}
+
+		producers: [LogSource]Producer
+		for src in LogSource {
+			producers[src] = {source = src, count = PRODUCER_MSGS}
+		}
+
+		threads: [LogSource]^thread.Thread
+		for src in LogSource {
+			threads[src] = thread.create(proc(th: ^thread.Thread) {
+				p := cast(^Producer)th.data
+				context.logger = get_mutex_logger(p.source)
+				for i in 0 ..< p.count {
+					log.info("TSAN_MARKER", p.source, i)
+				}
+			})
+			threads[src].data = &producers[src]
+			thread.start(threads[src])
+		}
+
+		for src in LogSource {
+			thread.join(threads[src])
+			thread.destroy(threads[src])
+		}
+
+		time.sleep(3 * LOG_FLUSH_TIME)
+
+		content_bytes, err := os.read_entire_file(ctx.outputFilename, allocator = context.temp_allocator)
+		testing.expect(t, err == nil, "Failed to read log file")
+		content := string(content_bytes)
+
+		// Per source: walk lines containing "TSAN_MARKER <source>", check seqs are monotonic.
+		for src in LogSource {
+			tag := fmt.tprintf("TSAN_MARKER %v", src)
+			last_seq := -1
+			seen := 0
+			rest := content
+			for {
+				idx := strings.index(rest, tag)
+				if idx < 0 do break
+				rest = rest[idx:]
+				eol := strings.index(rest, "\n")
+				if eol < 0 do break
+				line := rest[:eol]
+				rest = rest[eol+1:]
+
+				space2 := strings.last_index(line, " ")
+				if space2 < 0 do continue
+				seq_str := line[space2+1:]
+				seq := 0
+				ok := true
+				for ch in seq_str {
+					if ch < '0' || ch > '9' { ok = false; break }
+					seq = seq * 10 + int(ch - '0')
+				}
+				if !ok do continue
+
+				testing.expectf(t, seq > last_seq, "non-monotonic seq for %v: %d after %d", src, seq, last_seq)
+				last_seq = seq
+				seen += 1
+			}
+
+			testing.expectf(t, seen == PRODUCER_MSGS, "expected %d messages for %v, got %d", PRODUCER_MSGS, src, seen)
+		}
 	}
 }
