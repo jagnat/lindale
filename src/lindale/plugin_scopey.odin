@@ -28,9 +28,9 @@ AGC_TARGET_FILL :: f32(0.8) // peak |z| mapped to this fraction of canvas radius
 AGC_NOISE_FLOOR :: f32(0.05) // below this, gain saturates so silence stays a dot
 AGC_RELEASE :: f32(0.04) // smoothing toward larger gains (quieter signal); ~400 ms at 60 fps
 
-TrailPoint :: struct {
-	r, im: f32,
-}
+// TrailPoint :: struct {
+// 	r, im: f32,
+// }
 
 ScopeyProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
@@ -68,10 +68,14 @@ AnalysisFrame :: struct {
 	peak: [MAX_CHANNELS]f32,
 	rms: [MAX_CHANNELS]f32,
 
+	goniometer_trail: [TRAIL_HISTORY][2]f32,
+	goniometer_trail_write: int,
+	goniometer_trail_count: int,
+
 	// Controller-side trail ring buf for the Hilbert Lissajous
-	trail: [TRAIL_HISTORY]TrailPoint,
-	trail_write: int,
-	trail_count: int,
+	hilbert_trail: [TRAIL_HISTORY]complex64,
+	hilbert_trail_write: int,
+	hilbert_trail_count: int,
 
 	agc_gain: f32, // instant attack, slow release
 }
@@ -196,9 +200,9 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		im := drain_buf[2 * i + 1]
 		m2 := r * r + im * im
 		if m2 > peak2 do peak2 = m2
-		a.trail[a.trail_write] = TrailPoint{r = r, im = im}
-		a.trail_write = (a.trail_write + 1) % TRAIL_HISTORY
-		if a.trail_count < TRAIL_HISTORY do a.trail_count += 1
+		a.hilbert_trail[a.hilbert_trail_write] = complex(r, im)
+		a.hilbert_trail_write = (a.hilbert_trail_write + 1) % TRAIL_HISTORY
+		if a.hilbert_trail_count < TRAIL_HISTORY do a.hilbert_trail_count += 1
 	}
 
 	// AGC
@@ -293,8 +297,15 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	}
 }
 
-draw_oscilloscope_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
+
+	bounds := comp.calcBounds
+	a := cast(^AnalysisFrame)data
+	if a == nil do return
+
+	n := a.goniometer_trail_count
+	if n < 2 do return
 }
 
 draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
@@ -303,28 +314,25 @@ draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	a := cast(^AnalysisFrame)data
 	if a == nil do return
 
-	sx:=bounds.x
-	sy:=bounds.y + bounds.h / 2
-
 	cx := bounds.x + bounds.w / 2
 	cy := bounds.y + bounds.h / 2
 	// AGC maps peak |z| to AGC_TARGET_FILL of canvas radius (min/2); scale folds gain in
 	scale := min(bounds.w, bounds.h) * 0.5 * a.agc_gain
 
-	n := a.trail_count
+	n := a.hilbert_trail_count
 	if n < 2 do return
 
-	start := (a.trail_write + TRAIL_HISTORY - n) % TRAIL_HISTORY
+	start := (a.hilbert_trail_write + TRAIL_HISTORY - n) % TRAIL_HISTORY
 	inv_n := 1.0 / f32(n - 1)
 	for k in 0 ..< n - 1 {
-		p0 := a.trail[(start + k) % TRAIL_HISTORY]
-		p1 := a.trail[(start + k + 1) % TRAIL_HISTORY]
+		p0 := a.hilbert_trail[(start + k) % TRAIL_HISTORY]
+		p1 := a.hilbert_trail[(start + k + 1) % TRAIL_HISTORY]
 		alpha := f32(k) * inv_n // 0 at oldest, 1 at newest
 		col := ColorU8{200, 200, 200, u8(alpha * 255)}
-		x0 := cx + p0.r * scale
-		y0 := cy - p0.im * scale // screen y grows down → negate imag
-		x1 := cx + p1.r * scale
-		y1 := cy - p1.im * scale
+		x0 := cx + real(p0) * scale
+		y0 := cy - imag(p0) * scale
+		x1 := cx + real(p0) * scale
+		y1 := cy - imag(p0) * scale
 		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
 	}
 }
@@ -400,8 +408,8 @@ scopey_draw :: proc(plug: ^PluginController) {
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
 			if ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
-				// Will be scope (with slider underneath for zoom, maybe??)
-				ui_canvas(plug.ui, draw_oscilloscope_canvas, a)
+				// Will be goniometer
+				ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
 				ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = AxisSizing{type = .FIXED, value = 60})
 				// david lu esque hilbert transform scope
