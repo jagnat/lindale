@@ -22,7 +22,10 @@ RMS_INTEGRATION_SEC :: f32(0.2)
 HILBERT_N :: 511 // logical FIR length, clean magnitude down to ~300 Hz at 48 kHz
 HILBERT_TAPS :: (HILBERT_N + 1) / 2 // packed nonzero taps
 HILBERT_DELAY :: 2 * HILBERT_N + 8 // double-write + 8-float SIMD tail pad
-TRAIL_HISTORY :: 8192
+HILBERT_TRAIL_SIZE :: 8192
+
+GONIOMETER_TRAIL_SIZE :: 4096
+
 // AGC to scale to viewport size
 AGC_TARGET_FILL :: f32(0.8) // peak |z| mapped to this fraction of canvas radius
 AGC_NOISE_FLOOR :: f32(0.05) // below this, gain saturates so silence stays a dot
@@ -64,12 +67,12 @@ AnalysisFrame :: struct {
 	peak: [MAX_CHANNELS]f32,
 	rms: [MAX_CHANNELS]f32,
 
-	goniometer_trail: [2][TRAIL_HISTORY]f32,
+	goniometer_trail: [2][GONIOMETER_TRAIL_SIZE]f32,
 	goniometer_trail_write: int,
 	goniometer_trail_count: int,
 
 	// Controller-side trail ring buf for the Hilbert Lissajous
-	hilbert_trail: [TRAIL_HISTORY]complex64,
+	hilbert_trail: [HILBERT_TRAIL_SIZE]complex64,
 	hilbert_trail_write: int,
 	hilbert_trail_count: int,
 
@@ -163,24 +166,25 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 
 	fft_buf := make([]complex64, FFT_SIZE, allocator=context.temp_allocator)
 
-	{ // Fetch stereo samples to use for goniometer
+	{ // Drain L/R in lockstep so indices stay aligned; cap at one trail's worth per frame
+		avail := min(
+			dsp.ring_available(&plug.processor_peer.state.rings[0]),
+			dsp.ring_available(&plug.processor_peer.state.rings[1]),
+			GONIOMETER_TRAIL_SIZE,
+		)
 		g_write := a.goniometer_trail_write
-		head_cap := TRAIL_HISTORY - g_write
-
-		n_l := dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][g_write:])
-		n_r := dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][g_write:])
-		n := min(n_l, n_r)
-
-		if n == head_cap { // Handle wrapping, maybe more samples available
-			n_l = dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][:g_write])
-			n_r = dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][:n_l])
-			m := min(n_l, n_r)
-			a.goniometer_trail_write = m
-			n += m
-		} else {
-			a.goniometer_trail_write = g_write + n
+		head := min(avail, GONIOMETER_TRAIL_SIZE - g_write)
+		if head > 0 {
+			dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][g_write:g_write + head])
+			dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][g_write:g_write + head])
 		}
-		a.goniometer_trail_count = min(a.goniometer_trail_count + n, TRAIL_HISTORY)
+		wrap := avail - head
+		if wrap > 0 {
+			dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][:wrap])
+			dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][:wrap])
+		}
+		a.goniometer_trail_write = (g_write + avail) % GONIOMETER_TRAIL_SIZE
+		a.goniometer_trail_count = min(a.goniometer_trail_count + avail, GONIOMETER_TRAIL_SIZE)
 	}
 
 	// FFT: snapshot the latest FFT_SIZE samples of each ring
@@ -219,8 +223,8 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		m2 := r * r + im * im
 		if m2 > peak2 do peak2 = m2
 		a.hilbert_trail[a.hilbert_trail_write] = complex(r, im)
-		a.hilbert_trail_write = (a.hilbert_trail_write + 1) % TRAIL_HISTORY
-		if a.hilbert_trail_count < TRAIL_HISTORY do a.hilbert_trail_count += 1
+		a.hilbert_trail_write = (a.hilbert_trail_write + 1) % HILBERT_TRAIL_SIZE
+		if a.hilbert_trail_count < HILBERT_TRAIL_SIZE do a.hilbert_trail_count += 1
 	}
 
 	// AGC
@@ -294,7 +298,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 		if db != DB_FLOOR do draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
 	}
 
-	cols :[]ColorU8= {{255,100, 100, 255}, {100, 100, 255, 255}}
+	cols :[]ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
 
 	pts := make([]Vec2f, FFT_SIZE / 2, context.temp_allocator)
 	for c in 0 ..< a.num_channels {
@@ -315,6 +319,10 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	}
 }
 
+trail_alpha :: #force_inline proc(t: f32) -> f32 {
+	return t * t * t
+}
+
 draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 
@@ -322,8 +330,72 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 	a := cast(^AnalysisFrame)data
 	if a == nil do return
 
+	cx := bounds.x + bounds.w / 2
+	cy := bounds.y + bounds.h / 2
+
+	SQRT_HALF :: f32(0.70710678) // 45° L/R → M/S rotation: mid on Y, side on X; r-l so pure-L lands screen-left
+	dc := ctx.plugin.draw
+
+	label_color := ColorU8{80, 80, 80, 255}
+	grid_color := ColorU8{50, 50, 50, 255}
+	label_size := f32(16)
+	lp := f32(3)
+
+	mp := draw_measure_text(dc, "+M", label_size)
+	mn := draw_measure_text(dc, "-M", label_size)
+	sp := draw_measure_text(dc, "+S", label_size)
+	sn := draw_measure_text(dc, "-S", label_size)
+	lt := draw_measure_text(dc, "L", label_size)
+	rt := draw_measure_text(dc, "R", label_size)
+
+	// Inscribed circle sized to leave room for cardinal labels outside it.
+	// Diagonal labels (L/R) sit at radius*SQRT_HALF and need less margin, so cardinals are the constraint.
+	radius_v := bounds.h * 0.5 - max(mp.y, mn.y) - lp
+	radius_h := bounds.w * 0.5 - max(sp.x, sn.x) - lp
+	radius := min(radius_v, radius_h)
+	diag := radius * SQRT_HALF
+
+	draw_push_rect(dc, SimpleUIRect{
+		x = cx - radius, y = cy - radius,
+		width = radius * 2, height = radius * 2,
+		cornerRad = radius,
+		borderColor = grid_color, borderWidth = 1,
+	})
+	draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
+	draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
+	draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
+	draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
+
+	scale := radius * a.agc_gain
+
 	n := a.goniometer_trail_count
-	if n < 2 do return
+	if n >= 2 {
+		start := (a.goniometer_trail_write + GONIOMETER_TRAIL_SIZE - n) % GONIOMETER_TRAIL_SIZE
+		l0 := a.goniometer_trail[0][start]
+		r0 := a.goniometer_trail[1][start]
+		x0 := cx + (r0 - l0) * SQRT_HALF * scale
+		y0 := cy - (l0 + r0) * SQRT_HALF * scale
+
+		inv_n := 1.0 / f32(n - 1)
+		for k in 1 ..< n {
+			l := a.goniometer_trail[0][(start + k) % GONIOMETER_TRAIL_SIZE]
+			r := a.goniometer_trail[1][(start + k) % GONIOMETER_TRAIL_SIZE]
+			x1 := cx + (r - l) * SQRT_HALF * scale
+			y1 := cy - (l + r) * SQRT_HALF * scale
+			alpha := trail_alpha(f32(k) * inv_n)
+			col := ColorU8{150, 100, 150, u8(alpha * 255)}
+			draw_push_pill(dc, {x0, y0}, {x0, y0}, 2, col)
+			x0 = x1
+			y0 = y1
+		}
+	}
+
+	draw_text(dc, "+M", cx - mp.x / 2, cy - radius - mp.y - lp, label_color, label_size)
+	draw_text(dc, "-M", cx - mn.x / 2, cy + radius + lp, label_color, label_size)
+	draw_text(dc, "+S", cx + radius + lp, cy - sp.y / 2, label_color, label_size)
+	draw_text(dc, "-S", cx - radius - sn.x - lp, cy - sn.y / 2, label_color, label_size)
+	draw_text(dc, "L", cx - diag - lt.x - lp, cy - diag - lt.y - lp, label_color, label_size)
+	draw_text(dc, "R", cx + diag + lp, cy - diag - rt.y - lp, label_color, label_size)
 }
 
 draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
@@ -340,18 +412,18 @@ draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	n := a.hilbert_trail_count
 	if n < 2 do return
 
-	start := (a.hilbert_trail_write + TRAIL_HISTORY - n) % TRAIL_HISTORY
+	start := (a.hilbert_trail_write + HILBERT_TRAIL_SIZE - n) % HILBERT_TRAIL_SIZE
 	inv_n := 1.0 / f32(n - 1)
 	for k in 0 ..< n - 1 {
-		p0 := a.hilbert_trail[(start + k) % TRAIL_HISTORY]
-		p1 := a.hilbert_trail[(start + k + 1) % TRAIL_HISTORY]
-		alpha := f32(k) * inv_n // 0 at oldest, 1 at newest
+		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
+		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
+		alpha := trail_alpha(f32(k) * inv_n)
 		col := ColorU8{200, 200, 200, u8(alpha * 255)}
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
-		x1 := cx + real(p0) * scale
-		y1 := cy - imag(p0) * scale
-		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
+		x1 := cx + real(p1) * scale
+		y1 := cy - imag(p1) * scale
+		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x0, y0}, 2, col)
 	}
 }
 

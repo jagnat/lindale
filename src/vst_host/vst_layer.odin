@@ -684,8 +684,6 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			}
 		}
 
-		// Check for hot-reload generation change — must happen before writing
-		// buffer slices, since setup_processor re-allocates the slice arrays
 		gen := hotload_generation()
 		if gen != processor.lastGeneration {
 			processor.hostCtx.generation = gen
