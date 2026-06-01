@@ -62,6 +62,24 @@ ring_read_latest :: proc(r: ^RingBuffer, dest: []Sample) -> int {
 	return available
 }
 
+// Current write position. Use to align snapshot reads across multiple rings.
+ring_get_write_pos :: proc(r: ^RingBuffer) -> int {
+	return intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
+}
+
+// Snapshot the latest samples ending at absolute position `end` into dest.
+// Like ring_read_latest but with a caller-supplied end boundary so several rings
+// can be read against a common point without per-channel write_pos skew.
+// Does NOT advance read_pos. Returns number of samples copied.
+ring_read_window :: proc(r: ^RingBuffer, end: int, dest: []Sample) -> int {
+	available := min(len(dest), end, len(r.data))
+	start := end - available
+	for i in 0 ..< available {
+		dest[i] = r.data[(start + i) & r.mask]
+	}
+	return available
+}
+
 // UI thread: read and consume up to len(dest) samples.
 // Advances read_pos. Use this for streaming consumption rather than snapshots.
 // Returns number of samples actually read.

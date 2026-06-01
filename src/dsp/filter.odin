@@ -321,36 +321,37 @@ hilbert_fir_init :: proc(h: ^HilbertFIR, coeffs_buf, delay_buf: []Sample, window
 }
 
 hilbert_fir_process :: proc(h: ^HilbertFIR, input: Sample) -> (real_out, imag_out: Sample) {
-	h.idx = (h.idx + 1) % h.N
-	h.delay[h.idx]       = input
-	h.delay[h.idx + h.N] = input
+	#no_bounds_check {
+		h.idx = (h.idx + 1) % h.N
+		h.delay[h.idx]       = input
+		h.delay[h.idx + h.N] = input
 
-	// Read window [start, start+N): ascending in array == ascending in time.
-	// Even within-window positions (0, 2, 4, …) are the stride-2 nonzero taps.
-	start := h.idx + 1
+		// Read window [start, start+N): ascending in array == ascending in time.
+		// Even within-window positions (0, 2, 4, …) are the stride-2 nonzero taps.
+		start := h.idx + 1
 
-	// `simd.from_slice` is a regular (non-inlined) proc with an assert + element loop, so in
-	// debug it shows up as ~9M function calls/sec at 48 kHz × 64 iters × 3 loads. Skip it and
-	// reinterpret pointers via `intrinsics.unaligned_load`, which is a true intrinsic and
-	// lowers to one vector load. f32 has no alignment requirement on ARM64 or x86 vector loads.
-	acc: #simd[4]f32
-	j := 0
-	for ; j + 4 <= h.M; j += 4 {
-		p := start + 2 * j
-		lo := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p])
-		hi := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p + 4])
-		d4 := simd.shuffle(lo, hi, 0, 2, 4, 6)
-		c4 := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.coeffs[j])
-		acc = simd.fma(c4, d4, acc)
+		// `simd.from_slice` is a regular (non-inlined) proc with an assert + element loop, so in
+		// debug it shows up as ~9M function calls/sec at 48 kHz × 64 iters × 3 loads. Skip it and
+		// reinterpret pointers via `intrinsics.unaligned_load`, which is a true intrinsic and
+		// lowers to one vector load. f32 has no alignment requirement on ARM64 or x86 vector loads.
+		acc: #simd[4]f32
+		j := 0
+		for ; j + 4 <= h.M; j += 4 {
+			p := start + 2 * j
+			lo := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p])
+			hi := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.delay[p + 4])
+			d4 := simd.shuffle(lo, hi, 0, 2, 4, 6)
+			c4 := intrinsics.unaligned_load(cast(^#simd[4]f32)&h.coeffs[j])
+			acc = simd.fma(c4, d4, acc)
+		}
+		sum := simd.reduce_add_ordered(acc)
+		for ; j < h.M; j += 1 {
+			sum += h.coeffs[j] * h.delay[start + 2 * j]
+		}
+		real_out = h.delay[h.idx + h.N - h.center]
+		imag_out = sum
+		return
 	}
-	sum := simd.reduce_add_ordered(acc)
-	for ; j < h.M; j += 1 {
-		sum += h.coeffs[j] * h.delay[start + 2 * j]
-	}
-
-	real_out = h.delay[h.idx + h.N - h.center]
-	imag_out = sum
-	return
 }
 
 hilbert_fir_reset :: proc(h: ^HilbertFIR) {
