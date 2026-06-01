@@ -11,18 +11,22 @@ import dit "../thirdparty/uFFT_DIT"
 when b.ACTIVE_PLUGIN == "scopey" {
 
 FFT_SIZE :: 4096
-RING_SIZE :: FFT_SIZE * 8 // headroom so audio thread can't overrun a snapshot read
+RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot read
 MAX_CHANNELS :: 2
 
 DB_FLOOR :: f32(-100)
 SMOOTH_ALPHA :: f32(0.3)
 RMS_INTEGRATION_SEC :: f32(0.2)
 
+PEAK_HOLD_SEC :: f32(1.5)
+PEAK_HOLD_FALL_DB_PER_SEC :: f32(20)
+METER_RELEASE_DB_PER_SEC :: f32(80) // peak bar fall rate
+
 // Hilbert FIR parameters - I don't understand this yet
 HILBERT_N :: 511 // logical FIR length, clean magnitude down to ~300 Hz at 48 kHz
 HILBERT_TAPS :: (HILBERT_N + 1) / 2 // packed nonzero taps
 HILBERT_DELAY :: 2 * HILBERT_N + 8 // double-write + 8-float SIMD tail pad
-HILBERT_TRAIL_SIZE :: 8192
+HILBERT_TRAIL_SIZE :: 2048
 
 GONIOMETER_TRAIL_SIZE :: 4096
 
@@ -37,6 +41,7 @@ ScopeyProcessState :: struct {
 	dc_blockers: [MAX_CHANNELS]dsp.DCBlocker,
 
 	peak: [MAX_CHANNELS]f32,
+	peak_follow: [MAX_CHANNELS]f32, // audio-thread-private peak follower: instant attack, slow release
 	rms: [MAX_CHANNELS]f32,
 	rms_accum: [MAX_CHANNELS]f32, // audio-thread-private mean-square accumulator
 
@@ -65,10 +70,11 @@ AnalysisFrame :: struct {
 
 	// Latest atomic snapshot of audio-thread meters
 	peak: [MAX_CHANNELS]f32,
+	peak_hold: [MAX_CHANNELS]f32,
+	peak_hold_age: [MAX_CHANNELS]f32, // seconds since the held value was last refreshed
 	rms: [MAX_CHANNELS]f32,
 
 	goniometer_trail: [2][GONIOMETER_TRAIL_SIZE]f32,
-	goniometer_trail_write: int,
 	goniometer_trail_count: int,
 
 	// Controller-side trail ring buf for the Hilbert Lissajous
@@ -112,6 +118,9 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 	rms_decay := 1.0 - 1.0 / (f32(actx.sampleRate) * RMS_INTEGRATION_SEC)
 	rms_input_gain := 1.0 - rms_decay
 
+	// Per-sample peak-follower release coeff from the fall rate; instant attack is the max() below
+	meter_release := math.pow(f32(10), -METER_RELEASE_DB_PER_SEC / (20 * f32(actx.sampleRate)))
+
 	// Accumulate the mono mix as we DC-block each channel. Only [0..n) is used.
 	mono_buf: []f32 = make([]f32, RING_SIZE, allocator=context.temp_allocator)
 	inv_chan := 1.0 / f32(num_channels)
@@ -125,17 +134,17 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 		dsp.dc_blocker_process_buf(&plug.state.dc_blockers[c], blocked_buf[:n])
 		dsp.ring_write_buf(&plug.state.rings[c], blocked_buf[:n])
 
-		peak: f32 = 0
+		m := plug.state.peak_follow[c]
 		accum := plug.state.rms_accum[c]
 		for i in 0 ..< n {
 			s := blocked_buf[i]
-			ab := abs(s)
-			if ab > peak do peak = ab
+			m = max(abs(s), m * meter_release)
 			accum = accum * rms_decay + s * s * rms_input_gain
 			mono_buf[i] += s * inv_chan
 		}
+		plug.state.peak_follow[c] = m
 		plug.state.rms_accum[c] = accum
-		intrinsics.atomic_store_explicit(&plug.state.peak[c], peak, .Release)
+		intrinsics.atomic_store_explicit(&plug.state.peak[c], m, .Release)
 		intrinsics.atomic_store_explicit(&plug.state.rms[c], math.sqrt(accum), .Release)
 	}
 
@@ -159,32 +168,31 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	a.num_channels = min(actx.numChannels, MAX_CHANNELS)
 
 	// Meters: pull the audio-thread's latest published scalars.
+	dt := plug.frameDt
 	for c in 0 ..< a.num_channels {
 		a.peak[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.peak[c], .Acquire)
+		if a.peak[c] >= a.peak_hold[c] {
+			a.peak_hold[c] = a.peak[c]
+			a.peak_hold_age[c] = 0
+		} else {
+			a.peak_hold_age[c] += dt
+			if a.peak_hold_age[c] > PEAK_HOLD_SEC {
+				a.peak_hold[c] *= math.pow(f32(10), -(PEAK_HOLD_FALL_DB_PER_SEC * dt) / 20)
+			}
+		}
 		a.rms[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.rms[c], .Acquire)
 	}
 
 	fft_buf := make([]complex64, FFT_SIZE, allocator=context.temp_allocator)
 
-	{ // Drain L/R in lockstep so indices stay aligned; cap at one trail's worth per frame
-		avail := min(
-			dsp.ring_available(&plug.processor_peer.state.rings[0]),
-			dsp.ring_available(&plug.processor_peer.state.rings[1]),
-			GONIOMETER_TRAIL_SIZE,
+	{ // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
+		end := min(
+			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0]),
+			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[1]),
 		)
-		g_write := a.goniometer_trail_write
-		head := min(avail, GONIOMETER_TRAIL_SIZE - g_write)
-		if head > 0 {
-			dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][g_write:g_write + head])
-			dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][g_write:g_write + head])
-		}
-		wrap := avail - head
-		if wrap > 0 {
-			dsp.ring_read(&plug.processor_peer.state.rings[0], a.goniometer_trail[0][:wrap])
-			dsp.ring_read(&plug.processor_peer.state.rings[1], a.goniometer_trail[1][:wrap])
-		}
-		a.goniometer_trail_write = (g_write + avail) % GONIOMETER_TRAIL_SIZE
-		a.goniometer_trail_count = min(a.goniometer_trail_count + avail, GONIOMETER_TRAIL_SIZE)
+		nl := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
+		nr := dsp.ring_read_window(&plug.processor_peer.state.rings[1], end, a.goniometer_trail[1][:])
+		a.goniometer_trail_count = min(nl, nr)
 	}
 
 	// FFT: snapshot the latest FFT_SIZE samples of each ring
@@ -319,6 +327,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	}
 }
 
+// Fall off curve for modulating alpha
 trail_alpha :: #force_inline proc(t: f32) -> f32 {
 	return t * t * t
 }
@@ -333,7 +342,7 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 	cx := bounds.x + bounds.w / 2
 	cy := bounds.y + bounds.h / 2
 
-	SQRT_HALF :: f32(0.70710678) // 45° L/R → M/S rotation: mid on Y, side on X; r-l so pure-L lands screen-left
+	SQRT_HALF :: f32(0.70710678)
 	dc := ctx.plugin.draw
 
 	label_color := ColorU8{80, 80, 80, 255}
@@ -348,8 +357,6 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 	lt := draw_measure_text(dc, "L", label_size)
 	rt := draw_measure_text(dc, "R", label_size)
 
-	// Inscribed circle sized to leave room for cardinal labels outside it.
-	// Diagonal labels (L/R) sit at radius*SQRT_HALF and need less margin, so cardinals are the constraint.
 	radius_v := bounds.h * 0.5 - max(mp.y, mn.y) - lp
 	radius_h := bounds.w * 0.5 - max(sp.x, sn.x) - lp
 	radius := min(radius_v, radius_h)
@@ -370,16 +377,15 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 
 	n := a.goniometer_trail_count
 	if n >= 2 {
-		start := (a.goniometer_trail_write + GONIOMETER_TRAIL_SIZE - n) % GONIOMETER_TRAIL_SIZE
-		l0 := a.goniometer_trail[0][start]
-		r0 := a.goniometer_trail[1][start]
+		l0 := a.goniometer_trail[0][0]
+		r0 := a.goniometer_trail[1][0]
 		x0 := cx + (r0 - l0) * SQRT_HALF * scale
 		y0 := cy - (l0 + r0) * SQRT_HALF * scale
 
 		inv_n := 1.0 / f32(n - 1)
 		for k in 1 ..< n {
-			l := a.goniometer_trail[0][(start + k) % GONIOMETER_TRAIL_SIZE]
-			r := a.goniometer_trail[1][(start + k) % GONIOMETER_TRAIL_SIZE]
+			l := a.goniometer_trail[0][k]
+			r := a.goniometer_trail[1][k]
 			x1 := cx + (r - l) * SQRT_HALF * scale
 			y1 := cy - (l + r) * SQRT_HALF * scale
 			alpha := trail_alpha(f32(k) * inv_n)
@@ -418,12 +424,12 @@ draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
 		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
 		alpha := trail_alpha(f32(k) * inv_n)
-		col := ColorU8{200, 200, 200, u8(alpha * 255)}
+		col := ColorU8{200, 200, 200, 255}
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
 		y1 := cy - imag(p1) * scale
-		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x0, y0}, 2, col)
+		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
 	}
 }
 
@@ -431,23 +437,19 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
 
-	bounds.y += 4
-	bounds.h -= 8
-
 	METER_OFFSET_X :: 22
 	STEREO_SPACING_PX :: 4
+	bounds.y += 4
+	bounds.h -= 8
 	bounds.x += METER_OFFSET_X
 	bounds.w -= METER_OFFSET_X
 	meterW := (bounds.w - STEREO_SPACING_PX) / 2
 
-	MIN_DB :: f32(-60)
-	ORANGE_DB :: f32(-12)
-	RED_DB :: f32(-6)
-	MAX_DB :: f32(0)
+	MIN_DB, ORANGE_DB, RED_DB, MAX_DB :: f32(-60), f32(-12), f32(-6), f32(0)
 
 	pix_per_db := bounds.h / (MAX_DB - MIN_DB)
 	segments := [?]struct { top_db: f32, peak_color, rms_color: ColorU8 } {
-		{ORANGE_DB, {0, 200, 80, 150},  {0, 200, 80, 255}},
+		{ORANGE_DB, {0, 200, 80, 150}, {0, 200, 80, 255}},
 		{RED_DB, {220, 120, 0, 150}, {220, 120, 0, 255}},
 		{MAX_DB, {255, 20, 50, 150}, {255, 20, 50, 255}},
 	}
@@ -485,6 +487,25 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 			}
 		}
 	}
+
+	PEAK_TICK_H :: f32(2)
+	for c in 0..< a.num_channels {
+		dbs := linear_to_decibels(a.peak_hold[c])
+		if dbs < MIN_DB do continue
+		col := segments[len(segments) - 1].rms_color
+		for seg in segments {
+			if dbs <= seg.top_db {
+				col = seg.rms_color
+				break
+			}
+		}
+		x := bounds.x + f32(c) * (meterW + STEREO_SPACING_PX)
+		y := bounds.y + bounds.h - pix_per_db * (dbs - MIN_DB)
+		draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+			x = x, y = y - PEAK_TICK_H / 2, width = meterW, height = PEAK_TICK_H,
+			color = col, cornerRad = 1,
+		})
+	}
 }
 
 // Main draw proc
@@ -498,7 +519,7 @@ scopey_draw :: proc(plug: ^PluginController) {
 	if ui_frame_scoped(plug.ui) {
 		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
 			if ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
-				// Will be goniometer
+				// Goniometer
 				ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
 				ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = AxisSizing{type = .FIXED, value = 60})

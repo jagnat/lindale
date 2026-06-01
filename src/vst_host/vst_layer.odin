@@ -1331,6 +1331,18 @@ LindaleView :: struct {
 
 MS_PER_FRAME :: 16
 
+// Publish seconds since the previous draw; clamp to throw away frames if we stall
+update_frame_dt :: proc (plug: ^lin.PluginController) {
+	now := time.tick_now()
+	if plug.lastDrawTime != (time.Tick{}) {
+		dt := f32(time.duration_seconds(time.tick_diff(plug.lastDrawTime, now)))
+		plug.frameDt = clamp(dt, 0, 0.1)
+	} else {
+		plug.frameDt = f32(MS_PER_FRAME) / 1000
+	}
+	plug.lastDrawTime = now
+}
+
 timer_proc :: proc (timer: ^plat.Timer) {
 	view := cast(^LindaleView)timer.data
 	if view.renderer == nil do return
@@ -1349,6 +1361,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 		pluginApi.setup_controller(&view.controller.plugin)
 	}
 
+	update_frame_dt(view.plugin)
 	pluginApi.draw(view.plugin)
 
 	free_all(context.temp_allocator)
@@ -1368,6 +1381,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 		pluginApi.setup_controller(&view.controller.plugin)
 	}
 
+	update_frame_dt(view.plugin)
 	pluginApi.draw(view.plugin)
 
 	free_all(context.temp_allocator)

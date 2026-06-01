@@ -83,6 +83,7 @@ PluginController :: struct {
 	viewBounds: RectI32,
 	inDraw: bool,
 	lastDrawTime: time.Tick,
+	frameDt: f32, // seconds since previous draw
 }
 
 fallbackApi :: PluginApi {
