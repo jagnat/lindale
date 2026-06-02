@@ -77,6 +77,11 @@ when b.ACTIVE_PLUGIN == "beepboop" {
 	PluginControlState :: ScopeyControlState
 	active_plugin_api  :: scopey_api
 	param_table := scopey_param_table
+} else when b.ACTIVE_PLUGIN == "pokey" {
+	PluginProcessState :: PokeyProcessState
+	PluginControlState :: PokeyControlState
+	active_plugin_api  :: pokey_api
+	param_table := pokey_param_table
 } else {
 	#panic("Unknown ACTIVE_PLUGIN: " + b.ACTIVE_PLUGIN)
 }
