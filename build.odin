@@ -94,38 +94,29 @@ verify_plugin :: proc() {
 }
 
 build_plugin :: proc () {
-	// clear(&command)
-	// append(&command, "odin", "build", "src/vst_host")
-	// if !opts.no_hot do append(&command, "-define:HOT_DLL=true")
-	// append(&command, strings.concatenate({"-define:ACTIVE_PLUGIN=", opts.plugin}))
-	// if !opts.release do append(&command, "-debug")
-	// if opts.release do append(&command, "-o:speed")
-	// append(&command, "-no-entry-point", "-build-mode:dynamic")
-
-	bundle_dir = strings.concatenate({"out/", opts.plugin, ".vst3"})
-
 	subdir: string
 	when ODIN_OS == .Windows {
-		subdir = "x86_64-win/"
+		subdir = "x86_64-win"
 	} else when ODIN_OS == .Darwin {
-		subdir = "MacOS/"
+		subdir = "MacOS"
 	} else {
 		#assert(false, "Unsupported OS")
 	}
 
-	outStr := strings.concatenate({"-out:",
-		bundle_dir,
-		"/Contents/",
-		subdir,
-		opts.plugin,
-		".",
-		dynlib.LIBRARY_FILE_EXTENSION})
+	cmd := fmt.tprintf("odin build src/vst_host -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/%s.vst3/Contents/%s/%s.vst3",
+		opts.plugin, opts.plugin, subdir, opts.plugin)
+	if opts.release do cmd = strings.concatenate({cmd, " -o:speed"})
+	else do cmd = strings.concatenate({cmd, " -debug"})
+	// fmt.println(s)
+	err := exec(cmd)
+	if err != nil do fmt.println("Error executing vst3 build")
 
-	when ODIN_OS == .Darwin {
+	when ODIN_OS == .Darwin { // All the postbuild garbage I need to do on mac
+
 	} else when ODIN_OS == .Windows {
 	}
 
-	build_hotloaded()
+	// if !opts.no_hot do build_hotloaded()
 }
 
 build_hotloaded :: proc() {
@@ -137,36 +128,32 @@ build_hotloaded :: proc() {
 	}
 
 	// Build hot dll
-	s := fmt.tprintf("odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/hot/%sHot.%s",
+	cmd := fmt.tprintf("odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/hot/%sHot.%s",
 		opts.plugin, opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)
-	if opts.release do s = strings.concatenate({s, " -o:speed"})
-	else do s = strings.concatenate({s, " -debug"})
-	cmd, _ := strings.split(s, " ")
+	if opts.release do cmd = strings.concatenate({cmd, " -o:speed"})
+	else do cmd = strings.concatenate({cmd, " -debug"})
 	err = exec(cmd)
 	if err != nil do fmt.println("Error executing hotload build")
 
 	// Code sign on mac
 	when ODIN_OS == .Darwin {
-		s = fmt.tprintf("codesign --force --sign - out/hot/%sHot.%s",
+		cmd = fmt.tprintf("codesign --force --sign - out/hot/%sHot.%s",
 			opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)
-		cmd, _ = strings.split(s, " ")
 		err = exec(cmd)
 		if err != nil do fmt.println("Error codesigning")
 	}
 }
 
 symlink_plugin :: proc() {
-
 }
 
 check_plugins :: proc() {
 	failures := make(map[string]string)
 	fail_count := 0
 	for plugin in plugin_list {
-		s := fmt.tprintf("odin check src/lindale --no-entry-point -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s", plugin)
-		cmd := strings.split(s, " ")
+		cmd := fmt.tprintf("odin check src/lindale --no-entry-point -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s", plugin)
 		ps: os.Process_State
-		e := exec(cmd[:], ps = &ps)
+		e := exec(cmd, ps = &ps)
 		if !ps.success {
 			fail_count += 1
 			fmt.println(plugin, "FAILED")
@@ -184,15 +171,14 @@ select_active :: proc() {
 		os.exit(1)
 	}
 
-plugin_id := `package bridge
+	plugin_id_dot_odin := `package bridge
 
 // Selects which plugin's vtable + state types are compiled in. The default
 // here is the source-of-truth. The build script 'select' mode rewrites this file.
 // Override one-off with -define:ACTIVE_PLUGIN=<name>.
 ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 `
-
-	formatted := fmt.tprintf(plugin_id, opts.plugin)
+	formatted := fmt.tprintf(plugin_id_dot_odin, opts.plugin)
 	err := os.write_entire_file("src/bridge/plugin_id.odin", transmute([]byte)formatted)
 	if err != nil {
 		fmt.println("Error writing plugin_id.odin", err)
@@ -200,10 +186,11 @@ ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 	}
 }
 
-exec :: proc(cmd: []string, working_dir: string = ".", ps: ^os.Process_State = nil) -> (err: os.Error) {
+exec :: proc(cmd: string, working_dir: string = ".", ps: ^os.Process_State = nil) -> (err: os.Error) {
+	cmd_split, e := strings.split(cmd, " ")
 	desc := os.Process_Desc{
 		working_dir = working_dir,
-		command = cmd,
+		command = cmd_split,
 		env = nil,
 		stdout = os.stdout,
 		stderr = os.stderr,
