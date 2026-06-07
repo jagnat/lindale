@@ -24,27 +24,7 @@
 			"name": "Build Hotload Plugin",
 			"working_dir": "${project_path}",
 			// "quiet": true,
-			"windows":
-			{
-				"shell_cmd": "build_hotload_plugin.bat"
-			},
-			"osx":
-			{
-				"shell_cmd": "sh ./build_hotload_plugin.command"
-			}
-		},
-		{
-			"name": "Odin Run Test Host",
-			"working_dir": "${project_path}",
-			"windows": {
-				"shell_cmd": "build_test_host.bat"
-			},
-			"linux": {
-				"shell_cmd": "sh build_test_host.sh"
-			},
-			"osx": {
-				"shell_cmd": "sh build_test_host.sh"
-			}
+			"shell_cmd": "odin run . -- hotbuild"
 		},
 		{
 			"name": "Check all plugins",

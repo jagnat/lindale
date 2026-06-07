@@ -6,7 +6,13 @@ import "../dsp"
 when b.ACTIVE_PLUGIN == "pokey" {
 
 MAX_CHANNELS :: 2
-POKEY_PURE_TONE :: u8(0xa0) // AUDC distortion field for a pure square wave
+POKEY_PURE_TONE :: u8(0xa0) // Pure square
+POKEY_BUZZY :: u8(0xc0) // Buzzy distorted 
+
+PokeyMode :: enum {
+	Pure,
+	Buzzy,
+}
 
 PokeyProcessState :: struct {
 	chip: dsp.Pokey,
@@ -14,15 +20,16 @@ PokeyProcessState :: struct {
 }
 
 PokeyControlState :: struct {
-
 }
 
 @(rodata) pokey_param_table := [?]b.ParamDescriptor {
 	{
-		name = "Test Param", short_name = "tp", min = 0, max = 100, default_value = 0,
-		unit = .Percentage, flags = {.Automatable},
+		name = "Pokey Mode", short_name = "mode", min = 0, max = 1, default_value = 0,
+		step_count = 1, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING
 	},
 }
+
+PARAM_MODE :: ParamIndex(0)
 
 pokey_get_plugin_descriptor :: proc() -> PluginDescriptor {
 	return {
@@ -48,14 +55,14 @@ pokey_audf_for_freq :: proc(freq: f32) -> u8 {
 	return u8(clamp(div, 0, 255))
 }
 
-pokey_note_on :: proc(state: ^PokeyProcessState, n: b.NoteOn) {
+pokey_note_on :: proc(state: ^PokeyProcessState, n: b.NoteOn, pokey_mode: u8) {
 	for c in 0 ..< dsp.POKEY_CHANNELS {
 		if state.note_channel[c] >= 0 do continue
 		state.note_channel[c] = n.note_id
 		audf := pokey_audf_for_freq(dsp.midi_to_freq(f32(n.pitch)))
 		vol := u8(clamp(n.velocity * 15, 0, 15))
 		dsp.pokey_write(&state.chip, dsp.PokeyReg(u8(c) * 2), audf)
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(u8(c) * 2 + 1), POKEY_PURE_TONE | vol)
+		dsp.pokey_write(&state.chip, dsp.PokeyReg(u8(c) * 2 + 1), pokey_mode | vol)
 		return
 	}
 }
@@ -81,9 +88,11 @@ pokey_process_audio :: proc(plug: ^PluginProcessor) {
 
 	it := make_block_iterator(actx.events, actx.numSamples)
 	for block in next_block(&it) {
+		advance_smoothers(actx, block.sample_offset)
+		mode := mode_from_param(smoothed_read(actx, PARAM_MODE))
 		for &evt in block.events {
 			#partial switch evt.kind {
-			case .NoteOn: pokey_note_on(state, evt.note_on)
+			case .NoteOn: pokey_note_on(state, evt.note_on, mode == .Pure? POKEY_PURE_TONE : POKEY_BUZZY)
 			case .NoteOff: pokey_note_off(state, evt.note_off)
 			}
 		}
@@ -96,9 +105,33 @@ pokey_process_audio :: proc(plug: ^PluginProcessor) {
 	}
 }
 
+mode_from_param :: proc(val: f32) -> PokeyMode {
+	idx := clamp(int(val + 0.5), 0, 1)
+	switch idx {
+	case 0: return .Pure
+	case 1: return .Buzzy
+	}
+	return .Pure
+}
+
 pokey_draw :: proc(plug: ^PluginController) {
-	draw_set_clear_color(plug.draw, ColorF32{0.2, 0.1, 0.2, 1})
+	draw_set_clear_color(plug.draw, ColorF32{0.2, 0.4, 0.2, 1})
 	draw_clear(plug.draw)
+
+	pokey_mode_enum_to_string :: proc(val: f64) -> string {
+		mode := mode_from_param(f32(val))
+		switch mode {
+			case .Pure: return "Pure"
+			case .Buzzy: return "Buzzy"
+		}
+		return ""
+	}
+
+	if ui_frame_scoped(plug.ui) {
+		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
+			ui_knob_param_labeled(plug.ui, PARAM_MODE, enum_to_string = pokey_mode_enum_to_string)
+		}
+	}
 
 	draw_submit(plug.draw)
 }
