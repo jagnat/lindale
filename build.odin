@@ -2,7 +2,6 @@ package build
 
 // Build 'script' for the project
 
-
 import "core:fmt"
 import "core:os"
 import "core:flags"
@@ -103,35 +102,77 @@ build_plugin :: proc () {
 		#assert(false, "Unsupported OS")
 	}
 
-	cmd := fmt.tprintf("odin build src/vst_host -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/%s.vst3/Contents/%s/%s.vst3",
-		opts.plugin, opts.plugin, subdir, opts.plugin)
-	if opts.release do cmd = strings.concatenate({cmd, " -o:speed"})
-	else do cmd = strings.concatenate({cmd, " -debug"})
-	// fmt.println(s)
+	// Make vst3 dir if not exist
+	os.make_directory_all(fmt.tprintf("out/%s.vst3/Contents/%s", opts.plugin, subdir))
+
+	cmd := fmt.tprintf("odin build src/vst_host -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/%s.vst3/Contents/%s/%s.vst3 %s",
+		opts.plugin, opts.plugin, subdir, opts.plugin, opts.release? "-o:speed" : "-debug")
+	if !opts.no_hot do cmd = strings.concatenate({cmd, " -define:HOT_DLL=true"})
 	err := exec(cmd)
 	if err != nil do fmt.println("Error executing vst3 build")
 
-	when ODIN_OS == .Darwin { // All the postbuild garbage I need to do on mac
+	if !opts.no_hot do build_hotloaded()
 
+	when ODIN_OS == .Darwin { // All the postbuild garbage I need to do on mac
+		// This is all to strip the .dylib suffix from the artifact (and debug symbols) because Odin automatically adds it
+		mac_contents_path := fmt.tprintf("out/%s.vst3/Contents/MacOS", opts.plugin)
+		// Move main DLL
+		os.rename(fmt.tprintf("%s/%s.vst3", mac_contents_path, opts.plugin), fmt.tprintf("%s/%s", mac_contents_path, opts.plugin))
+		// make renamed debug info directory
+		os.make_directory_all(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF", mac_contents_path, opts.plugin))
+		// copy dylib dsym into dwarf
+		os.copy_file(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF/%s", mac_contents_path, opts.plugin, opts.plugin),
+			fmt.tprintf("%s/%s.vst3.dSYM/Contents/Resources/DWARF/%s.vst3", mac_contents_path, opts.plugin, opts.plugin))
+		// rm original dylib dsym directory
+		os.remove_all(fmt.tprintf("%s/%s.vst3.DSYM", mac_contents_path, opts.plugin))
+		// Generate bundle Info.plist
+		// Todo: Make some more data here be dynamic (version no.?)
+bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>%s</string>
+	<key>CFBundleGetInfoString</key>
+	<string>%s 0.0.0</string>
+	<key>CFBundleIdentifier</key>
+	<string>quest.jagi.%s.vst3</string>
+	<key>CFBundleName</key>
+	<string>%s</string>
+	<key>CFBundleVersion</key>
+	<string>0.0.0</string>
+</dict>
+</plist>
+`
+		err = os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", opts.plugin),
+			fmt.tprintf(bundle_info, opts.plugin, opts.plugin, opts.plugin, opts.plugin))
+		if err != nil {
+			fmt.println("Failed to write info.plist!")
+			os.exit(1)
+		}
+		// Strip old metadata
+		exec(fmt.tprintf("xattr -cr out/%s.vst3", opts.plugin))
+		// Codesign bundle
+		exec(fmt.tprintf("codesign --deep --force --sign - out/%s.vst3/", opts.plugin))
+		// Set bundle bit
+		exec(fmt.tprintf("SetFile -a B out/%s.vst3", opts.plugin))
 	} else when ODIN_OS == .Windows {
 	}
-
-	// if !opts.no_hot do build_hotloaded()
 }
 
 build_hotloaded :: proc() {
 	// Create out/hot if not exist
-	err := os.make_directory("out/hot")
+	err := os.make_directory_all("out/hot")
 	if err != nil && err != .Exist {
 		fmt.println("Error creating hot directory", err)
 		os.exit(1)
 	}
 
 	// Build hot dll
-	cmd := fmt.tprintf("odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/hot/%sHot.%s",
-		opts.plugin, opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)
-	if opts.release do cmd = strings.concatenate({cmd, " -o:speed"})
-	else do cmd = strings.concatenate({cmd, " -debug"})
+	cmd := fmt.tprintf("odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/hot/%sHot.%s %s",
+		opts.plugin, opts.plugin, dynlib.LIBRARY_FILE_EXTENSION, opts.release ? "-o:speed" : "-debug")
 	err = exec(cmd)
 	if err != nil do fmt.println("Error executing hotload build")
 
@@ -187,7 +228,8 @@ ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 }
 
 exec :: proc(cmd: string, working_dir: string = ".", ps: ^os.Process_State = nil) -> (err: os.Error) {
-	cmd_split, e := strings.split(cmd, " ")
+	cmd_split, e := strings.fields(cmd)
+	fmt.println("CMD:", cmd_split)
 	desc := os.Process_Desc{
 		working_dir = working_dir,
 		command = cmd_split,
