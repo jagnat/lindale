@@ -18,13 +18,12 @@ Mode :: enum {
 
 opts : struct {
 	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check | select"`,
-	plugin: string `args:"pos=1" usage:"Specify plugin name to build`,
+	plugin: string `args:"pos=1" usage:"Specify plugin name to build"`,
 	release: bool `usage:"Specify a release build"`,
 	no_hot: bool `usage:"No hotloading"`,
 }
 
 plugin_list: map[string]bool
-bundle_dir: string
 
 main :: proc() {
 	flags.parse_or_exit(&opts, os.args)
@@ -105,11 +104,19 @@ build_plugin :: proc () {
 	// Make vst3 dir if not exist
 	os.make_directory_all(fmt.tprintf("out/%s.vst3/Contents/%s", opts.plugin, subdir))
 
-	cmd := fmt.tprintf("odin build src/vst_host -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/%s.vst3/Contents/%s/%s.vst3 %s",
-		opts.plugin, opts.plugin, subdir, opts.plugin, opts.release? "-o:speed" : "-debug")
-	if !opts.no_hot do cmd = strings.concatenate({cmd, " -define:HOT_DLL=true"})
-	err := exec(cmd)
-	if err != nil do fmt.println("Error executing vst3 build")
+	args := make([dynamic]string)
+	append(&args, "odin", "build", "src/vst_host",
+		fmt.tprintf("-define:ACTIVE_PLUGIN=%s", opts.plugin),
+		"-build-mode:dynamic",
+		fmt.tprintf("-out:out/%s.vst3/Contents/%s/%s.vst3", opts.plugin, subdir, opts.plugin),
+		opts.release ? "-o:speed" : "-debug")
+	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
+	when ODIN_OS == .Darwin {
+		append(&args, fmt.tprintf("-extra-linker-flags:-install_name @loader_path/%s", opts.plugin))
+	}
+	ps: os.Process_State
+	exec(args[:], ps = &ps)
+	if !ps.success do os.exit(1)
 
 	if !opts.no_hot do build_hotloaded()
 
@@ -124,7 +131,7 @@ build_plugin :: proc () {
 		os.copy_file(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF/%s", mac_contents_path, opts.plugin, opts.plugin),
 			fmt.tprintf("%s/%s.vst3.dSYM/Contents/Resources/DWARF/%s.vst3", mac_contents_path, opts.plugin, opts.plugin))
 		// rm original dylib dsym directory
-		os.remove_all(fmt.tprintf("%s/%s.vst3.DSYM", mac_contents_path, opts.plugin))
+		os.remove_all(fmt.tprintf("%s/%s.vst3.dSYM", mac_contents_path, opts.plugin))
 		// Generate bundle Info.plist
 		// Todo: Make some more data here be dynamic (version no.?)
 bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
@@ -146,20 +153,22 @@ bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>
 `
-		err = os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", opts.plugin),
+		err := os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", opts.plugin),
 			fmt.tprintf(bundle_info, opts.plugin, opts.plugin, opts.plugin, opts.plugin))
 		if err != nil {
 			fmt.println("Failed to write info.plist!")
 			os.exit(1)
 		}
 		// Strip old metadata
-		exec(fmt.tprintf("xattr -cr out/%s.vst3", opts.plugin))
+		exec({"xattr", "-cr", fmt.tprintf("out/%s.vst3", opts.plugin)})
 		// Codesign bundle
-		exec(fmt.tprintf("codesign --deep --force --sign - out/%s.vst3/", opts.plugin))
+		exec({"codesign", "--deep", "--force", "--sign", "-", fmt.tprintf("out/%s.vst3/", opts.plugin)})
 		// Set bundle bit
-		exec(fmt.tprintf("SetFile -a B out/%s.vst3", opts.plugin))
+		exec({"SetFile", "-a", "B", fmt.tprintf("out/%s.vst3", opts.plugin)})
 	} else when ODIN_OS == .Windows {
 	}
+
+	symlink_plugin()
 }
 
 build_hotloaded :: proc() {
@@ -171,30 +180,66 @@ build_hotloaded :: proc() {
 	}
 
 	// Build hot dll
-	cmd := fmt.tprintf("odin build src/lindale -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s -no-entry-point -build-mode:dynamic -out:out/hot/%sHot.%s %s",
-		opts.plugin, opts.plugin, dynlib.LIBRARY_FILE_EXTENSION, opts.release ? "-o:speed" : "-debug")
-	err = exec(cmd)
-	if err != nil do fmt.println("Error executing hotload build")
+	ps: os.Process_State
+	exec({
+		"odin", "build", "src/lindale",
+		"-define:HOT_DLL=true",
+		fmt.tprintf("-define:ACTIVE_PLUGIN=%s", opts.plugin),
+		"-build-mode:dynamic",
+		fmt.tprintf("-out:out/hot/%sHot.%s", opts.plugin, dynlib.LIBRARY_FILE_EXTENSION),
+		opts.release ? "-o:speed" : "-debug",
+	}, ps = &ps)
+	if !ps.success do os.exit(1)
 
 	// Code sign on mac
 	when ODIN_OS == .Darwin {
-		cmd = fmt.tprintf("codesign --force --sign - out/hot/%sHot.%s",
-			opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)
-		err = exec(cmd)
-		if err != nil do fmt.println("Error codesigning")
+		exec({"codesign", "--force", "--sign", "-", fmt.tprintf("out/hot/%sHot.%s", opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)})
 	}
 }
 
 symlink_plugin :: proc() {
+	cwd, err := os.get_working_directory(context.allocator)
+	if err != nil {
+		fmt.println("Failed to get working directory!")
+		os.exit(1)
+	}
+
+	when ODIN_OS == .Darwin {
+		home := os.get_env("HOME", context.allocator)
+		// -sfn flags replace a stale/dangling link in place, so switching plugins self-heals
+		vst3_link := fmt.tprintf("%s/Library/Audio/Plug-Ins/VST3/%s.vst3", home, opts.plugin)
+		exec({"ln", "-sfn", fmt.tprintf("%s/out/%s.vst3", cwd, opts.plugin), vst3_link})
+		fmt.println("Linked", vst3_link)
+
+		runtime_dir := fmt.tprintf("%s/Library/Application Support/jagi/%s", home, opts.plugin)
+		os.make_directory_all(runtime_dir)
+		exec({"ln", "-sfn", fmt.tprintf("%s/out/hot", cwd), fmt.tprintf("%s/hot", runtime_dir)})
+		fmt.println("Linked", fmt.tprintf("%s/hot", runtime_dir))
+	} else when ODIN_OS == .Windows {
+		// Junctions (/J flag) need no admin, unlike symlinks
+		// The rmdir drops stale junction first
+		vst3_dir := fmt.tprintf("%s\\Programs\\Common\\VST3", os.get_env("LOCALAPPDATA", context.allocator))
+		os.make_directory_all(vst3_dir)
+		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\%s.vst3", vst3_dir, opts.plugin)})
+		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\%s.vst3", vst3_dir, opts.plugin), fmt.tprintf("%s\\out\\%s.vst3", cwd, opts.plugin)})
+
+		runtime_dir := fmt.tprintf("%s\\jagi\\%s", os.get_env("APPDATA", context.allocator), opts.plugin)
+		os.make_directory_all(runtime_dir)
+		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\hot", runtime_dir)})
+		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\hot", runtime_dir), fmt.tprintf("%s\\out\\hot", cwd)})
+	}
 }
 
 check_plugins :: proc() {
-	failures := make(map[string]string)
 	fail_count := 0
 	for plugin in plugin_list {
-		cmd := fmt.tprintf("odin check src/lindale --no-entry-point -define:HOT_DLL=true -define:ACTIVE_PLUGIN=%s", plugin)
 		ps: os.Process_State
-		e := exec(cmd, ps = &ps)
+		exec({
+			"odin", "check", "src/lindale",
+			"-no-entry-point",
+			"-define:HOT_DLL=true",
+			fmt.tprintf("-define:ACTIVE_PLUGIN=%s", plugin),
+		}, ps = &ps)
 		if !ps.success {
 			fail_count += 1
 			fmt.println(plugin, "FAILED")
@@ -203,7 +248,7 @@ check_plugins :: proc() {
 		}
 	}
 	if fail_count != 0 do fmt.println(fail_count, "plugin(s) failed.")
-	else do fmt.println("All plugins built successfully.")
+	else do fmt.println("All plugins succeed checking.")
 }
 
 select_active :: proc() {
@@ -227,12 +272,11 @@ ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 	}
 }
 
-exec :: proc(cmd: string, working_dir: string = ".", ps: ^os.Process_State = nil) -> (err: os.Error) {
-	cmd_split, e := strings.fields(cmd)
-	fmt.println("CMD:", cmd_split)
+exec :: proc(args: []string, ps: ^os.Process_State = nil) -> (err: os.Error) {
+	fmt.println("CMD:", args)
 	desc := os.Process_Desc{
-		working_dir = working_dir,
-		command = cmd_split,
+		working_dir = ".",
+		command = args,
 		env = nil,
 		stdout = os.stdout,
 		stderr = os.stderr,
