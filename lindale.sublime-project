@@ -10,33 +10,17 @@
 		{
 			"name": "Build Plugin",
 			"working_dir": "${project_path}",
-			// "quiet": true,
-			"windows":
-			{
-				"shell_cmd": "build_plugin.bat"
-			},
-			"osx":
-			{
-				"shell_cmd": "sh ./build_plugin.command"
-			}
+			"shell_cmd": "odin run . -- build"
 		},
 		{
 			"name": "Build Hotload Plugin",
 			"working_dir": "${project_path}",
-			// "quiet": true,
 			"shell_cmd": "odin run . -- hotbuild"
 		},
 		{
 			"name": "Check all plugins",
 			"working_dir": "${project_path}",
-			"windows":
-			{
-				"shell_cmd": "check_all_plugins.bat",
-			},
-			"osx":
-			{
-				"shell_cmd": "sh ./check_all_plugins.command",
-			}
+			"shell_cmd": "odin run . -- check"
 		},
 		{
 			"name": "Odin test",

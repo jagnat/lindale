@@ -273,7 +273,7 @@ ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 }
 
 exec :: proc(args: []string, ps: ^os.Process_State = nil) -> (err: os.Error) {
-	fmt.println("CMD:", args)
+	// fmt.println("CMD:", args)
 	desc := os.Process_Desc{
 		working_dir = ".",
 		command = args,
