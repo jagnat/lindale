@@ -6,8 +6,9 @@ import "../dsp"
 when b.ACTIVE_PLUGIN == "pokey" {
 
 MAX_CHANNELS :: 2
-POKEY_PURE_TONE :: u8(0xa0) // Pure square
-POKEY_BUZZY :: u8(0xc0) // Buzzy distorted 
+POKEY_PURE_TONE :: dsp.AUDC_SQUARE | dsp.AUDC_NO_POLY5_DIST // Pure square
+POKEY_BUZZY :: dsp.AUDC_NOISE_POLY4 | dsp.AUDC_NO_POLY5_DIST // Buzzy distorted
+// POKEY_
 
 PokeyMode :: enum {
 	Pure,
@@ -55,11 +56,26 @@ pokey_audf_for_freq :: proc(freq: f32) -> u8 {
 	return u8(clamp(div, 0, 255))
 }
 
+// TODO: Broken I think
+pokey_audf_for_freq_buzzy :: proc(freq: f32) -> u8 {
+	if freq <= 0 do return 255
+	target := 64000.0 / (15 * f64(freq)) - 1
+	base := int(clamp(target + 0.5, 0, 255))
+	for d in 0 ..= 255 {
+		lo := base - d
+		hi := base + d
+		if lo >= 0 && (lo + 1) % 3 != 0 && (lo + 1) % 5 != 0 do return u8(lo)
+		if hi <= 255 && (hi + 1) % 3 != 0 && (hi + 1) % 5 != 0 do return u8(hi)
+	}
+	return u8(base)
+}
+
 pokey_note_on :: proc(state: ^PokeyProcessState, n: b.NoteOn, pokey_mode: u8) {
 	for c in 0 ..< dsp.POKEY_CHANNELS {
 		if state.note_channel[c] >= 0 do continue
 		state.note_channel[c] = n.note_id
-		audf := pokey_audf_for_freq(dsp.midi_to_freq(f32(n.pitch)))
+		freq := dsp.midi_to_freq(f32(n.pitch))
+		audf := pokey_mode == POKEY_BUZZY ? pokey_audf_for_freq_buzzy(freq) : pokey_audf_for_freq(freq)
 		vol := u8(clamp(n.velocity * 15, 0, 15))
 		dsp.pokey_write(&state.chip, dsp.PokeyReg(u8(c) * 2), audf)
 		dsp.pokey_write(&state.chip, dsp.PokeyReg(u8(c) * 2 + 1), pokey_mode | vol)
@@ -115,7 +131,7 @@ mode_from_param :: proc(val: f32) -> PokeyMode {
 }
 
 pokey_draw :: proc(plug: ^PluginController) {
-	draw_set_clear_color(plug.draw, ColorF32{0.2, 0.4, 0.2, 1})
+	draw_set_clear_color(plug.draw, plug.ui.theme.bgColor)
 	draw_clear(plug.draw)
 
 	pokey_mode_enum_to_string :: proc(val: f64) -> string {
@@ -128,7 +144,7 @@ pokey_draw :: proc(plug: ^PluginController) {
 	}
 
 	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
+		if ui_panel(plug.ui, skipDraw = true, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
 			ui_knob_param_labeled(plug.ui, PARAM_MODE, enum_to_string = pokey_mode_enum_to_string)
 		}
 	}
@@ -137,7 +153,6 @@ pokey_draw :: proc(plug: ^PluginController) {
 }
 
 pokey_setup_controller :: proc(plug: ^PluginController) {
-
 }
 
 pokey_setup_processor :: proc(plug: ^PluginProcessor) {

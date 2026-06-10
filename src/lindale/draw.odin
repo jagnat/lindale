@@ -52,9 +52,15 @@ DrawContext :: struct {
 	clearColor: ColorF32,
 }
 
-draw_set_clear_color :: proc(ctx: ^DrawContext, color: ColorF32) {
+draw_set_clear_color_F32 :: proc(ctx: ^DrawContext, color: ColorF32) {
 	ctx.clearColor = color
 }
+
+draw_set_clear_color_U8 :: proc(ctx: ^DrawContext, color: ColorU8) {
+	ctx.clearColor = ColorF32_from_ColorU8(color)
+}
+
+draw_set_clear_color :: proc {draw_set_clear_color_F32, draw_set_clear_color_U8}
 
 draw_default_params :: proc(ctx: ^DrawContext) -> RectDrawBatchParams {
 	return RectDrawBatchParams{

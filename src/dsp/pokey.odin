@@ -94,12 +94,42 @@ pokey_fill_poly :: proc(out: []u8, n: uint, taps: u32) {
 	}
 }
 
+pokey_fill_poly4 :: proc(out: []u8) {
+	p: u32
+	for i in 0..<len(out) {
+		p = (p >> 1) + (~((p << 2) ~ (p << 3)) & 8)
+		out[i] = u8(p & 1)
+	}
+}
+
+pokey_fill_poly5 :: proc(out: []u8) {
+	p: u32
+	for i in 0..<len(out) {
+		p = (p >> 1) + (~((p << 2) ~ (p << 4)) & 16)
+		out[i] = u8(p & 1)
+	}
+}
+pokey_fill_poly9 :: proc(out: []u8) {
+	p: u32
+	for i in 0..<len(out) {
+		p = (p >> 1) + (~((p << 8) ~ (p << 3)) & 0x100)
+		out[i] = u8(p & 1)
+	}
+}
+pokey_fill_poly17 :: proc(out: []u8) {
+	p: u32
+	for i in 0..<len(out) {
+		p = (p >> 1) + (~((p << 16) ~ (p << 11)) & 0x10000)
+		out[i] = u8((p >> 8) & 1)
+	}
+}
+
 pokey_generate_polys :: proc() {
 	if pokey_polys_ready do return
-	pokey_fill_poly(pokey_poly4[:], 4, 0x9) // x^4 + x^3 + 1
-	pokey_fill_poly(pokey_poly5[:], 5, 0x5) // x^5 + x^2 + 1
-	pokey_fill_poly(pokey_poly9[:], 9, 0x11) // x^9 + x^4 + 1
-	pokey_fill_poly(pokey_poly17[:], 17, 0x9) // x^17 + x^3 + 1
+	pokey_fill_poly4(pokey_poly4[:])
+	pokey_fill_poly5(pokey_poly5[:])
+	pokey_fill_poly9(pokey_poly9[:])
+	pokey_fill_poly17(pokey_poly17[:])
 	pokey_polys_ready = true
 }
 
@@ -244,11 +274,12 @@ poly_ones :: proc(s: []u8) -> int {
 @(test)
 test_pokey_poly_maximal_length :: proc(t: ^testing.T) {
 	pokey_generate_polys()
-	// A maximal-length n-bit LFSR emits exactly 2^(n-1) ones over its 2^n-1 period.
-	testing.expect_value(t, poly_ones(pokey_poly4[:]), 8)
-	testing.expect_value(t, poly_ones(pokey_poly5[:]), 16)
-	testing.expect_value(t, poly_ones(pokey_poly9[:]), 256)
-	testing.expect_value(t, poly_ones(pokey_poly17[:]), 65536)
+	// POKEY's polys are XNOR LFSRs, so the all-ones state is excluded and each emits
+	// 2^(n-1)-1 ones over its 2^n-1 period (the bit-complement of a plain m-sequence).
+	testing.expect_value(t, poly_ones(pokey_poly4[:]), 7)
+	testing.expect_value(t, poly_ones(pokey_poly5[:]), 15)
+	testing.expect_value(t, poly_ones(pokey_poly9[:]), 255)
+	testing.expect_value(t, poly_ones(pokey_poly17[:]), 65535)
 }
 
 @(test)
