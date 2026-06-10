@@ -6,14 +6,14 @@ Lindalë is a VST3 audio plugin framework in Odin (Mac + Windows), built around 
 
 ## Build Commands
 
-Use the `.bat` scripts on Windows, `.command` on Mac.
+Run `build.odin`: `odin run . -- <mode> [plugin] [flags]`. Modes:
 
-- `build_plugin.*` — full VST3 plugin + hot-reloadable DLL. Outputs `out/Lindale.vst3/` and `out/hot/LindaleHot.(dll|dylib)`.
-- `build_hotload_plugin.*` — only the hot-reloadable code. Use this during dev.
+- `hotbuild` — rebuild only the hot-reloadable DLL. Use this during dev.
+- `build` — full VST3 plugin + hot DLL, then symlinks into the system VST3 folder.
+- `check` — `odin check` every plugin.
+- `select <plugin>` — set the active plugin in `src/bridge/plugin_id.odin`.
 
-Symlink `out/Lindale.vst3` into the system VST3 folder:
-- **Mac:** `~/Library/Audio/Plug-Ins/VST3`
-- **Windows:** `C:\Program Files\Common Files\VST3`
+Flags: `--release` (else `-debug`), `--no-hot`.
 
 ## Style
 
