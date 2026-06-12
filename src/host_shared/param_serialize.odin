@@ -1,4 +1,4 @@
-package platform
+package host_shared
 
 import "core:encoding/json"
 import "core:log"

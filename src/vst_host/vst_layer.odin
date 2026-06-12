@@ -27,6 +27,7 @@ import vm "core:mem/virtual"
 
 import "../thirdparty/vst3"
 
+import hs "../host_shared"
 import lin "../lindale"
 import plat "../platform_specific"
 import "../bridge"
@@ -99,8 +100,8 @@ when ODIN_OS == .Darwin {
 
 deinit :: proc() {
 	log.info("Deinitializing")
-	hotload_deinit()
-	mutex_log_exit()
+	hs.hotload_deinit()
+	hs.mutex_log_exit()
 }
 
 LindaleProcessor :: struct {
@@ -202,7 +203,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 	processor.connectionPoint.lpVtbl = &processor.connectionPointVtable
 
 	processor.ctx = context
-	processor.ctx.logger = get_mutex_logger(.Processor)
+	processor.ctx.logger = hs.get_mutex_logger(.Processor)
 
 	// Init params, and append bypass parameter
 	descs := pluginApi.get_plugin_descriptor().params
@@ -410,13 +411,13 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		defer delete(data)
 		bytes_read: i32
 		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
-		deserialize_params(processor.paramDescs, &processor.paramValues, data[:bytes_read])
+		hs.deserialize_params(processor.paramDescs, &processor.paramValues, data[:bytes_read])
 		return vst3.kResultOk
 	}
 	lp_comp_getState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
-		data, ok := serialize_params(processor.paramDescs, &processor.paramValues)
+		data, ok := hs.serialize_params(processor.paramDescs, &processor.paramValues)
 		if !ok do return vst3.kResultFalse
 		defer delete(data)
 		written: i32
@@ -647,7 +648,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 						// TODO: Some hosts send pitch bend via NoteExpression instead of legacy MIDI.
 						// May need IMidiMapping or NoteExpressionValueEvent for full host compatibility.
 						if vst3Event.midiCCOut.controlNumber == 128 {
-							// Pitch bend — pack 14-bit value from two 7-bit bytes
+							// Pack 14-bit value from two 7-bit bytes for pitch bend
 							raw := i32(u8(vst3Event.midiCCOut.value)) | (i32(u8(vst3Event.midiCCOut.value2)) << 7)
 							normalized := clamp(f32(raw - 8192) / 8192.0, -1, 1)
 							bridgeEvents[actualCount] = {
@@ -684,7 +685,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 			}
 		}
 
-		gen := hotload_generation()
+		gen := hs.hotload_generation()
 		if gen != processor.lastGeneration {
 			processor.hostCtx.generation = gen
 			processor.lastGeneration = gen
@@ -940,7 +941,7 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.connectionPoint.lpVtbl = &controller.connectionPointVtable
 
 	controller.ctx = context
-	controller.ctx.logger = get_mutex_logger(.Controller)
+	controller.ctx.logger = hs.get_mutex_logger(.Controller)
 
 	// Init params, and append bypass parameter
 	descs := pluginApi.get_plugin_descriptor().params
@@ -1085,7 +1086,7 @@ createLindaleController :: proc () -> ^LindaleController {
 		defer delete(data)
 		bytes_read: i32
 		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
-		deserialize_params(controller.paramDescs, &controller.paramValues, data[:bytes_read])
+		hs.deserialize_params(controller.paramDescs, &controller.paramValues, data[:bytes_read])
 		return vst3.kResultOk
 	}
 	lc_ec_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
@@ -1353,7 +1354,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 	if elapsed < MIN_FRAME_INTERVAL do return
 
 	// Check for hot-reload generation change
-	gen := hotload_generation()
+	gen := hs.hotload_generation()
 	if gen != view.controller.lastGeneration {
 		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
@@ -1373,7 +1374,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 	if view.renderer == nil do return
 
 	// Check for hot-reload generation change
-	gen := hotload_generation()
+	gen := hs.hotload_generation()
 	if gen != view.controller.lastGeneration {
 		view.controller.hostCtx.generation = gen
 		view.controller.lastGeneration = gen
@@ -1653,8 +1654,8 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	mutex_log_init(get_config().runtimeFolderPath, bridge.ACTIVE_PLUGIN)
-	context.logger = get_mutex_logger(.PluginFactory)
+	hs.mutex_log_init(hs.get_config().runtimeFolderPath, bridge.ACTIVE_PLUGIN)
+	context.logger = hs.get_mutex_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
 
@@ -1742,7 +1743,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 				processor := createLindaleProcessor()
 
 				// init
-				hotload_init()
+				hs.hotload_init()
 
 				if vst3.is_same_tuid(&vst3.iid_IComponent, iid) {
 					log.debug("CreateInstance iComponent")
@@ -1768,7 +1769,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 				controller := createLindaleController()
 
 				// init
-				hotload_init()
+				hs.hotload_init()
 
 				if vst3.is_same_tuid(&vst3.iid_IEditController, iid) {
 					log.info("CreateInstance editController")
@@ -1886,7 +1887,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 		pluginFactory.vtablePtr.lpVtbl = &pluginFactory.vtable
 
 		pluginFactory.ctx = context
-		pluginApi = hotload_api()
+		pluginApi = hs.hotload_api()
 		pluginFactory.desc = pluginApi.get_plugin_descriptor()
 
 		patch_cid_for_plugin(&lindaleProcessorCid, bridge.ACTIVE_PLUGIN)

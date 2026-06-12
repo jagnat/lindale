@@ -1,4 +1,4 @@
-package platform
+package host_shared
 
 import plat "../platform_specific"
 import b "../bridge"

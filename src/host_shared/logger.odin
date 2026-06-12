@@ -1,4 +1,4 @@
-package platform
+package host_shared
 
 import "base:runtime"
 import "base:intrinsics"

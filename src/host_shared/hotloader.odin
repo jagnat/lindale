@@ -1,4 +1,4 @@
-package platform
+package host_shared
 
 // import "core:os"
 import "core:c/libc"
