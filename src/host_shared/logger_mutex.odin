@@ -12,9 +12,14 @@ import "core:log"
 import "core:os"
 import "core:testing"
 
+// Logging enabled for debug and disabled for release, but can be
+// enabled for release using -define:LINDALE_LOG=true
+LOG_ENABLED :: #config(LINDALE_LOG, ODIN_DEBUG)
+
 // Interface
 
 mutex_log_init :: proc(log_folder: string, log_name: string) {
+	when !LOG_ENABLED do return
 	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) do return
 
 	// Timestamp file prefix
@@ -49,6 +54,7 @@ mutex_log_exit :: proc() {
 }
 
 get_mutex_logger :: proc(source: LogSource) -> runtime.Logger {
+	when !LOG_ENABLED do return log.nil_logger()
 	return runtime.Logger{
 		mutex_logger_proc,
 		transmute(rawptr)source,

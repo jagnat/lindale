@@ -142,8 +142,8 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 			accum = accum * rms_decay + s * s * rms_input_gain
 			mono_buf[i] += s * inv_chan
 		}
-		plug.state.peak_follow[c] = m
-		plug.state.rms_accum[c] = accum
+		plug.state.peak_follow[c] = dsp.flush_denormal(m)
+		plug.state.rms_accum[c] = dsp.flush_denormal(accum)
 		intrinsics.atomic_store_explicit(&plug.state.peak[c], m, .Release)
 		intrinsics.atomic_store_explicit(&plug.state.rms[c], math.sqrt(accum), .Release)
 	}
@@ -185,7 +185,7 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 
 	fft_buf := make([]complex64, FFT_SIZE, allocator=context.temp_allocator)
 
-	{ // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
+	if a.num_channels >= 2 { // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
 		end := min(
 			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0]),
 			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[1]),
@@ -193,6 +193,11 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		nl := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
 		nr := dsp.ring_read_window(&plug.processor_peer.state.rings[1], end, a.goniometer_trail[1][:])
 		a.goniometer_trail_count = min(nl, nr)
+	} else { // If mono, ring[1] is never written, so mirror L into R
+		end := dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0])
+		n := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
+		copy(a.goniometer_trail[1][:], a.goniometer_trail[0][:])
+		a.goniometer_trail_count = n
 	}
 
 	// FFT: snapshot the latest FFT_SIZE samples of each ring

@@ -3,6 +3,13 @@ package dsp
 import "core:math"
 import "core:testing"
 
+// Flush IIR/accumulator state that has decayed toward zero, before it enters the
+// f32 denormal range (~1.18e-38) and stalls the audio thread. 1e-30 is far below
+// any audible level.
+flush_denormal :: #force_inline proc(x: f32) -> f32 {
+	return x if abs(x) > 1e-30 else 0
+}
+
 // Conversions
 
 db_to_linear :: proc(db: f32) -> f32 {
