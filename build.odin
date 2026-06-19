@@ -25,8 +25,13 @@ opts : struct {
 
 plugin_list: map[string]bool
 
+// Used for mac only rn
+sign_identity: string
+
 main :: proc() {
 	flags.parse_or_exit(&opts, os.args)
+
+	sign_identity = os.get_env("LINDALE_SIGN_IDENTITY", context.allocator)
 
 	verify_plugin()
 
@@ -125,13 +130,16 @@ build_plugin :: proc () {
 		mac_contents_path := fmt.tprintf("out/%s.vst3/Contents/MacOS", opts.plugin)
 		// Move main DLL
 		os.rename(fmt.tprintf("%s/%s.vst3", mac_contents_path, opts.plugin), fmt.tprintf("%s/%s", mac_contents_path, opts.plugin))
-		// make renamed debug info directory
-		os.make_directory_all(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF", mac_contents_path, opts.plugin))
-		// copy dylib dsym into dwarf
-		os.copy_file(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF/%s", mac_contents_path, opts.plugin, opts.plugin),
-			fmt.tprintf("%s/%s.vst3.dSYM/Contents/Resources/DWARF/%s.vst3", mac_contents_path, opts.plugin, opts.plugin))
-		// rm original dylib dsym directory
-		os.remove_all(fmt.tprintf("%s/%s.vst3.dSYM", mac_contents_path, opts.plugin))
+		// Release builds (-o:speed) emit no dSYM, so the rename/copy is pointless
+		if !opts.release {
+			// make renamed debug info directory
+			os.make_directory_all(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF", mac_contents_path, opts.plugin))
+			// copy dylib dsym into dwarf
+			os.copy_file(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF/%s", mac_contents_path, opts.plugin, opts.plugin),
+				fmt.tprintf("%s/%s.vst3.dSYM/Contents/Resources/DWARF/%s.vst3", mac_contents_path, opts.plugin, opts.plugin))
+			// rm original dylib dsym directory
+			os.remove_all(fmt.tprintf("%s/%s.vst3.dSYM", mac_contents_path, opts.plugin))
+		}
 		// Generate bundle Info.plist
 		// Todo: Make some more data here be dynamic (version no.?)
 bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
@@ -162,9 +170,10 @@ bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
 		// Strip old metadata
 		exec({"xattr", "-cr", fmt.tprintf("out/%s.vst3", opts.plugin)})
 		// Codesign bundle
-		exec({"codesign", "--deep", "--force", "--sign", "-", fmt.tprintf("out/%s.vst3/", opts.plugin)})
+		codesign(fmt.tprintf("out/%s.vst3", opts.plugin))
 		// Set bundle bit
 		exec({"SetFile", "-a", "B", fmt.tprintf("out/%s.vst3", opts.plugin)})
+		if opts.release && sign_identity != "" do darwin_notarize_bundle()
 	} else when ODIN_OS == .Windows {
 	}
 
@@ -193,7 +202,7 @@ build_hotloaded :: proc() {
 
 	// Code sign on mac
 	when ODIN_OS == .Darwin {
-		exec({"codesign", "--force", "--sign", "-", fmt.tprintf("out/hot/%sHot.%s", opts.plugin, dynlib.LIBRARY_FILE_EXTENSION)})
+		codesign(fmt.tprintf("out/hot/%sHot.%s", opts.plugin, dynlib.LIBRARY_FILE_EXTENSION))
 	}
 }
 
@@ -269,6 +278,47 @@ ACTIVE_PLUGIN :: #config(ACTIVE_PLUGIN, "%s")
 	if err != nil {
 		fmt.println("Error writing plugin_id.odin", err)
 		os.exit(1)
+	}
+}
+
+when ODIN_OS == .Darwin {
+	codesign :: proc(path: string) {
+		args := make([dynamic]string)
+		append(&args, "codesign", "--force")
+		if opts.release && sign_identity != "" {
+			// Hardened runtime + secure timestamp are notarization prerequisites
+			append(&args, "--options", "runtime", "--timestamp", "--sign", sign_identity)
+		} else {
+			append(&args, "--sign", "-")
+		}
+		append(&args, path)
+		ps: os.Process_State
+		exec(args[:], ps = &ps)
+		if !ps.success {
+			fmt.println("Codesign failed for", path)
+			os.exit(1)
+		}
+	}
+
+	darwin_notarize_bundle :: proc() {
+		profile := os.get_env("LINDALE_NOTARY_PROFILE", context.allocator)
+		if profile == "" {
+			fmt.println("LINDALE_NOTARY_PROFILE unset, skipping notarization")
+			return
+		}
+		bundle := fmt.tprintf("out/%s.vst3", opts.plugin)
+		zip := fmt.tprintf("out/%s.vst3.zip", opts.plugin)
+		// notarytool only accepts a zip/dmg/pkg, never a bare bundle
+		exec({"ditto", "-c", "-k", "--keepParent", bundle, zip})
+		ps: os.Process_State
+		exec({"xcrun", "notarytool", "submit", zip, "--keychain-profile", profile, "--wait"}, ps = &ps)
+		os.remove(zip)
+		if !ps.success {
+			fmt.println("Notarization failed")
+			os.exit(1)
+		}
+		// Staple the ticket so the bundle validates offline
+		exec({"xcrun", "stapler", "staple", bundle})
 	}
 }
 
