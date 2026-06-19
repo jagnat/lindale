@@ -517,9 +517,12 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return false
 
-	// Set contentsScale before acquiring drawable so it's at native resolution
+	// contentsScale and drawableSize need to be in lock-step.
+	// A cross-DPI screen change updates one but not the other, stranding the drawable at the old pixel count
 	scaleFactor := get_backing_scale_factor(renderer)
 	intrinsics.objc_send(nil, renderer.layer, "setContentsScale:", F.Float(scaleFactor))
+	bounds := intrinsics.objc_send(F.Rect, renderer.view, "bounds")
+	renderer.layer->setDrawableSize(F.Size{bounds.size.width * F.Float(scaleFactor), bounds.size.height * F.Float(scaleFactor)})
 
 	renderer.currentDrawable = renderer.layer->nextDrawable()
 	if renderer.currentDrawable == nil {
