@@ -1,6 +1,5 @@
 package dsp
 
-import "core:math/bits"
 import "core:testing"
 
 POKEY_CHANNELS :: 4
@@ -78,21 +77,6 @@ Pokey :: struct {
 @(private) pokey_poly9: [511]u8
 @(private) pokey_poly17: [131071]u8
 @(private) pokey_polys_ready: bool
-
-// Fibonacci LFSR. The tap masks below are primitive polynomials, so each sequence
-// is maximal-length (period 2^n-1).
-// TODO: match Altirra's exact bit ordering/phase so timbre lines up, not just the
-// statistics — the maximal-length test only pins the latter.
-@(private)
-pokey_fill_poly :: proc(out: []u8, n: uint, taps: u32) {
-	mask := (u32(1) << n) - 1
-	state := mask // any nonzero seed
-	for i in 0 ..< len(out) {
-		out[i] = u8(state & 1)
-		fb := u32(bits.count_ones(state & taps) & 1)
-		state = ((state >> 1) | (fb << (n - 1))) & mask
-	}
-}
 
 pokey_fill_poly4 :: proc(out: []u8) {
 	p: u32
@@ -174,14 +158,14 @@ pokey_update_output :: proc(p: ^Pokey, c: int) {
 		// Skip sampling if poly-5 distortion is enabled and the current poly-5 bit is 0
 		if audc & AUDC_NO_POLY5_DIST == 0 && pokey_poly5[p.poly5_pos] == 0 do return
 
-		// Handle waveforms - square, poly-4 or poly-9/poly-17 noise
+		// Pure tone toggles the flip-flop, vs noise modes sample-and-hold the poly bit
 		if audc & AUDC_SQUARE != 0 {
 			p.out_flip[c] = !p.out_flip[c]
 		} else if audc & AUDC_NOISE_POLY4 != 0 {
-			if pokey_poly4[p.poly4_pos] != 0 do p.out_flip[c] = !p.out_flip[c]
+			p.out_flip[c] = pokey_poly4[p.poly4_pos] != 0
 		} else {
 			noise := p.audctl & AUDCTL_POLY9 != 0 ? pokey_poly9[p.poly9_17_pos] : pokey_poly17[p.poly9_17_pos]
-			if noise != 0 do p.out_flip[c] = !p.out_flip[c]
+			p.out_flip[c] = noise != 0
 		}
 	}
 }
@@ -203,16 +187,30 @@ pokey_tick :: proc(p: ^Pokey) {
 
 		// loop through channels
 		for c in 0..<4 {
-			audf := p.audf[c]
-			audc := p.audc[c]
-			counter := p.counter[c]
+			join_lo := (c == 0 && p.audctl & AUDCTL_JOIN_12 != 0) || (c == 2 && p.audctl & AUDCTL_JOIN_34 != 0)
+			join_hi := (c == 1 && p.audctl & AUDCTL_JOIN_12 != 0) || (c == 3 && p.audctl & AUDCTL_JOIN_34 != 0)
+			if join_hi do continue // clocked by lo borrow
 			use_fast_clock := (c == 0 && p.audctl & AUDCTL_CH1_FAST != 0) || (c == 2 && p.audctl & AUDCTL_CH3_FAST != 0)
 			// If neither fast clock being used, nor a tick happened
 			if !use_fast_clock && !slow_clock_tick do continue
 
 			p.counter[c] -= 1
-			if p.counter[c] <= 0 {
-				p.counter[c] = i32(audf) + i32(use_fast_clock ? POKEY_OFFSET_FAST : POKEY_OFFSET_BASE)
+			if p.counter[c] > 0 do continue
+
+			if join_lo {
+				// link offset lands on the lo byte: AUDF16+7 cycles fast, AUDF16+1 slow ticks
+				pokey_update_output(p, c)
+				hi := c + 1
+				p.counter[hi] -= 1
+				if p.counter[hi] <= 0 {
+					p.counter[hi] = i32(p.audf[hi]) + 1
+					p.counter[c] = i32(p.audf[c]) + i32(use_fast_clock ? POKEY_OFFSET_LINK : POKEY_OFFSET_BASE)
+					pokey_update_output(p, hi)
+				} else {
+					p.counter[c] = 256
+				}
+			} else {
+				p.counter[c] = i32(p.audf[c]) + i32(use_fast_clock ? POKEY_OFFSET_FAST : POKEY_OFFSET_BASE)
 				pokey_update_output(p, c)
 			}
 		}
@@ -222,8 +220,8 @@ pokey_tick :: proc(p: ^Pokey) {
 }
 
 // Current digital DAC code in roughly [0,1], before the analog stage. Sums the four
-// channels; a channel in volume-only mode contributes its volume regardless of flip.
-// TODO: nonlinear / saturating DAC sum instead of this linear placeholder.
+// channels. A channel in volume-only mode contributes its volume regardless of flip.
+// TODO: nonlinear / saturating DAC sum
 pokey_sample :: proc(p: ^Pokey) -> f32 {
 	#no_bounds_check {
 		sum: f32
@@ -280,6 +278,99 @@ test_pokey_poly_maximal_length :: proc(t: ^testing.T) {
 	testing.expect_value(t, poly_ones(pokey_poly5[:]), 15)
 	testing.expect_value(t, poly_ones(pokey_poly9[:]), 255)
 	testing.expect_value(t, poly_ones(pokey_poly17[:]), 65535)
+}
+
+// Ticks until out_flip[c] has toggled a few times, returns main-clock cycles between
+// the last two toggles. -1 if the channel never settled into flipping.
+@(private)
+pokey_flip_period :: proc(p: ^Pokey, c: int, max_ticks: int) -> int {
+	prev := p.out_flip[c]
+	last := -1
+	period := -1
+	flips := 0
+	for t in 0 ..< max_ticks {
+		pokey_tick(p)
+		if p.out_flip[c] != prev {
+			prev = p.out_flip[c]
+			if flips > 0 do period = t - last
+			last = t
+			flips += 1
+			if flips >= 4 do break
+		}
+	}
+	return period
+}
+
+// Expected periods from Altirra's RecomputeTimerPeriod: (AUDF+1)*28 slow, (AUDF+1)*114
+// at 15kHz, AUDF+4 fast, AUDF16+7 linked fast, (AUDF16+1)*28 linked slow
+@(test)
+test_pokey_timer_periods :: proc(t: ^testing.T) {
+	p: Pokey
+
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC1, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF1, 10)
+	testing.expect_value(t, pokey_flip_period(&p, 0, 4000), 11 * 28)
+
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC1, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF1, 10)
+	pokey_write(&p, .AUDCTL, AUDCTL_CLOCK_15)
+	testing.expect_value(t, pokey_flip_period(&p, 0, 10000), 11 * 114)
+
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC1, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF1, 10)
+	pokey_write(&p, .AUDCTL, AUDCTL_CH1_FAST)
+	testing.expect_value(t, pokey_flip_period(&p, 0, 200), 14)
+}
+
+// Dist C output must equal the poly4 bit sampled at each borrow (sample-and-hold),
+// not a poly-gated toggle. The gated toggle sits ~an octave high with the wrong
+// pulse rhythm
+@(test)
+test_pokey_distc_sample_and_hold :: proc(t: ^testing.T) {
+	p: Pokey
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC1, AUDC_NOISE_POLY4 | AUDC_NO_POLY5_DIST | 8)
+	pokey_write(&p, .AUDF1, 0)
+	pokey_write(&p, .AUDCTL, AUDCTL_CH1_FAST)
+	ref: [15]u8
+	pokey_fill_poly4(ref[:])
+	for _ in 0 ..< 600 {
+		pokey_tick(&p)
+		if p.counter[0] == 4 { // just reloaded, output sampled this tick
+			testing.expect_value(t, p.out_flip[0], ref[p.poly4_pos] != 0)
+		}
+	}
+}
+
+@(test)
+test_pokey_linked_timer_periods :: proc(t: ^testing.T) {
+	p: Pokey
+	audf16 := 0x010E
+
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC2, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF1, u8(audf16 & 0xff))
+	pokey_write(&p, .AUDF2, u8(audf16 >> 8))
+	pokey_write(&p, .AUDCTL, AUDCTL_JOIN_12 | AUDCTL_CH1_FAST)
+	testing.expect_value(t, pokey_flip_period(&p, 1, 4000), audf16 + 7)
+
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC2, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF1, u8(audf16 & 0xff))
+	pokey_write(&p, .AUDF2, u8(audf16 >> 8))
+	pokey_write(&p, .AUDCTL, AUDCTL_JOIN_12)
+	testing.expect_value(t, pokey_flip_period(&p, 1, 60000), (audf16 + 1) * 28)
+
+	// same chain on the 3/4 pair
+	pokey_init(&p, .NTSC)
+	pokey_write(&p, .AUDC4, AUDC_SQUARE | AUDC_NO_POLY5_DIST)
+	pokey_write(&p, .AUDF3, u8(audf16 & 0xff))
+	pokey_write(&p, .AUDF4, u8(audf16 >> 8))
+	pokey_write(&p, .AUDCTL, AUDCTL_JOIN_34 | AUDCTL_CH3_FAST)
+	testing.expect_value(t, pokey_flip_period(&p, 3, 4000), audf16 + 7)
 }
 
 @(test)
