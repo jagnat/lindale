@@ -31,6 +31,7 @@ Flags: `--release` (else `-debug`), `--no-hot`.
 - Section headers stay plain: `// Renderer lifecycle`. No boxes or separator lines.
 - `// TODO:` for incomplete work — not hedges like "if needed".
 - Minimal punctuation. No trailing periods unless multiple sentences.
+- ASCII only. No non-ASCII symbols (no √, ², ×, →, etc.) — write `sqrt`, `^2`, `x`, `->`.
 
 ## Architecture (summary)
 

@@ -35,6 +35,10 @@ AGC_TARGET_FILL :: f32(0.8) // peak |z| mapped to this fraction of canvas radius
 AGC_NOISE_FLOOR :: f32(0.05) // below this, gain saturates so silence stays a dot
 AGC_RELEASE :: f32(0.04) // smoothing toward larger gains (quieter signal); ~400 ms at 60 fps
 
+// Decay numbers for plugin bypass
+INACTIVE_THRESHOLD_SEC :: f32(0.15)
+INACTIVE_TRAIL_DECAY :: f32(0.85)
+
 ScopeyProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
 	rings: [MAX_CHANNELS]dsp.RingBuffer,
@@ -83,6 +87,10 @@ AnalysisFrame :: struct {
 	hilbert_trail_count: int,
 
 	agc_gain: f32, // instant attack, slow release
+	gonio_gain: f32, // goniometer-specific AGC from peak sqrt(L^2+R^2)
+
+	last_analytic_pos: int, // last seen processor analytic write position
+	silence_age: f32, // seconds since the processor last produced samples
 }
 
 @(rodata) scopey_param_table := [?]b.ParamDescriptor {
@@ -166,11 +174,29 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	actx := plug.processor_peer.audioProcessor
 	a.sample_rate = f32(actx.sampleRate)
 	a.num_channels = min(actx.numChannels, MAX_CHANNELS)
-
-	// Meters: pull the audio-thread's latest published scalars.
 	dt := plug.frameDt
+
+	// The analytic ring advances on every process call. If it hasn't for a while, the host has
+	// stopped processing (bypass/disable) and we decay the display to rest
+	analytic_pos := dsp.ring_get_write_pos(&plug.processor_peer.state.analytic_ring)
+	if analytic_pos != a.last_analytic_pos {
+		a.last_analytic_pos = analytic_pos
+		a.silence_age = 0
+	} else {
+		a.silence_age += dt
+	}
+	active := a.silence_age < INACTIVE_THRESHOLD_SEC
+
+	// Meters: pull the audio-thread's latest published scalars, or release toward 0 when inactive.
+	meter_release := math.pow(f32(10), -(METER_RELEASE_DB_PER_SEC * dt) / 20)
 	for c in 0 ..< a.num_channels {
-		a.peak[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.peak[c], .Acquire)
+		if active {
+			a.peak[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.peak[c], .Acquire)
+			a.rms[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.rms[c], .Acquire)
+		} else {
+			a.peak[c] *= meter_release
+			a.rms[c] *= meter_release
+		}
 		if a.peak[c] >= a.peak_hold[c] {
 			a.peak_hold[c] = a.peak[c]
 			a.peak_hold_age[c] = 0
@@ -180,12 +206,13 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 				a.peak_hold[c] *= math.pow(f32(10), -(PEAK_HOLD_FALL_DB_PER_SEC * dt) / 20)
 			}
 		}
-		a.rms[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.rms[c], .Acquire)
 	}
 
 	fft_buf := make([]complex64, FFT_SIZE, allocator=context.temp_allocator)
 
-	if a.num_channels >= 2 { // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
+	if !active { // shrink the frozen figure away rather than re-snapshotting stale rings
+		a.goniometer_trail_count = int(f32(a.goniometer_trail_count) * INACTIVE_TRAIL_DECAY)
+	} else if a.num_channels >= 2 { // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
 		end := min(
 			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0]),
 			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[1]),
@@ -198,10 +225,31 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		n := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
 		copy(a.goniometer_trail[1][:], a.goniometer_trail[0][:])
 		a.goniometer_trail_count = n
+
+		// Goniometer AGC
+		gonio_peak2: f32 = 0
+		for k in 0 ..< a.goniometer_trail_count {
+			l := a.goniometer_trail[0][k]
+			r := a.goniometer_trail[1][k]
+			m2 := l * l + r * r
+			if m2 > gonio_peak2 do gonio_peak2 = m2
+		}
+		target_gain := AGC_TARGET_FILL / max(math.sqrt(gonio_peak2), AGC_NOISE_FLOOR)
+		if target_gain < a.gonio_gain {
+			a.gonio_gain = target_gain
+		} else {
+			a.gonio_gain += (target_gain - a.gonio_gain) * AGC_RELEASE
+		}
 	}
 
 	// FFT: snapshot the latest FFT_SIZE samples of each ring
 	for c in 0 ..< a.num_channels {
+		if !active { // decay smoothed magnitudes toward the floor
+			for i in 1 ..< FFT_SIZE / 2 {
+				a.fft_smooth_db[c][i] = SMOOTH_ALPHA * DB_FLOOR + (1 - SMOOTH_ALPHA) * a.fft_smooth_db[c][i]
+			}
+			continue
+		}
 		time_slice: [FFT_SIZE]f32
 		n := dsp.ring_read_latest(&plug.processor_peer.state.rings[c], time_slice[:])
 		if n < FFT_SIZE {
@@ -241,12 +289,18 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	}
 
 	// AGC
-	peak := math.sqrt(peak2)
-	target_gain := AGC_TARGET_FILL / max(peak, AGC_NOISE_FLOOR)
-	if target_gain < a.agc_gain {
-		a.agc_gain = target_gain
-	} else {
-		a.agc_gain += (target_gain - a.agc_gain) * AGC_RELEASE
+	if pairs > 0 {
+		peak := math.sqrt(peak2)
+		target_gain := AGC_TARGET_FILL / max(peak, AGC_NOISE_FLOOR)
+		if target_gain < a.agc_gain {
+			a.agc_gain = target_gain
+		} else {
+			a.agc_gain += (target_gain - a.agc_gain) * AGC_RELEASE
+		}
+	}
+
+	if !active { // shrink the frozen trail away instead of holding it
+		a.hilbert_trail_count = int(f32(a.hilbert_trail_count) * INACTIVE_TRAIL_DECAY)
 	}
 }
 
@@ -378,7 +432,7 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 	draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
 	draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
 
-	scale := radius * a.agc_gain
+	scale := radius * a.gonio_gain
 
 	n := a.goniometer_trail_count
 	if n >= 2 {
@@ -519,6 +573,7 @@ scopey_draw :: proc(plug: ^PluginController) {
 	a := &plug.state.analysis
 
 	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	// draw_set_clear_color(plug.draw, ColorF32{ 0, 1, 0, 1})
 	draw_clear(plug.draw)
 
 	if ui_frame_scoped(plug.ui) {
@@ -549,6 +604,7 @@ scopey_setup_controller :: proc(plug: ^PluginController) {
 		}
 	}
 	plug.state.analysis.agc_gain = 1
+	plug.state.analysis.gonio_gain = 1
 }
 
 scopey_setup_processor :: proc(plug: ^PluginProcessor) {
