@@ -190,6 +190,8 @@ dc_blocker_process_buf :: proc(d: ^DCBlocker, buf: []Sample) {
 	for &s in buf {
 		s = dc_blocker_process(d, s)
 	}
+	d.y1 = flush_denormal(d.y1)
+	d.x1 = flush_denormal(d.x1)
 }
 
 // State variable filter — Cytomic/Andrew Simper topology
