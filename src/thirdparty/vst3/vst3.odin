@@ -178,7 +178,7 @@ kPlatformTypeX11EmbedWindowID :: "X11EmbedWindowID"
 // View type
 ViewType_kEditor :: "editor"
 
-IProcessContextRequirementsFlagSet :: bit_set[IProcessContextRequirementsFlags]
+IProcessContextRequirementsFlagSet :: bit_set[IProcessContextRequirementsFlags; u32]
 IProcessContextRequirementsFlags :: enum u32 {
 	NeedSystemTime           = 0,
 	NeedContinousTimeSamples = 1,
@@ -193,7 +193,7 @@ IProcessContextRequirementsFlags :: enum u32 {
 	NeedTransportState       = 10,
 }
 
-ParameterFlagSet :: bit_set[ParameterFlags]
+ParameterFlagSet :: bit_set[ParameterFlags; i32]
 ParameterFlags :: enum i32 {
 	kCanAutomate     = 0,
 	kIsReadOnly      = 1,
@@ -340,7 +340,7 @@ Chord :: struct {
 	rootNote: u8,
 	chordMask: i16,
 }
-ProcessingStatesFlagsSet :: bit_set[ProcessingStatesFlags]
+ProcessingStatesFlagsSet :: bit_set[ProcessingStatesFlags; u32]
 ProcessingStatesFlags :: enum u32 {
 	kPlaying = 1,
 	kCycleActive = 2,
