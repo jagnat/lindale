@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          release: dev-2026-05
+
+      # Type-checks every plugin in src/lindale (build.odin check mode)
+      - name: Check plugins
+        run: odin run . -- check
+
+      - name: Test dsp
+        run: odin test src/dsp
+
+      - name: Test lindale
+        run: odin test src/lindale
