@@ -62,6 +62,13 @@ linear_to_decibels_f32 :: proc(linear: f32) -> f32 {
 
 linear_to_decibels :: proc { linear_to_decibels_f64, linear_to_decibels_f32 }
 
+// interpolates through p1..p2, with p0 and p3 as neighbor tangents
+catmull_rom :: #force_inline proc(p0, p1, p2, p3: Vec2f, t: f32) -> Vec2f {
+	t2 := t * t
+	t3 := t2 * t
+	return 0.5 * (p1 * 2 + (p2 - p0) * t + (p0 * 2 - p1 * 5 + p2 * 4 - p3) * t2 + (p1 * 3 - p0 - p2 * 3 + p3) * t3)
+}
+
 collide_vec2_rect :: proc(v: Vec2f, r: RectF32) -> bool {
 	return v.x >= r.x && v.x <= r.x + r.w &&
 		v.y >= r.y && v.y <= r.y + r.h

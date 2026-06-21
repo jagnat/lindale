@@ -225,8 +225,9 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		n := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
 		copy(a.goniometer_trail[1][:], a.goniometer_trail[0][:])
 		a.goniometer_trail_count = n
+	}
 
-		// Goniometer AGC
+	if active { // Goniometer AGC over the freshly snapshotted trail (mono or stereo)
 		gonio_peak2: f32 = 0
 		for k in 0 ..< a.goniometer_trail_count {
 			l := a.goniometer_trail[0][k]
@@ -367,22 +368,55 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 
 	cols :[]ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
 
-	pts := make([]Vec2f, FFT_SIZE / 2, context.temp_allocator)
+	// Interpolate between bins using catmull-rom when bins are at least SMOOTH_MIN_BIN_PX apart
+	SMOOTH_MIN_BIN_PX :: f32(3)
+	SMOOTH_SEG_PX :: f32(3) // px of horizontal span per tessellated curve segment
+	max_i := FFT_SIZE / 2 - 1
+	bin_hz := a.sample_rate / fft_size
+	ln10 := f32(2.302585092994046)
+	y_lo := bounds.y
+	y_hi := bounds.y + bounds.h
+	unit_density_freq := bounds.w * bin_hz / (log_span * ln10)
+	smooth_freq := clamp(unit_density_freq / SMOOTH_MIN_BIN_PX, FMIN, FMAX)
+
 	for c in 0 ..< a.num_channels {
-		n := 0
-		for i in 1 ..< FFT_SIZE / 2 { // skip DC
-			freq := f32(i) * a.sample_rate / fft_size
+		pts := make([dynamic]Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
+
+		// For low freqs, catmull-rom through the bins up to the threshold
+		lf := make([dynamic]Vec2f, 0, 256, context.temp_allocator)
+		for i in 1 ..= max_i {
+			freq := f32(i) * bin_hz
 			if freq < FMIN do continue
-			if freq > FMAX do break
-			db := a.fft_smooth_db[c][i]
+			if freq > smooth_freq do break
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
-			if n == 0 do x = bounds.x // snap first plotted bin to the left edge (bin 1 slightly past fmin=10)
-			t := clamp((db - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1)
-			y := bounds.y + bounds.h * (1 - t)
-			pts[n] = {x, y}
-			n += 1
+			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
+			append(&lf, Vec2f{x, y})
 		}
-		if n >= 2 do draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1.4, color = cols[c],)
+		for k in 0 ..< max(len(lf) - 1, 0) {
+			p0 := lf[max(k - 1, 0)]
+			p1 := lf[k]
+			p2 := lf[k + 1]
+			p3 := lf[min(k + 2, len(lf) - 1)]
+			segs := max(int(abs(p2.x - p1.x) / SMOOTH_SEG_PX), 1)
+			for s in 0 ..< segs {
+				pt := catmull_rom(p0, p1, p2, p3, f32(s) / f32(segs))
+				pt.y = clamp(pt.y, y_lo, y_hi)
+				append(&pts, pt)
+			}
+		}
+		if len(lf) > 0 do append(&pts, lf[len(lf) - 1])
+
+		// For high freqs, raw one point per bin (overdraw)
+		for i in 1 ..= max_i {
+			freq := f32(i) * bin_hz
+			if freq <= smooth_freq do continue
+			if freq > FMAX do break
+			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
+			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
+			append(&pts, Vec2f{x, y})
+		}
+
+		if len(pts) >= 2 do draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = cols[c])
 	}
 }
 
