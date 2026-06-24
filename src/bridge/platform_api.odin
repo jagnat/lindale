@@ -61,7 +61,7 @@ DrawInstance :: struct #packed {
 	borderWidth: f32,
 	shapeParam: f32, // Rect: cornerRad. Pill/Arc: thickness.
 	noTexture: f32,
-	mode: u32,
+	mode: ShaderMode,
 	extra0: f32, // Arc: radius.
 	extra1: f32,
 }

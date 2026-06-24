@@ -173,7 +173,7 @@ draw_push_pill :: proc(ctx: ^DrawContext, p0, p1: Vec2f, thickness: f32, color: 
 		borderWidth = border_width,
 		shapeParam = thickness,
 		noTexture  = 1,
-		mode       = u32(ShaderMode.Pill),
+		mode       = ShaderMode.Pill,
 	}
 	curBatch := draw_get_current_batch(ctx)
 	draw_add_instance_to_batch(ctx, curBatch, instance)
@@ -191,7 +191,7 @@ draw_push_arc :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, start_angle
 		borderWidth = border_width,
 		shapeParam  = thickness,
 		noTexture   = 1,
-		mode        = u32(ShaderMode.Arc),
+		mode        = ShaderMode.Arc,
 		extra0      = radius,
 	}
 	curBatch := draw_get_current_batch(ctx)
