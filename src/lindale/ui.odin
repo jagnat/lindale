@@ -326,7 +326,7 @@ ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orienta
 }
 
 ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .VERTICAL
@@ -340,7 +340,7 @@ ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_
 }
 
 ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .HORIZONTAL
@@ -364,7 +364,7 @@ ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
 }
 
 ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .HORIZONTAL
@@ -388,7 +388,7 @@ ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, alignX: A
 }
 
 ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skipDraw = true}
 	comp.direction = .VERTICAL
@@ -404,7 +404,7 @@ ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_st
 // Returns the width of the widest possible formatted value string for a parameter.
 // Used to pre-size value labels so they don't change width as the value changes.
 ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) -> f32 {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
 	maxWidth: f32 = 0
 
@@ -429,7 +429,7 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
                              enum_to_string: proc(val: f64) -> string = nil,
                              alignX: AlignX = .CENTER) {
-	desc := param_table[param_idx]
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	maxW := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
 	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, buf, enum_to_string)
@@ -440,14 +440,14 @@ ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
 ui_param_get_normalized :: proc(ctx: ^UIContext, idx: ParamIndex) -> f32 {
 	inst := ctx.plugin.host
 	if inst == nil || inst.params == nil do return 0
-	return f32(b.param_to_normalized(inst.params.values[idx], param_table[idx]))
+	return f32(b.param_to_normalized(inst.params.values[idx], plugin_api().get_plugin_descriptor().params[idx]))
 }
 
 @(private="file")
 ui_param_set_normalized :: proc(ctx: ^UIContext, idx: ParamIndex, norm: f32) {
 	inst := ctx.plugin.host
 	if inst != nil && inst.params != nil {
-		inst.params.values[idx] = b.normalized_to_param(f64(norm), param_table[idx])
+		inst.params.values[idx] = b.normalized_to_param(f64(norm), plugin_api().get_plugin_descriptor().params[idx])
 	}
 	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
 		inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(idx), f64(norm))
@@ -502,7 +502,8 @@ binding_reset_to_default :: proc(ctx: ^UIContext, binding: ValueBinding) {
 	if pb, ok := binding.(ParamBinding); ok {
 		idx := pb.param_idx
 		ui_param_begin_edit(ctx, idx)
-		default_normalized := f32(b.param_to_normalized(param_table[idx].default_value, param_table[idx]))
+		params := plugin_api().get_plugin_descriptor().params
+		default_normalized := f32(b.param_to_normalized(params[idx].default_value, params[idx]))
 		ui_param_set_normalized(ctx, pb.param_idx, default_normalized)
 		ui_param_end_edit(ctx, idx)
 	}

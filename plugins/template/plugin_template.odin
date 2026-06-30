@@ -1,25 +1,15 @@
-package lindale
+package template
 
-import b "../bridge"
+import l "../../src/framework"
 
-when b.ACTIVE_PLUGIN == "template" {
-
-TemplateProcessState :: struct {
-
-}
-
-TemplateControlState :: struct {
-
-}
-
-@(rodata) template_param_table := [?]b.ParamDescriptor {
+@(rodata) template_param_table := [?]l.ParamDescriptor {
 	{
 		name = "Test Param", short_name = "tp", min = 0, max = 100, default_value = 0,
 		unit = .Percentage, flags = {.Automatable},
 	},
 }
 
-template_get_plugin_descriptor :: proc() -> PluginDescriptor {
+template_get_plugin_descriptor :: proc() -> l.PluginDescriptor {
 	return {
 		name = "Template",
 		vendor = "JagI",
@@ -34,26 +24,26 @@ template_get_plugin_descriptor :: proc() -> PluginDescriptor {
 	}
 }
 
-template_process_audio :: proc(plug: ^PluginProcessor) {
+template_process_audio :: proc(plug: ^l.PluginProcessor) {
 
 }
 
-template_draw :: proc(plug: ^PluginController) {
-	draw_set_clear_color(plug.draw, ColorF32{0.2, 0.1, 0.2, 1})
-	draw_clear(plug.draw)
+template_draw :: proc(plug: ^l.PluginController) {
+	l.draw_set_clear_color(plug.draw, l.ColorF32{0.2, 0.1, 0.2, 1})
+	l.draw_clear(plug.draw)
 
-	draw_submit(plug.draw)
+	l.draw_submit(plug.draw)
 }
 
-template_setup_controller :: proc(plug: ^PluginController) {
-
+template_setup_controller :: proc(plug: ^l.PluginController) -> rawptr {
+	return nil
 }
 
-template_setup_processor :: proc(plug: ^PluginProcessor) {
-
+template_setup_processor :: proc(plug: ^l.PluginProcessor) -> rawptr {
+	return nil
 }
 
-template_api :: PluginApi {
+template_api :: l.PluginApi {
 	get_plugin_descriptor = template_get_plugin_descriptor,
 	process_audio         = template_process_audio,
 	draw                  = template_draw,
@@ -68,5 +58,3 @@ template_api :: PluginApi {
 	get_tail_samples      = nil,
 	reset                 = nil,
 }
-
-} // when block

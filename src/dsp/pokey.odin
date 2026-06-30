@@ -254,6 +254,36 @@ pokey_render :: proc(p: ^Pokey, out: []f32, sample_rate: f64) {
 
 }
 
+// Tick several POKEY chips in lockstep and box-sum decimate their summed output to
+// the host sample_rate, mono. All banks share one main clock, so banks[0] carries the
+// fractional tick accumulator for the whole group
+pokey_render_mix :: proc(banks: []Pokey, out: []f32, sample_rate: f64) {
+	if len(banks) == 0 do return
+	#no_bounds_check {
+		ticks_per_sample := banks[0].main_clock / sample_rate
+		for i in 0 ..< len(out) {
+			banks[0].tick_accum += ticks_per_sample
+			sum: f32
+			count: int
+			for banks[0].tick_accum >= 1 {
+				for &b in banks {
+					pokey_tick(&b)
+					sum += pokey_sample(&b)
+				}
+				count += 1
+				banks[0].tick_accum -= 1
+			}
+			if count > 0 {
+				out[i] = sum / f32(count)
+			} else {
+				s: f32
+				for &b in banks do s += pokey_sample(&b)
+				out[i] = s
+			}
+		}
+	}
+}
+
 PokeyAnalog :: struct {
 	// TODO: output high-pass / DC block, machine-specific low-pass, drive/saturation
 }

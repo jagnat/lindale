@@ -75,7 +75,7 @@ MetalRenderer :: struct {
 // Obj-C class names are a process-global namespace. Suffix with the plugin
 // token so two Lindale plugins loaded into one host process don't collide
 // when registering the class. A duplicate registration crashes the host.
-METAL_VIEW_CLASS :: "LindaleMetalView_" + bridge.ACTIVE_PLUGIN
+METAL_VIEW_CLASS :: "LindaleMetalView_" + "asdfasdf"
 
 // NSView subclass with CAMetalLayer
 @(objc_implement,

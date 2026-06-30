@@ -5,6 +5,13 @@ import "core:time"
 import b "../bridge"
 import dsp "../dsp"
 
+foreign {
+	@(link_name="lindale_get_plugin_api")
+	plugin_api :: proc() -> PluginApi ---
+}
+
+ParamDescriptor :: b.ParamDescriptor
+
 ParameterChange :: struct {
 	sampleOffset: i32,
 	value: f64,
@@ -62,9 +69,9 @@ PluginProcessor :: struct {
 	// Lin
 	controller_peer: ^PluginController,
 
-	// User code state
+	// User code state allocated by plugin
 	// Will get reset (through setup_processor) on hotreload
-	state: ^PluginProcessState,
+	state: rawptr,
 	audioProcessor: ^AudioProcessContext,
 }
 
@@ -73,9 +80,9 @@ PluginController :: struct {
 
 	processor_peer: ^PluginProcessor,
 
-	// User code state
+	// User code state allocated by plugin
 	// Will get reset (through setup_controller) on hotreload
-	state: ^PluginControlState,
+	state: rawptr,
 
 	draw: ^DrawContext,
 	ui: ^UIContext,
@@ -127,22 +134,23 @@ when HOT_DLL {
 // Required procs: just pass through to the plugin vtable
 
 framework_get_plugin_descriptor :: proc() -> PluginDescriptor {
-	return active_plugin_api.get_plugin_descriptor()
+	return plugin_api().get_plugin_descriptor()
 }
 
 framework_process_audio :: proc(plug: ^PluginProcessor) {
-	if active_plugin_api.process_audio != nil do active_plugin_api.process_audio(plug)
+	if plugin_api().process_audio != nil do plugin_api().process_audio(plug)
 }
 
 framework_draw :: proc(plug: ^PluginController) {
-	if active_plugin_api.draw != nil do active_plugin_api.draw(plug)
+	if plugin_api().draw != nil do plugin_api().draw(plug)
 }
 
 // Optional procs: framework does its own work, then delegates if the plugin opted in.
 
-framework_setup_controller :: proc(plug: ^PluginController) {
-	plug.state = new(PluginControlState, plug.host.session_allocator)
-	if active_plugin_api.setup_controller != nil do active_plugin_api.setup_controller(plug)
+framework_setup_controller :: proc(plug: ^PluginController) -> rawptr {
+	plug.state = nil
+	if plugin_api().setup_controller != nil do plug.state = plugin_api().setup_controller(plug)
+	return plug.state
 }
 
 framework_view_attached :: proc(plug: ^PluginController) {
@@ -157,31 +165,29 @@ framework_view_attached :: proc(plug: ^PluginController) {
 		plug.ui = new(UIContext)
 		plug.ui.plugin = plug
 	}
-	if active_plugin_api.view_attached != nil do active_plugin_api.view_attached(plug)
+	if plugin_api().view_attached != nil do plugin_api().view_attached(plug)
 }
 
 framework_view_removed :: proc(plug: ^PluginController) {
 	if plug.draw != nil {
 		font_invalidate_texture(&plug.draw.fontState)
 	}
-	if active_plugin_api.view_removed != nil do active_plugin_api.view_removed(plug)
+	if plugin_api().view_removed != nil do plugin_api().view_removed(plug)
 }
 
 framework_view_resized :: proc(plug: ^PluginController, rect: RectI32) {
 	plug.viewBounds = rect
-	if active_plugin_api.view_resized != nil do active_plugin_api.view_resized(plug, rect)
+	if plugin_api().view_resized != nil do plugin_api().view_resized(plug, rect)
 }
 
-framework_setup_processor :: proc(plug: ^PluginProcessor) {
+framework_setup_processor :: proc(plug: ^PluginProcessor) -> rawptr {
 	actx := plug.audioProcessor
-	if actx == nil do return
-	if plug.host == nil do return
+	if actx == nil do return nil
+	if plug.host == nil do return nil
 
-	desc := active_plugin_api.get_plugin_descriptor()
+	desc := plugin_api().get_plugin_descriptor()
 	sr := f32(actx.sampleRate)
 	alloc := plug.host.session_allocator
-
-	plug.state = new(PluginProcessState, alloc)
 
 	// Allocate smoothers based on param table
 	actx.smoothers = make([]dsp.Smoother, len(desc.params), alloc)
@@ -204,20 +210,21 @@ framework_setup_processor :: proc(plug: ^PluginProcessor) {
 	actx.outputs = make([][]f32, desc.max_channels, alloc)
 	actx.inputs = make([][]f32, desc.max_channels, alloc)
 
-	if active_plugin_api.setup_processor != nil do active_plugin_api.setup_processor(plug)
+	if plugin_api().setup_processor != nil do plug.state = plugin_api().setup_processor(plug)
+	return plug.state
 }
 
 framework_get_latency_samples :: proc(plug: ^PluginProcessor) -> u32 {
-	return active_plugin_api.get_latency_samples(plug) if active_plugin_api.get_latency_samples != nil else 0
+	return plugin_api().get_latency_samples(plug) if plugin_api().get_latency_samples != nil else 0
 }
 
 framework_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
-	return active_plugin_api.get_tail_samples(plug) if active_plugin_api.get_tail_samples != nil else 0
+	return plugin_api().get_tail_samples(plug) if plugin_api().get_tail_samples != nil else 0
 }
 
 framework_reset :: proc(plug: ^PluginProcessor) {
 	if plug.state == nil do return
-	if active_plugin_api.reset != nil do active_plugin_api.reset(plug)
+	if plugin_api().reset != nil do plugin_api().reset(plug)
 	if plug.audioProcessor != nil {
 		for &s in plug.audioProcessor.smoothers {
 			dsp.smoother_reset(&s)
@@ -236,7 +243,7 @@ resolve_view_config :: proc(v: ViewConfig) -> (cfg: ViewConfig) {
 // Lifecycle (not hot loaded)
 
 plugin_init_processor :: proc(plugin: ^PluginProcessor) {
-	desc := active_plugin_api.get_plugin_descriptor()
+	desc := plugin_api().get_plugin_descriptor()
 	if plugin.audioProcessor == nil {
 		plugin.audioProcessor = new(AudioProcessContext)
 	}
@@ -246,7 +253,7 @@ plugin_init_processor :: proc(plugin: ^PluginProcessor) {
 }
 
 plugin_init_controller :: proc(plugin: ^PluginController) {
-	desc := active_plugin_api.get_plugin_descriptor()
+	desc := plugin_api().get_plugin_descriptor()
 	param_init(desc.params)
 }
 

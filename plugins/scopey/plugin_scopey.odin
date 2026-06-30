@@ -1,14 +1,19 @@
-package lindale
+package scopey
 
 import "base:intrinsics"
 import "core:fmt"
 import "core:math"
 import "core:log"
-import b "../bridge"
-import "../dsp"
-import dit "../thirdparty/uFFT_DIT"
+import lin "../../src/lindale"
+import b "../../src/bridge"
+import "../../src/dsp"
+import dit "../../src/thirdparty/uFFT_DIT"
 
-when b.ACTIVE_PLUGIN == "scopey" {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> lin.PluginApi {
+	return scopey_api
+}
+
 
 FFT_SIZE :: 4096
 RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot read
@@ -96,7 +101,7 @@ AnalysisFrame :: struct {
 @(rodata) scopey_param_table := [?]b.ParamDescriptor {
 }
 
-scopey_get_plugin_descriptor :: proc() -> PluginDescriptor {
+scopey_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
 	return {
 		name = "Scopey",
 		vendor = "JagI",
@@ -105,7 +110,7 @@ scopey_get_plugin_descriptor :: proc() -> PluginDescriptor {
 		params = scopey_param_table[:],
 		max_channels = MAX_CHANNELS,
 
-		view = ViewConfig {
+		view = lin.ViewConfig {
 			default_width = 640,
 			default_height = 480,
 			resizable = true,
@@ -113,11 +118,12 @@ scopey_get_plugin_descriptor :: proc() -> PluginDescriptor {
 	}
 }
 
-scopey_process_audio :: proc(plug: ^PluginProcessor) {
+scopey_process_audio :: proc(plug: ^lin.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
 	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	state := cast(^ScopeyProcessState)plug.state
 
 	n := actx.numSamples
 	num_channels := min(actx.numChannels, MAX_CHANNELS)
@@ -139,33 +145,35 @@ scopey_process_audio :: proc(plug: ^PluginProcessor) {
 
 		blocked_buf: [RING_SIZE]f32
 		copy(blocked_buf[:n], actx.inputs[c][:n])
-		dsp.dc_blocker_process_buf(&plug.state.dc_blockers[c], blocked_buf[:n])
-		dsp.ring_write_buf(&plug.state.rings[c], blocked_buf[:n])
+		dsp.dc_blocker_process_buf(&state.dc_blockers[c], blocked_buf[:n])
+		dsp.ring_write_buf(&state.rings[c], blocked_buf[:n])
 
-		m := plug.state.peak_follow[c]
-		accum := plug.state.rms_accum[c]
+		m := state.peak_follow[c]
+		accum := state.rms_accum[c]
 		for i in 0 ..< n {
 			s := blocked_buf[i]
 			m = max(abs(s), m * meter_release)
 			accum = accum * rms_decay + s * s * rms_input_gain
 			mono_buf[i] += s * inv_chan
 		}
-		plug.state.peak_follow[c] = dsp.flush_denormal(m)
-		plug.state.rms_accum[c] = dsp.flush_denormal(accum)
-		intrinsics.atomic_store_explicit(&plug.state.peak[c], m, .Release)
-		intrinsics.atomic_store_explicit(&plug.state.rms[c], math.sqrt(accum), .Release)
+		state.peak_follow[c] = dsp.flush_denormal(m)
+		state.rms_accum[c] = dsp.flush_denormal(accum)
+		intrinsics.atomic_store_explicit(&state.peak[c], m, .Release)
+		intrinsics.atomic_store_explicit(&state.rms[c], math.sqrt(accum), .Release)
 	}
 
 	// Mono signal -> Hilbert FIR -> interleaved (r, im) pairs into the analytic ring.
 	for i in 0 ..< n {
-		r, im := dsp.hilbert_fir_process(&plug.state.hilbert_fir, mono_buf[i])
+		r, im := dsp.hilbert_fir_process(&state.hilbert_fir, mono_buf[i])
 		pair := [2]f32{r, im}
-		dsp.ring_write_buf(&plug.state.analytic_ring, pair[:])
+		dsp.ring_write_buf(&state.analytic_ring, pair[:])
 	}
 }
 
-scopey_run_analysis :: proc(plug: ^PluginController) {
-	a := &plug.state.analysis
+scopey_run_analysis :: proc(plug: ^lin.PluginController) {
+	state := cast(^ScopeyControlState)plug.state
+	process_state := cast(^ScopeyProcessState)plug.processor_peer.state
+	a := &state.analysis
 
 	if plug.processor_peer == nil || plug.processor_peer.audioProcessor == nil {
 		a.num_channels = 0
@@ -178,7 +186,7 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 
 	// The analytic ring advances on every process call. If it hasn't for a while, the host has
 	// stopped processing (bypass/disable) and we decay the display to rest
-	analytic_pos := dsp.ring_get_write_pos(&plug.processor_peer.state.analytic_ring)
+	analytic_pos := dsp.ring_get_write_pos(&process_state.analytic_ring)
 	if analytic_pos != a.last_analytic_pos {
 		a.last_analytic_pos = analytic_pos
 		a.silence_age = 0
@@ -191,8 +199,8 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	meter_release := math.pow(f32(10), -(METER_RELEASE_DB_PER_SEC * dt) / 20)
 	for c in 0 ..< a.num_channels {
 		if active {
-			a.peak[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.peak[c], .Acquire)
-			a.rms[c] = intrinsics.atomic_load_explicit(&plug.processor_peer.state.rms[c], .Acquire)
+			a.peak[c] = intrinsics.atomic_load_explicit(&process_state.peak[c], .Acquire)
+			a.rms[c] = intrinsics.atomic_load_explicit(&process_state.rms[c], .Acquire)
 		} else {
 			a.peak[c] *= meter_release
 			a.rms[c] *= meter_release
@@ -214,15 +222,15 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 		a.goniometer_trail_count = int(f32(a.goniometer_trail_count) * INACTIVE_TRAIL_DECAY)
 	} else if a.num_channels >= 2 { // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
 		end := min(
-			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0]),
-			dsp.ring_get_write_pos(&plug.processor_peer.state.rings[1]),
+			dsp.ring_get_write_pos(&process_state.rings[0]),
+			dsp.ring_get_write_pos(&process_state.rings[1]),
 		)
-		nl := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
-		nr := dsp.ring_read_window(&plug.processor_peer.state.rings[1], end, a.goniometer_trail[1][:])
+		nl := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:])
+		nr := dsp.ring_read_window(&process_state.rings[1], end, a.goniometer_trail[1][:])
 		a.goniometer_trail_count = min(nl, nr)
 	} else { // If mono, ring[1] is never written, so mirror L into R
-		end := dsp.ring_get_write_pos(&plug.processor_peer.state.rings[0])
-		n := dsp.ring_read_window(&plug.processor_peer.state.rings[0], end, a.goniometer_trail[0][:])
+		end := dsp.ring_get_write_pos(&process_state.rings[0])
+		n := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:])
 		copy(a.goniometer_trail[1][:], a.goniometer_trail[0][:])
 		a.goniometer_trail_count = n
 	}
@@ -252,17 +260,17 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 			continue
 		}
 		time_slice: [FFT_SIZE]f32
-		n := dsp.ring_read_latest(&plug.processor_peer.state.rings[c], time_slice[:])
+		n := dsp.ring_read_latest(&process_state.rings[c], time_slice[:])
 		if n < FFT_SIZE {
 			// log.info("Not hitting fft size, we got ", n, "and we need", FFT_SIZE)
 			continue
 		}
 
-		for v, i in time_slice do fft_buf[i] = complex64(v * plug.state.fft_window[i])
+		for v, i in time_slice do fft_buf[i] = complex64(v * state.fft_window[i])
 		dit.fft(&fft_buf[0], FFT_SIZE)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
-		norm := f32(FFT_SIZE / 2) * plug.state.fft_window_gain
+		norm := f32(FFT_SIZE / 2) * state.fft_window_gain
 		for i in 1 ..< FFT_SIZE / 2 {
 			v := fft_buf[i]
 			mag := math.sqrt(real(v) * real(v) + imag(v) * imag(v)) / norm
@@ -276,7 +284,7 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 
 	// Drain newly-produced analytic pairs into the controller-side trail ring.
 	drain_buf := make([]f32, RING_SIZE, allocator=context.temp_allocator)
-	got := dsp.ring_read(&plug.processor_peer.state.analytic_ring, drain_buf[:])
+	got := dsp.ring_read(&process_state.analytic_ring, drain_buf[:])
 	pairs := got / 2
 	peak2: f32 = 0 // track squared magnitude to skip per-sample sqrt
 	for i in 0 ..< pairs {
@@ -305,8 +313,8 @@ scopey_run_analysis :: proc(plug: ^PluginController) {
 	}
 }
 
-draw_canvas_frame :: proc(ctx: ^UIContext, comp: ^Component) {
-	draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+draw_canvas_frame :: proc(ctx: ^lin.UIContext, comp: ^lin.Component) {
+	lin.draw_push_rect(ctx.plugin.draw, lin.SimpleUIRect {
 		x = comp.calcBounds.x, y = comp.calcBounds.y,
 		width = comp.calcBounds.w, height = comp.calcBounds.h,
 		color = {0, 0, 0, 0},
@@ -316,7 +324,7 @@ draw_canvas_frame :: proc(ctx: ^UIContext, comp: ^Component) {
 	})
 }
 
-draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
@@ -338,8 +346,8 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	log_span := math.log10(FMAX / FMIN)
 	fft_size := f32(FFT_SIZE)
 
-	label_color := ColorU8{80, 80, 80, 255}
-	grid_color := ColorU8{50, 50, 50, 255}
+	label_color := lin.ColorU8{80, 80, 80, 255}
+	grid_color := lin.ColorU8{50, 50, 50, 255}
 	label_size := f32(16)
 
 	decades := [?]struct{f: f32, label: string}{{10, "10"}, {100, "100"}, {1000, "1k"}, {10000, "10k"}}
@@ -349,24 +357,24 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 			f := decade.f * f32(k)
 			if f >= FMAX do break
 			x := bounds.x + bounds.w * (math.log10(f / FMIN) / log_span)
-			draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, grid_color)
+			lin.draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, grid_color)
 		}
 		x := bounds.x + bounds.w * (math.log10(decade.f / FMIN) / log_span)
-		tw := draw_measure_text(ctx.plugin.draw, decade.label, label_size).x
-		draw_text(ctx.plugin.draw, decade.label, x - tw / 2, bounds.y + bounds.h + 1, color = label_color, size = label_size)
+		tw := lin.draw_measure_text(ctx.plugin.draw, decade.label, label_size).x
+		lin.draw_text(ctx.plugin.draw, decade.label, x - tw / 2, bounds.y + bounds.h + 1, color = label_color, size = label_size)
 	}
 
 	// dBFS gridlines and labels every 20db
 	for db := DB_TOP; db >= DB_FLOOR; db -= 20 {
 		t := (db - DB_FLOOR) / (DB_TOP - DB_FLOOR)
 		y := bounds.y + bounds.h * (1 - t)
-		if db != DB_TOP do draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
+		if db != DB_TOP do lin.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
 		s := fmt.tprintf("%d", int(db))
-		tsz := draw_measure_text(ctx.plugin.draw, s, label_size)
-		if db != DB_FLOOR do draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
+		tsz := lin.draw_measure_text(ctx.plugin.draw, s, label_size)
+		if db != DB_FLOOR do lin.draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
 	}
 
-	cols :[]ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
+	cols :[]lin.ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
 
 	// Interpolate between bins using catmull-rom when bins are at least SMOOTH_MIN_BIN_PX apart
 	SMOOTH_MIN_BIN_PX :: f32(3)
@@ -380,18 +388,19 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 	smooth_freq := clamp(unit_density_freq / SMOOTH_MIN_BIN_PX, FMIN, FMAX)
 
 	for c in 0 ..< a.num_channels {
-		pts := make([dynamic]Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
+		pts := make([dynamic]lin.Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
 
 		// For low freqs, catmull-rom through the bins up to the threshold
-		lf := make([dynamic]Vec2f, 0, 256, context.temp_allocator)
+		lf := make([dynamic]lin.Vec2f, 0, 256, context.temp_allocator)
 		for i in 1 ..= max_i {
 			freq := f32(i) * bin_hz
 			if freq < FMIN do continue
 			if freq > smooth_freq do break
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
 			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
-			append(&lf, Vec2f{x, y})
+			append(&lf, lin.Vec2f{x, y})
 		}
+
 		for k in 0 ..< max(len(lf) - 1, 0) {
 			p0 := lf[max(k - 1, 0)]
 			p1 := lf[k]
@@ -399,7 +408,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 			p3 := lf[min(k + 2, len(lf) - 1)]
 			segs := max(int(abs(p2.x - p1.x) / SMOOTH_SEG_PX), 1)
 			for s in 0 ..< segs {
-				pt := catmull_rom(p0, p1, p2, p3, f32(s) / f32(segs))
+				pt := lin.catmull_rom(p0, p1, p2, p3, f32(s) / f32(segs))
 				pt.y = clamp(pt.y, y_lo, y_hi)
 				append(&pts, pt)
 			}
@@ -413,10 +422,10 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: r
 			if freq > FMAX do break
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
 			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
-			append(&pts, Vec2f{x, y})
+			append(&pts, lin.Vec2f{x, y})
 		}
 
-		if len(pts) >= 2 do draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = cols[c])
+		if len(pts) >= 2 do lin.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = cols[c])
 	}
 }
 
@@ -425,7 +434,7 @@ trail_alpha :: #force_inline proc(t: f32) -> f32 {
 	return t * t * t
 }
 
-draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+draw_goniometer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 
 	bounds := comp.calcBounds
@@ -438,33 +447,33 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 	SQRT_HALF :: f32(0.70710678)
 	dc := ctx.plugin.draw
 
-	label_color := ColorU8{80, 80, 80, 255}
-	grid_color := ColorU8{50, 50, 50, 255}
+	label_color := lin.ColorU8{80, 80, 80, 255}
+	grid_color := lin.ColorU8{50, 50, 50, 255}
 	label_size := f32(16)
 	lp := f32(3)
 
-	mp := draw_measure_text(dc, "+M", label_size)
-	mn := draw_measure_text(dc, "-M", label_size)
-	sp := draw_measure_text(dc, "+S", label_size)
-	sn := draw_measure_text(dc, "-S", label_size)
-	lt := draw_measure_text(dc, "L", label_size)
-	rt := draw_measure_text(dc, "R", label_size)
+	mp := lin.draw_measure_text(dc, "+M", label_size)
+	mn := lin.draw_measure_text(dc, "-M", label_size)
+	sp := lin.draw_measure_text(dc, "+S", label_size)
+	sn := lin.draw_measure_text(dc, "-S", label_size)
+	lt := lin.draw_measure_text(dc, "L", label_size)
+	rt := lin.draw_measure_text(dc, "R", label_size)
 
 	radius_v := bounds.h * 0.5 - max(mp.y, mn.y) - lp
 	radius_h := bounds.w * 0.5 - max(sp.x, sn.x) - lp
 	radius := min(radius_v, radius_h)
 	diag := radius * SQRT_HALF
 
-	draw_push_rect(dc, SimpleUIRect{
+	lin.draw_push_rect(dc, lin.SimpleUIRect{
 		x = cx - radius, y = cy - radius,
 		width = radius * 2, height = radius * 2,
 		cornerRad = radius,
 		borderColor = grid_color, borderWidth = 1,
 	})
-	draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
-	draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
-	draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
-	draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
+	lin.draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
+	lin.draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
+	lin.draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
+	lin.draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
 
 	scale := radius * a.gonio_gain
 
@@ -482,22 +491,22 @@ draw_goniometer_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) 
 			x1 := cx + (r - l) * SQRT_HALF * scale
 			y1 := cy - (l + r) * SQRT_HALF * scale
 			alpha := trail_alpha(f32(k) * inv_n)
-			col := ColorU8{150, 100, 150, u8(alpha * 255)}
-			draw_push_pill(dc, {x0, y0}, {x0, y0}, 2, col)
+			col := lin.ColorU8{150, 100, 150, u8(alpha * 255)}
+			lin.draw_push_pill(dc, {x0, y0}, {x0, y0}, 2, col)
 			x0 = x1
 			y0 = y1
 		}
 	}
 
-	draw_text(dc, "+M", cx - mp.x / 2, cy - radius - mp.y - lp, label_color, label_size)
-	draw_text(dc, "-M", cx - mn.x / 2, cy + radius + lp, label_color, label_size)
-	draw_text(dc, "+S", cx + radius + lp, cy - sp.y / 2, label_color, label_size)
-	draw_text(dc, "-S", cx - radius - sn.x - lp, cy - sn.y / 2, label_color, label_size)
-	draw_text(dc, "L", cx - diag - lt.x - lp, cy - diag - lt.y - lp, label_color, label_size)
-	draw_text(dc, "R", cx + diag + lp, cy - diag - rt.y - lp, label_color, label_size)
+	lin.draw_text(dc, "+M", cx - mp.x / 2, cy - radius - mp.y - lp, label_color, label_size)
+	lin.draw_text(dc, "-M", cx - mn.x / 2, cy + radius + lp, label_color, label_size)
+	lin.draw_text(dc, "+S", cx + radius + lp, cy - sp.y / 2, label_color, label_size)
+	lin.draw_text(dc, "-S", cx - radius - sn.x - lp, cy - sn.y / 2, label_color, label_size)
+	lin.draw_text(dc, "L", cx - diag - lt.x - lp, cy - diag - lt.y - lp, label_color, label_size)
+	lin.draw_text(dc, "R", cx + diag + lp, cy - diag - rt.y - lp, label_color, label_size)
 }
 
-draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+draw_hilbert_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
@@ -517,16 +526,16 @@ draw_hilbert_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
 		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
 		alpha := trail_alpha(f32(k) * inv_n)
-		col := ColorU8{200, 200, 200, 255}
+		col := lin.ColorU8{200, 200, 200, 255}
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
 		y1 := cy - imag(p1) * scale
-		draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
+		lin.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
 	}
 }
 
-draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
 
@@ -541,28 +550,28 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 	MIN_DB, ORANGE_DB, RED_DB, MAX_DB :: f32(-60), f32(-12), f32(-6), f32(0)
 
 	pix_per_db := bounds.h / (MAX_DB - MIN_DB)
-	segments := [?]struct { top_db: f32, peak_color, rms_color: ColorU8 } {
+	segments := [?]struct { top_db: f32, peak_color, rms_color: lin.ColorU8 } {
 		{ORANGE_DB, {0, 200, 80, 150}, {0, 200, 80, 255}},
 		{RED_DB, {220, 120, 0, 150}, {220, 120, 0, 255}},
 		{MAX_DB, {255, 20, 50, 150}, {255, 20, 50, 255}},
 	}
 
 	// labels every 6 dB
-	label_color := ColorU8 {80, 80, 80, 255}
-	grid_color := ColorU8 {50, 50, 50, 255}
+	label_color := lin.ColorU8 {80, 80, 80, 255}
+	grid_color := lin.ColorU8 {50, 50, 50, 255}
 	label_size := f32(11)
 	for db := MAX_DB; db >= MIN_DB; db -= 6 {
 		y := bounds.y + bounds.h * (1 - (db - MIN_DB) / (MAX_DB - MIN_DB))
 		s := fmt.tprintf("%d", int(db))
-		tsz := draw_measure_text(ctx.plugin.draw, s, label_size)
-		draw_text(ctx.plugin.draw, s, bounds.x - tsz.x - 4, y - tsz.y / 2, color = label_color, size = label_size)
-		draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
+		tsz := lin.draw_measure_text(ctx.plugin.draw, s, label_size)
+		lin.draw_text(ctx.plugin.draw, s, bounds.x - tsz.x - 4, y - tsz.y / 2, color = label_color, size = label_size)
+		lin.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
 	}
 
 	// Peak first, RMS on top
 	for is_peak in ([?]bool{true, false}) {
 		for i in 0 ..< a.num_channels {
-			dbs := linear_to_decibels(is_peak ? a.peak[i] : a.rms[i])
+			dbs := lin.linear_to_decibels(is_peak ? a.peak[i] : a.rms[i])
 			if dbs < MIN_DB do continue
 			x := bounds.x + f32(i) * (meterW + STEREO_SPACING_PX)
 			prev_db := MIN_DB
@@ -572,7 +581,7 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 				h := pix_per_db * (top_db - prev_db)
 				y := bounds.y + bounds.h - pix_per_db * (top_db - MIN_DB)
 				color := is_peak ? seg.peak_color : seg.rms_color
-				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+				lin.draw_push_rect(ctx.plugin.draw, {
 					x = x, y = y, width = meterW, height = h,
 					color = color, cornerRad = 2,
 				})
@@ -583,7 +592,7 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 
 	PEAK_TICK_H :: f32(2)
 	for c in 0..< a.num_channels {
-		dbs := linear_to_decibels(a.peak_hold[c])
+		dbs := lin.linear_to_decibels(a.peak_hold[c])
 		if dbs < MIN_DB do continue
 		col := segments[len(segments) - 1].rms_color
 		for seg in segments {
@@ -594,7 +603,7 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 		}
 		x := bounds.x + f32(c) * (meterW + STEREO_SPACING_PX)
 		y := bounds.y + bounds.h - pix_per_db * (dbs - MIN_DB)
-		draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+		lin.draw_push_rect(ctx.plugin.draw, lin.SimpleUIRect {
 			x = x, y = y - PEAK_TICK_H / 2, width = meterW, height = PEAK_TICK_H,
 			color = col, cornerRad = 1,
 		})
@@ -602,55 +611,62 @@ draw_meter_canvas :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
 }
 
 // Main draw proc
-scopey_draw :: proc(plug: ^PluginController) {
+scopey_draw :: proc(plug: ^lin.PluginController) {
 	scopey_run_analysis(plug)
-	a := &plug.state.analysis
+	state := cast(^ScopeyControlState)plug.state
+	a := &state.analysis
 
-	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	lin.draw_set_clear_color(plug.draw, lin.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
 	// draw_set_clear_color(plug.draw, ColorF32{ 0, 1, 0, 1})
-	draw_clear(plug.draw)
+	lin.draw_clear(plug.draw)
 
-	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
-			if ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
+	if lin.ui_frame_scoped(plug.ui) {
+		if lin.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
+			if lin.ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
 				// Goniometer
-				ui_canvas(plug.ui, draw_goniometer_canvas, a)
+				lin.ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
-				ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = AxisSizing{type = .FIXED, value = 60})
+				lin.ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = lin.AxisSizing{type = .FIXED, value = 60})
 				// david lu esque hilbert transform scope
-				ui_canvas(plug.ui, draw_hilbert_canvas, a)
+				lin.ui_canvas(plug.ui, draw_hilbert_canvas, a)
 			}
 			// Spectrum analyzer
-			ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
+			lin.ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
 		}
 	}
 
-	draw_submit(plug.draw)
+	lin.draw_submit(plug.draw)
 }
 
-scopey_setup_controller :: proc(plug: ^PluginController) {
-	dsp.window_fill(plug.state.fft_window[:], .Hann)
-	plug.state.fft_window_gain = dsp.window_coherent_gain(plug.state.fft_window[:])
+scopey_setup_controller :: proc(plug: ^lin.PluginController) -> rawptr {
+	state := new(ScopeyControlState, allocator = plug.host.session_allocator)
+	dsp.window_fill(state.fft_window[:], .Hann)
+	state.fft_window_gain = dsp.window_coherent_gain(state.fft_window[:])
 	// Init smoothed to floor (-100db)
 	for c in 0..<MAX_CHANNELS {
 		for i in 0..<FFT_SIZE / 2 {
-			plug.state.analysis.fft_smooth_db[c][i] = DB_FLOOR
+			state.analysis.fft_smooth_db[c][i] = DB_FLOOR
 		}
 	}
-	plug.state.analysis.agc_gain = 1
-	plug.state.analysis.gonio_gain = 1
+	state.analysis.agc_gain = 1
+	state.analysis.gonio_gain = 1
+
+	return state
 }
 
-scopey_setup_processor :: proc(plug: ^PluginProcessor) {
+scopey_setup_processor :: proc(plug: ^lin.PluginProcessor) -> rawptr {
+	state := new(ScopeyProcessState, allocator = plug.host.session_allocator)
 	for c in 0 ..< MAX_CHANNELS {
-		dsp.ring_init(&plug.state.rings[c], plug.state.backing_bufs[c][:])
-		dsp.dc_blocker_init(&plug.state.dc_blockers[c], 0.999) // ~7.6 Hz cutoff at 48k
+		dsp.ring_init(&state.rings[c], state.backing_bufs[c][:])
+		dsp.dc_blocker_init(&state.dc_blockers[c], 0.999) // ~7.6 Hz cutoff at 48k
 	}
-	dsp.hilbert_fir_init(&plug.state.hilbert_fir, plug.state.hilbert_coeffs[:], plug.state.hilbert_delay[:])
-	dsp.ring_init(&plug.state.analytic_ring, plug.state.analytic_buf[:])
+	dsp.hilbert_fir_init(&state.hilbert_fir, state.hilbert_coeffs[:], state.hilbert_delay[:])
+	dsp.ring_init(&state.analytic_ring, state.analytic_buf[:])
+
+	return state
 }
 
-scopey_api :: PluginApi {
+scopey_api :: lin.PluginApi {
 	get_plugin_descriptor = scopey_get_plugin_descriptor,
 	process_audio         = scopey_process_audio,
 	draw                  = scopey_draw,
@@ -665,5 +681,3 @@ scopey_api :: PluginApi {
 	get_tail_samples      = nil,
 	reset                 = nil,
 }
-
-} // when block

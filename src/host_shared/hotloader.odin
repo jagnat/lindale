@@ -53,7 +53,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		b.ACTIVE_PLUGIN, "Hot.",
+		"asdfasdf", "Hot.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 	log.info("hotload dll:", ctx.lindaleHotDll)
 
@@ -62,7 +62,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		b.ACTIVE_PLUGIN, "Hot%03d.",
+		"asdfasdf", "Hot%03d.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
 	ctx.dllSuffix = 1
@@ -116,15 +116,15 @@ hotload_api :: proc() -> lin.PluginApi {
 		}
 	}
 
-	buffer_setup_controller :: proc(plug: ^lin.PluginController) {
+	buffer_setup_controller :: proc(plug: ^lin.PluginController) -> rawptr{
 		when !HOT_DLL {
-			lin.fallbackApi.setup_controller(plug)
+			return lin.fallbackApi.setup_controller(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_controller == nil {
-				lin.fallbackApi.setup_controller(plug)
+				return lin.fallbackApi.setup_controller(plug)
 			} else {
-				ctx.apis[idx].setup_controller(plug)
+				return ctx.apis[idx].setup_controller(plug)
 			}
 		}
 	}
@@ -177,15 +177,15 @@ hotload_api :: proc() -> lin.PluginApi {
 		}
 	}
 
-	buffer_setup_processor :: proc(plug: ^lin.PluginProcessor) {
+	buffer_setup_processor :: proc(plug: ^lin.PluginProcessor) -> rawptr {
 		when !HOT_DLL {
-			lin.fallbackApi.setup_processor(plug)
+			return lin.fallbackApi.setup_processor(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_processor == nil {
-				lin.fallbackApi.setup_processor(plug)
+				return lin.fallbackApi.setup_processor(plug)
 			} else {
-				ctx.apis[idx].setup_processor(plug)
+				return ctx.apis[idx].setup_processor(plug)
 			}
 		}
 	}

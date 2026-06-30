@@ -9,6 +9,10 @@ when b.ACTIVE_PLUGIN == "pokey" {
 
 MAX_CHANNELS :: 2
 
+// Independent POKEY chips, each 4 channels, mixed together for more simultaneous voices
+POKEY_BANKS :: 4
+POKEY_VOICES :: POKEY_BANKS * dsp.POKEY_CHANNELS
+
 // RMT's timbre classes
 PokeyTimbre :: enum {
 	Pure, 
@@ -28,14 +32,15 @@ PokeyVoice :: struct {
 	frames: i32, // frames since note-on
 	release_frames: i32,
 	released_level: f32, // envelope level when the gate dropped
-	chan: u8, // hw channel, lo channel of the pair for Bass16
+	bank: u8, // which POKEY chip owns this voice
+	chan: u8, // hw channel within the bank, lo channel of the pair for Bass16
 	pair: bool,
 	timbre: PokeyTimbre, // latched at note-on
 }
 
 PokeyProcessState :: struct {
-	chip: dsp.Pokey,
-	voices: [dsp.POKEY_CHANNELS]PokeyVoice, // indexed by owned (lo) hw channel
+	chip: [POKEY_BANKS]dsp.Pokey,
+	voices: [POKEY_VOICES]PokeyVoice, // indexed by bank * POKEY_CHANNELS + owned (lo) hw channel
 	samples_to_frame: f64,
 }
 
@@ -200,19 +205,19 @@ pokey_frame_rate :: proc(chip: ^dsp.Pokey) -> f32 {
 }
 
 @(private="file")
-channel_in_use :: proc(state: ^PokeyProcessState, c: u8) -> bool {
+channel_in_use :: proc(state: ^PokeyProcessState, bank, c: u8) -> bool {
 	for &v in state.voices {
-		if !v.active do continue
+		if !v.active || v.bank != bank do continue
 		if v.chan == c || (v.pair && v.chan + 1 == c) do return true
 	}
 	return false
 }
 
 @(private="file")
-pokey_compute_audctl :: proc(state: ^PokeyProcessState) -> u8 {
+pokey_compute_audctl :: proc(state: ^PokeyProcessState, bank: u8) -> u8 {
 	audctl: u8
 	for &v in state.voices {
-		if !v.active || !v.pair do continue
+		if !v.active || !v.pair || v.bank != bank do continue
 		audctl |= v.chan == 0 ? dsp.AUDCTL_JOIN_12 | dsp.AUDCTL_CH1_FAST : dsp.AUDCTL_JOIN_34 | dsp.AUDCTL_CH3_FAST
 	}
 	return audctl
@@ -240,10 +245,12 @@ pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessCon
 	sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100
 	release := smoothed_read(actx, PARAM_RELEASE)
 
+	chip := &state.chip[v.bank]
+
 	level := voice_env_level(v, attack, decay, sustain, release)
 	if !v.gate && level <= 0 {
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(v.chan * 2 + 1), 0)
-		if v.pair do dsp.pokey_write(&state.chip, dsp.PokeyReg((v.chan + 1) * 2 + 1), 0)
+		dsp.pokey_write(chip, dsp.PokeyReg(v.chan * 2 + 1), 0)
+		if v.pair do dsp.pokey_write(chip, dsp.PokeyReg((v.chan + 1) * 2 + 1), 0)
 		v.active = false
 		return
 	}
@@ -267,25 +274,27 @@ pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessCon
 	if vib_depth > 0 && f32(v.frames) > vib_delay {
 		t := f32(v.frames) - vib_delay
 		speed := smoothed_read(actx, PARAM_VIB_SPEED)
-		pitch += vib_depth / 100 * math.sin(2 * math.PI * speed * t / pokey_frame_rate(&state.chip))
+		pitch += vib_depth / 100 * math.sin(2 * math.PI * speed * t / pokey_frame_rate(chip))
 	}
 
-	audf := pokey_audf_for_freq(&state.chip, v.timbre, dsp.midi_to_freq(pitch))
+	audf := pokey_audf_for_freq(chip, v.timbre, dsp.midi_to_freq(pitch))
 	audc := timbre_audc_waveform(v.timbre) | vol
 	if v.pair {
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(v.chan * 2), u8(audf & 0xff))
-		dsp.pokey_write(&state.chip, dsp.PokeyReg((v.chan + 1) * 2), u8(audf >> 8))
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(v.chan * 2 + 1), 0) // lo channel muted
-		dsp.pokey_write(&state.chip, dsp.PokeyReg((v.chan + 1) * 2 + 1), audc)
+		dsp.pokey_write(chip, dsp.PokeyReg(v.chan * 2), u8(audf & 0xff))
+		dsp.pokey_write(chip, dsp.PokeyReg((v.chan + 1) * 2), u8(audf >> 8))
+		dsp.pokey_write(chip, dsp.PokeyReg(v.chan * 2 + 1), 0) // lo channel muted
+		dsp.pokey_write(chip, dsp.PokeyReg((v.chan + 1) * 2 + 1), audc)
 	} else {
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(v.chan * 2), u8(audf))
-		dsp.pokey_write(&state.chip, dsp.PokeyReg(v.chan * 2 + 1), audc)
+		dsp.pokey_write(chip, dsp.PokeyReg(v.chan * 2), u8(audf))
+		dsp.pokey_write(chip, dsp.PokeyReg(v.chan * 2 + 1), audc)
 	}
 }
 
 @(private="file")
 pokey_frame_update :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext) {
-	dsp.pokey_write(&state.chip, .AUDCTL, pokey_compute_audctl(state))
+	for bk in 0 ..< POKEY_BANKS {
+		dsp.pokey_write(&state.chip[bk], .AUDCTL, pokey_compute_audctl(state, u8(bk)))
+	}
 	for &v in state.voices {
 		if !v.active do continue
 		pokey_voice_write_regs(state, actx, &v)
@@ -296,23 +305,28 @@ pokey_frame_update :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext
 
 pokey_note_on :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, n: b.NoteOn) {
 	timbre := timbre_from_param(smoothed_read(actx, PARAM_TIMBRE))
+	bank := -1
 	chan := -1
-	if timbre == .Bass16 {
-		for base in ([2]u8{0, 2}) {
-			if channel_in_use(state, base) || channel_in_use(state, base + 1) do continue
-			chan = int(base)
-			break
-		}
-	} else {
-		for c in 0 ..< dsp.POKEY_CHANNELS {
-			if channel_in_use(state, u8(c)) do continue
-			chan = c
-			break
+	find: for bk in 0 ..< POKEY_BANKS {
+		if timbre == .Bass16 {
+			for base in ([2]u8{0, 2}) {
+				if channel_in_use(state, u8(bk), base) || channel_in_use(state, u8(bk), base + 1) do continue
+				bank = bk
+				chan = int(base)
+				break find
+			}
+		} else {
+			for c in 0 ..< dsp.POKEY_CHANNELS {
+				if channel_in_use(state, u8(bk), u8(c)) do continue
+				bank = bk
+				chan = c
+				break find
+			}
 		}
 	}
 	if chan < 0 do return // out of channels, drop the note
 
-	v := &state.voices[chan]
+	v := &state.voices[bank * dsp.POKEY_CHANNELS + chan]
 	v^ = {
 		active = true,
 		note_id = n.note_id,
@@ -320,12 +334,13 @@ pokey_note_on :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, n: 
 		pitch = f32(n.pitch) + n.tuning,
 		velocity = n.velocity,
 		gate = true,
+		bank = u8(bank),
 		chan = u8(chan),
 		pair = timbre == .Bass16,
 		timbre = timbre,
 	}
 	// write registers now instead of waiting out the frame, mid-frame DAW notes land on time
-	dsp.pokey_write(&state.chip, .AUDCTL, pokey_compute_audctl(state))
+	dsp.pokey_write(&state.chip[bank], .AUDCTL, pokey_compute_audctl(state, u8(bank)))
 	pokey_voice_write_regs(state, actx, v)
 }
 
@@ -353,13 +368,13 @@ pokey_process_audio :: proc(plug: ^PluginProcessor) {
 	num_channels := min(actx.numChannels, MAX_CHANNELS)
 
 	machine := smoothed_read(actx, PARAM_MACHINE) < 0.5 ? dsp.PokeyMachine.NTSC : dsp.PokeyMachine.PAL
-	if machine != state.chip.machine {
-		dsp.pokey_init(&state.chip, machine) // re-init kills voices, registers are zeroed
+	if machine != state.chip[0].machine {
+		for &chip in state.chip do dsp.pokey_init(&chip, machine) // re-init kills voices, registers are zeroed
 		for &v in state.voices do v.active = false
 		state.samples_to_frame = 0
 	}
 
-	frame_len := sample_rate * pokey_frame_cycles(&state.chip) / state.chip.main_clock
+	frame_len := sample_rate * pokey_frame_cycles(&state.chip[0]) / state.chip[0].main_clock
 
 	it := make_block_iterator(actx.events, actx.numSamples)
 	for block in next_block(&it) {
@@ -380,7 +395,7 @@ pokey_process_audio :: proc(plug: ^PluginProcessor) {
 			}
 			n := min(remaining, max(int(state.samples_to_frame), 1))
 			out0 := actx.outputs[0][offset:][:n]
-			dsp.pokey_render(&state.chip, out0, sample_rate)
+			dsp.pokey_render_mix(state.chip[:], out0, sample_rate)
 			for c in 1 ..< num_channels {
 				copy(actx.outputs[c][offset:][:n], out0)
 			}
@@ -467,13 +482,13 @@ pokey_setup_controller :: proc(plug: ^PluginController) {
 }
 
 pokey_setup_processor :: proc(plug: ^PluginProcessor) {
-	dsp.pokey_init(&plug.state.chip, .NTSC)
+	for &chip in plug.state.chip do dsp.pokey_init(&chip, .NTSC)
 	for &v in plug.state.voices do v.active = false
 	plug.state.samples_to_frame = 0
 }
 
 pokey_reset :: proc(plug: ^PluginProcessor) {
-	dsp.pokey_reset(&plug.state.chip)
+	for &chip in plug.state.chip do dsp.pokey_reset(&chip)
 	for &v in plug.state.voices do v.active = false
 	plug.state.samples_to_frame = 0
 }
