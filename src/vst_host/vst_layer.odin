@@ -1654,7 +1654,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	hs.mutex_log_init(hs.get_config().runtimeFolderPath, "asdfasdf")
+	hs.mutex_log_init(hs.get_config().runtimeFolderPath, hs.PLUGIN_NAME)
 	context.logger = hs.get_mutex_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
@@ -1890,9 +1890,9 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.V
 		pluginApi = hs.hotload_api()
 		pluginFactory.desc = pluginApi.get_plugin_descriptor()
 
-		patch_cid_for_plugin(&lindaleProcessorCid, "asdfasdf")
-		patch_cid_for_plugin(&lindaleControllerCid, "asdfasdf")
-		patch_cid_for_plugin(&lindaleConnectionCid, "asdfasdf")
+		patch_cid_for_plugin(&lindaleProcessorCid, hs.PLUGIN_NAME)
+		patch_cid_for_plugin(&lindaleControllerCid, hs.PLUGIN_NAME)
+		patch_cid_for_plugin(&lindaleConnectionCid, hs.PLUGIN_NAME)
 
 		pluginFactory.initialized = true
 	}

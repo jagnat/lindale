@@ -4,10 +4,10 @@ import "base:intrinsics"
 import "core:fmt"
 import "core:math"
 import "core:log"
-import lin "../../src/lindale"
-import b "../../src/bridge"
-import "../../src/dsp"
-import dit "../../src/thirdparty/uFFT_DIT"
+import lin "../../../src/lindale"
+import b "../../../src/bridge"
+import "../../../src/dsp"
+import dit "../../../src/thirdparty/uFFT_DIT"
 
 @(export, link_name="lindale_get_plugin_api")
 get_plugin_api :: proc() -> lin.PluginApi {
@@ -617,7 +617,7 @@ scopey_draw :: proc(plug: ^lin.PluginController) {
 	a := &state.analysis
 
 	lin.draw_set_clear_color(plug.draw, lin.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
-	// draw_set_clear_color(plug.draw, ColorF32{ 0, 1, 0, 1})
+	// lin.draw_set_clear_color(plug.draw, lin.ColorF32{ 0, 1, 0, 1})
 	lin.draw_clear(plug.draw)
 
 	if lin.ui_frame_scoped(plug.ui) {

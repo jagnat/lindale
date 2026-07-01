@@ -13,7 +13,6 @@ import "core:strings"
 import "core:path/filepath"
 
 import lin "../lindale"
-import b "../bridge"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
@@ -53,7 +52,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		"asdfasdf", "Hot.",
+		PLUGIN_NAME, "Hot.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 	log.info("hotload dll:", ctx.lindaleHotDll)
 
@@ -62,7 +61,7 @@ hotload_init :: proc() {
 		get_config().runtimeFolderPath,
 		"hot",
 		filepath.SEPARATOR,
-		"asdfasdf", "Hot%03d.",
+		PLUGIN_NAME, "Hot%03d.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
 	ctx.dllSuffix = 1
