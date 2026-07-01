@@ -7,8 +7,8 @@
 *.sublime-workspace
 *.DS_Store
 *.dSYM
-lindale.dylib
-lindale.dll
-lindale.lib
-lindale.exp
-/out/
+*.dylib
+*.dll
+*.lib
+*.exp
+out/
