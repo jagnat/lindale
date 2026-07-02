@@ -1,4 +1,4 @@
-package lindale
+package sdk
 
 import "core:fmt"
 import "core:os"

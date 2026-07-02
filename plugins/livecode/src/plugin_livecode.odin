@@ -1,10 +1,14 @@
-package lindale
+package livecode
 
 import "core:fmt"
-import b "../bridge"
-import dsp "../dsp"
+import "../../../src/sdk"
+import b "../../../src/bridge"
+import dsp "../../../src/dsp"
 
-when b.ACTIVE_PLUGIN == "livecode" {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return livecode_api
+}
 
 // A livecoding playground. The whole instrument is driven from the host
 // transport: hit play in the DAW and the patterns in livecode_tick run.
@@ -39,7 +43,7 @@ LivecodeControlState :: struct {}
 
 @(rodata) livecode_param_table := [?]b.ParamDescriptor {}
 
-livecode_get_plugin_descriptor :: proc() -> PluginDescriptor {
+livecode_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Livecode",
 		vendor = "JagI",
@@ -55,11 +59,13 @@ livecode_get_plugin_descriptor :: proc() -> PluginDescriptor {
 }
 
 // Thin wrappers over dsp scheduling so the edit surface reads cleanly.
-grid :: proc(plug: ^PluginProcessor, period: f32, phase: f32 = 0) -> []dsp.SchedHit {
-	return dsp.grid(plug.state.sched, period, phase)
+grid :: proc(plug: ^sdk.PluginProcessor, period: f32, phase: f32 = 0) -> []dsp.SchedHit {
+	state := cast(^LivecodeProcessState)plug.state
+	return dsp.grid(state.sched, period, phase)
 }
-euclid :: proc(plug: ^PluginProcessor, hits, steps: int, step_len: f32, phase: f32 = 0) -> []dsp.SchedHit {
-	return dsp.euclid(plug.state.sched, hits, steps, step_len, phase)
+euclid :: proc(plug: ^sdk.PluginProcessor, hits, steps: int, step_len: f32, phase: f32 = 0) -> []dsp.SchedHit {
+	state := cast(^LivecodeProcessState)plug.state
+	return dsp.euclid(state.sched, hits, steps, step_len, phase)
 }
 
 alloc_voice :: proc(state: ^LivecodeProcessState) -> ^LiveVoice {
@@ -74,12 +80,12 @@ alloc_voice :: proc(state: ^LivecodeProcessState) -> ^LiveVoice {
 // Fire a note at a scheduled hit. Defaults give a short percussive blip;
 // raise sustain/dur for held notes. Times are in seconds, dur is in beats.
 play :: proc(
-	plug: ^PluginProcessor, at: dsp.SchedHit, note: f32,
+	plug: ^sdk.PluginProcessor, at: dsp.SchedHit, note: f32,
 	wave: dsp.Waveform = .Sine,
 	attack: f32 = 0.002, decay: f32 = 0.2, sustain: f32 = 0, release: f32 = 0.06,
 	dur: f32 = 0.1, gain: f32 = 0.6,
 ) {
-	state := plug.state
+	state := cast(^LivecodeProcessState)plug.state
 	v := alloc_voice(state)
 	dsp.osc_reset(&v.osc)
 	v.osc.wave = wave
@@ -97,7 +103,7 @@ play :: proc(
 // EDIT HERE. Runs once per audio block while the transport is playing.
 // Add/remove tracks freely, then rebuild — the clock keeps running.
 // ============================================================================
-livecode_tick :: proc(plug: ^PluginProcessor) {
+livecode_tick :: proc(plug: ^sdk.PluginProcessor) {
 	// Kick: four on the floor
 	for h in grid(plug, 1.0) {
 		play(plug, h, note = 28, wave = .Sine, decay = 0.18, dur = 0.05, gain = 0.9)
@@ -117,14 +123,14 @@ livecode_tick :: proc(plug: ^PluginProcessor) {
 
 // ============================================================================
 
-livecode_process_audio :: proc(plug: ^PluginProcessor) {
+livecode_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil || plug.state == nil do return
 	n := actx.numSamples
 	nc := actx.numChannels
 	if n == 0 || nc == 0 do return
 
-	state := plug.state
+	state := cast(^LivecodeProcessState)plug.state
 	transport := &actx.transport
 
 	// Be robust to hosts that don't populate musical time (the arp in
@@ -169,44 +175,48 @@ livecode_process_audio :: proc(plug: ^PluginProcessor) {
 	}
 }
 
-livecode_draw :: proc(plug: ^PluginController) {
+livecode_draw :: proc(plug: ^sdk.PluginController) {
 	if plug.draw == nil do return
-	draw_set_clear_color(plug.draw, ColorF32{0.07, 0.07, 0.09, 1})
-	draw_clear(plug.draw)
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32{0.07, 0.07, 0.09, 1})
+	sdk.draw_clear(plug.draw)
 
 	active := 0
 	beat := f64(0)
 	if plug.processor_peer != nil && plug.processor_peer.state != nil {
-		for &v in plug.processor_peer.state.voices {
+		pstate := cast(^LivecodeProcessState)plug.processor_peer.state
+		for &v in pstate.voices {
 			if v.active do active += 1
 		}
-		beat = plug.processor_peer.state.beat_clock
+		beat = pstate.beat_clock
 	}
-	draw_text(plug.draw, fmt.tprintf("livecode   beat %.2f   voices %d", beat, active), 16, 16, color = ColorU8{180, 180, 190, 255}, size = 18)
-	draw_submit(plug.draw)
+	sdk.draw_text(plug.draw, fmt.tprintf("livecode   beat %.2f   voices %d", beat, active), 16, 16, color = sdk.ColorU8{180, 180, 190, 255}, size = 18)
+	sdk.draw_submit(plug.draw)
 }
 
-livecode_setup_processor :: proc(plug: ^PluginProcessor) {
+livecode_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
+	state := new(LivecodeProcessState, allocator = plug.host.session_allocator)
 	sr := f32(plug.audioProcessor.sampleRate)
-	for &v in plug.state.voices {
+	for &v in state.voices {
 		dsp.osc_init(&v.osc, sr)
 		dsp.adsr_init(&v.env, sr)
 		v.active = false
 	}
-	plug.state.next_voice = 0
-	plug.state.beat_clock = 0
+	state.next_voice = 0
+	state.beat_clock = 0
+	return state
 }
 
-livecode_reset :: proc(plug: ^PluginProcessor) {
-	for &v in plug.state.voices {
+livecode_reset :: proc(plug: ^sdk.PluginProcessor) {
+	state := cast(^LivecodeProcessState)plug.state
+	for &v in state.voices {
 		v.active = false
 		dsp.adsr_reset(&v.env)
 		dsp.osc_reset(&v.osc)
 	}
-	plug.state.beat_clock = 0
+	state.beat_clock = 0
 }
 
-livecode_api :: PluginApi {
+livecode_api :: sdk.PluginApi {
 	get_plugin_descriptor = livecode_get_plugin_descriptor,
 	process_audio         = livecode_process_audio,
 	draw                  = livecode_draw,
@@ -221,5 +231,3 @@ livecode_api :: PluginApi {
 	get_tail_samples      = nil,
 	reset                 = livecode_reset,
 }
-
-} // when block

@@ -3,10 +3,10 @@ package build
 // Build 'script' for the project
 
 import "core:fmt"
+import "core:crypto"
+import "core:encoding/hex"
 import "core:os"
 import "core:flags"
-import "core:strings"
-import "core:text/regex"
 import "core:dynlib"
 import "core:path/filepath"
 
@@ -29,8 +29,13 @@ plugin: string
 // Used for mac only rn
 sign_identity: string
 
+// Build-specific ID that can be used in the code
+build_id: string
+
 execute :: proc() {
 	flags.parse_or_exit(&opts, os.args)
+
+	gen_build_id()
 
 	sign_identity = os.get_env("LINDALE_SIGN_IDENTITY", context.allocator)
 
@@ -63,6 +68,7 @@ build_plugin :: proc () {
 	args := make([dynamic]string)
 	append(&args, "odin", "build", "vst3",
 		fmt.tprintf("-define:PLUGIN_NAME=%s", plugin),
+		fmt.tprintf("-define:BUILD_ID=%s", build_id),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/%s.vst3/Contents/%s/%s.vst3", plugin, subdir, plugin),
 		opts.release ? "-o:speed" : "-debug")
@@ -139,11 +145,13 @@ build_hotloaded :: proc() {
 		os.exit(1)
 	}
 
-	// Build hot dll
+	// Build hot dll. Plugin code always lives in the fixed `src` subdir; `plugin`
+	// (the folder name) is only an identity for output/bundle naming
 	ps: os.Process_State
 	exec({
-		"odin", "build", plugin,
+		"odin", "build", "src",
 		"-define:HOT_DLL=true",
+		fmt.tprintf("-define:BUILD_ID=%s", build_id),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION),
 		opts.release ? "-o:speed" : "-debug",
@@ -192,7 +200,7 @@ symlink_plugin :: proc() {
 check_plugin :: proc() {
 	ps: os.Process_State
 	exec({
-		"odin", "check", plugin,
+		"odin", "check", "src",
 		"-no-entry-point",
 		"-define:HOT_DLL=true",
 	}, ps = &ps)
@@ -201,6 +209,14 @@ check_plugin :: proc() {
 		os.exit(1)
 	}
 	fmt.println(plugin, "SUCCEEDED")
+}
+
+gen_build_id :: proc() {
+	bytes: [8]u8
+	crypto.rand_bytes(bytes[:])
+	hex_str := hex.encode(bytes[:])
+	build_id = string(hex_str)
+	fmt.println("Build id:", build_id)
 }
 
 when ODIN_OS == .Darwin {

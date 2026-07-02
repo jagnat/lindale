@@ -3,6 +3,8 @@ package bridge
 import "core:math/linalg"
 import "core:mem"
 
+BUILD_ID :: #config(BUILD_ID, "a8e15a84")
+
 // Common types shared between platform layer and lindale
 Vec2f :: linalg.Vector2f32
 Vec4f :: linalg.Vector4f32

@@ -21,12 +21,23 @@ jobs:
         with:
           release: dev-2026-05
 
-      # Type-checks every plugin in src/lindale (build.odin check mode)
+      # Type-check every plugin via its build shim (build.odin check mode)
       - name: Check plugins
-        run: odin run . -- check
+        shell: bash
+        run: |
+          for d in plugins/*/; do
+            echo "== check ${d} =="
+            ( cd "$d" && odin run . -- check )
+          done
+
+      # The plugin check never compiles vst_host/platform_specific, so check the
+      # static layer once (picks up per-OS platform code)
+      - name: Check host layer
+        working-directory: plugins/scopey
+        run: odin check vst3 -define:PLUGIN_NAME=scopey -define:HOT_DLL=true -no-entry-point
 
       - name: Test dsp
         run: odin test src/dsp
 
-      - name: Test lindale
-        run: odin test src/lindale
+      - name: Test sdk
+        run: odin test src/sdk

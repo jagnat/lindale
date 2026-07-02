@@ -123,9 +123,9 @@ register_window_class :: proc() {
 
 	hInstance := self_module()
 	arrow_cursor = win.LoadCursorW(nil, transmute(win.LPCWSTR)uintptr(32512))
-	// Per-plugin class name: a Win32 window class is process-global, so two
-	// Lindale plugins in one host must not register the same name.
-	class_name := win.utf8_to_wstring(fmt.tprintf("LindalePlugin_%s\x00", bridge.ACTIVE_PLUGIN))
+	// a Win32 window class is process-global, so two
+	// Lindale plugins in one host must not register the same name
+	class_name := win.utf8_to_wstring(fmt.tprintf("LindalePlugin_%s\x00", bridge.BUILD_ID))
 
 	wcex := win.WNDCLASSEXW{
 		cbSize = size_of(win.WNDCLASSEXW),
@@ -137,11 +137,11 @@ register_window_class :: proc() {
 	}
 
 	window_class_atom = win.RegisterClassExW(&wcex)
-	log.infof("Registered window class, atom: %d", window_class_atom)
+	//log.infof("Registered window class, atom: %d", window_class_atom)
 }
 
 renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
-	log.infof("renderer_create called: parent=%p, size=%dx%d", parent, width, height)
+	//log.infof("renderer_create called: parent=%p, size=%dx%d", parent, width, height)
 
 	if parent == nil do return nil
 

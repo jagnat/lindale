@@ -1,11 +1,15 @@
-package lindale
+package pokey
 
 import "core:math"
 import "core:testing"
-import b "../bridge"
-import "../dsp"
+import "../../../src/sdk"
+import b "../../../src/bridge"
+import "../../../src/dsp"
 
-when b.ACTIVE_PLUGIN == "pokey" {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return pokey_api
+}
 
 MAX_CHANNELS :: 2
 
@@ -49,77 +53,77 @@ PokeyControlState :: struct {
 
 // Parameters
 
-PARAM_TIMBRE :: ParamIndex(0)
-PARAM_ATTACK :: ParamIndex(1)
-PARAM_DECAY :: ParamIndex(2)
-PARAM_SUSTAIN :: ParamIndex(3)
-PARAM_RELEASE :: ParamIndex(4)
-PARAM_ARP_RATE :: ParamIndex(5)
-PARAM_ARP_STEP1 :: ParamIndex(6)
-PARAM_ARP_STEP2 :: ParamIndex(7)
-PARAM_VIB_DEPTH :: ParamIndex(8)
-PARAM_VIB_SPEED :: ParamIndex(9)
-PARAM_VIB_DELAY :: ParamIndex(10)
-PARAM_DETUNE :: ParamIndex(11)
-PARAM_MACHINE :: ParamIndex(12)
+PARAM_TIMBRE :: sdk.ParamIndex(0)
+PARAM_ATTACK :: sdk.ParamIndex(1)
+PARAM_DECAY :: sdk.ParamIndex(2)
+PARAM_SUSTAIN :: sdk.ParamIndex(3)
+PARAM_RELEASE :: sdk.ParamIndex(4)
+PARAM_ARP_RATE :: sdk.ParamIndex(5)
+PARAM_ARP_STEP1 :: sdk.ParamIndex(6)
+PARAM_ARP_STEP2 :: sdk.ParamIndex(7)
+PARAM_VIB_DEPTH :: sdk.ParamIndex(8)
+PARAM_VIB_SPEED :: sdk.ParamIndex(9)
+PARAM_VIB_DELAY :: sdk.ParamIndex(10)
+PARAM_DETUNE :: sdk.ParamIndex(11)
+PARAM_MACHINE :: sdk.ParamIndex(12)
 
 // Time-domain params are in frames (~60Hz NTSC ticks), the era's envelope resolution
 @(rodata) pokey_param_table := [?]b.ParamDescriptor {
 	{
 		name = "Timbre", short_name = "timbre", min = 0, max = 4, default_value = 0,
-		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING
+		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Attack", short_name = "atk", min = 0, max = 30, default_value = 0,
-		step_count = 30, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 30, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Decay", short_name = "dec", min = 0, max = 60, default_value = 12,
-		step_count = 60, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 60, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Sustain", short_name = "sus", min = 0, max = 100, default_value = 60,
-		step_count = 0, unit = .Percentage, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 0, unit = .Percentage, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Release", short_name = "rel", min = 0, max = 120, default_value = 10,
-		step_count = 120, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 120, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Arp Rate", short_name = "rate", min = 1, max = 8, default_value = 2,
-		step_count = 7, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 7, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Arp Step 1", short_name = "arp1", min = 0, max = 12, default_value = 0,
-		step_count = 12, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 12, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Arp Step 2", short_name = "arp2", min = 0, max = 12, default_value = 0,
-		step_count = 12, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 12, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Vib Depth", short_name = "depth", min = 0, max = 100, default_value = 0,
-		step_count = 0, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 0, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Vib Speed", short_name = "speed", min = 0.5, max = 12, default_value = 6,
-		step_count = 0, unit = .Hertz, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 0, unit = .Hertz, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Vib Delay", short_name = "delay", min = 0, max = 60, default_value = 20,
-		step_count = 60, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 60, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Detune", short_name = "tune", min = -50, max = 50, default_value = 0,
-		step_count = 0, unit = .None, flags = {.Automatable}, smooth_ms = NO_SMOOTHING
+		step_count = 0, unit = .None, flags = {.Automatable}, smooth_ms = sdk.NO_SMOOTHING
 	},
 	{
 		name = "Machine", short_name = "mach", min = 0, max = 1, default_value = 1,
-		step_count = 1, unit = .None, flags = {.List}, smooth_ms = NO_SMOOTHING
+		step_count = 1, unit = .None, flags = {.List}, smooth_ms = sdk.NO_SMOOTHING
 	},
 }
 
-pokey_get_plugin_descriptor :: proc() -> PluginDescriptor {
+pokey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Pokey Player",
 		vendor = "JagI",
@@ -239,11 +243,11 @@ voice_env_level :: proc(v: ^PokeyVoice, attack, decay, sustain, release: f32) ->
 // Writes the voice's registers from the current frame counters and live params.
 // Frees the voice once the release envelope hits zero.
 @(private="file")
-pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, v: ^PokeyVoice) {
-	attack := smoothed_read(actx, PARAM_ATTACK)
-	decay := smoothed_read(actx, PARAM_DECAY)
-	sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100
-	release := smoothed_read(actx, PARAM_RELEASE)
+pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^sdk.AudioProcessContext, v: ^PokeyVoice) {
+	attack := sdk.smoothed_read(actx, PARAM_ATTACK)
+	decay := sdk.smoothed_read(actx, PARAM_DECAY)
+	sustain := sdk.smoothed_read(actx, PARAM_SUSTAIN) / 100
+	release := sdk.smoothed_read(actx, PARAM_RELEASE)
 
 	chip := &state.chip[v.bank]
 
@@ -256,12 +260,12 @@ pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessCon
 	}
 	vol := u8(clamp(level * v.velocity * 15 + 0.5, 0, 15))
 
-	pitch := v.pitch + smoothed_read(actx, PARAM_DETUNE) / 100
+	pitch := v.pitch + sdk.smoothed_read(actx, PARAM_DETUNE) / 100
 
-	arp1 := smoothed_read(actx, PARAM_ARP_STEP1)
-	arp2 := smoothed_read(actx, PARAM_ARP_STEP2)
+	arp1 := sdk.smoothed_read(actx, PARAM_ARP_STEP1)
+	arp2 := sdk.smoothed_read(actx, PARAM_ARP_STEP2)
 	if arp1 != 0 || arp2 != 0 {
-		rate := i32(max(smoothed_read(actx, PARAM_ARP_RATE), 1))
+		rate := i32(max(sdk.smoothed_read(actx, PARAM_ARP_RATE), 1))
 		steps := arp2 != 0 ? i32(3) : i32(2)
 		switch (v.frames / rate) % steps {
 		case 1: pitch += arp1
@@ -269,11 +273,11 @@ pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessCon
 		}
 	}
 
-	vib_depth := smoothed_read(actx, PARAM_VIB_DEPTH)
-	vib_delay := smoothed_read(actx, PARAM_VIB_DELAY)
+	vib_depth := sdk.smoothed_read(actx, PARAM_VIB_DEPTH)
+	vib_delay := sdk.smoothed_read(actx, PARAM_VIB_DELAY)
 	if vib_depth > 0 && f32(v.frames) > vib_delay {
 		t := f32(v.frames) - vib_delay
-		speed := smoothed_read(actx, PARAM_VIB_SPEED)
+		speed := sdk.smoothed_read(actx, PARAM_VIB_SPEED)
 		pitch += vib_depth / 100 * math.sin(2 * math.PI * speed * t / pokey_frame_rate(chip))
 	}
 
@@ -291,7 +295,7 @@ pokey_voice_write_regs :: proc(state: ^PokeyProcessState, actx: ^AudioProcessCon
 }
 
 @(private="file")
-pokey_frame_update :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext) {
+pokey_frame_update :: proc(state: ^PokeyProcessState, actx: ^sdk.AudioProcessContext) {
 	for bk in 0 ..< POKEY_BANKS {
 		dsp.pokey_write(&state.chip[bk], .AUDCTL, pokey_compute_audctl(state, u8(bk)))
 	}
@@ -303,8 +307,8 @@ pokey_frame_update :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext
 	}
 }
 
-pokey_note_on :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, n: b.NoteOn) {
-	timbre := timbre_from_param(smoothed_read(actx, PARAM_TIMBRE))
+pokey_note_on :: proc(state: ^PokeyProcessState, actx: ^sdk.AudioProcessContext, n: b.NoteOn) {
+	timbre := timbre_from_param(sdk.smoothed_read(actx, PARAM_TIMBRE))
 	bank := -1
 	chan := -1
 	find: for bk in 0 ..< POKEY_BANKS {
@@ -344,30 +348,30 @@ pokey_note_on :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, n: 
 	pokey_voice_write_regs(state, actx, v)
 }
 
-pokey_note_off :: proc(state: ^PokeyProcessState, actx: ^AudioProcessContext, n: b.NoteOff) {
+pokey_note_off :: proc(state: ^PokeyProcessState, actx: ^sdk.AudioProcessContext, n: b.NoteOff) {
 	for &v in state.voices {
 		if !v.active || (n.note_id >= 0 ? v.note_id != n.note_id : v.midi_pitch != n.pitch) do continue
-		attack := smoothed_read(actx, PARAM_ATTACK)
-		decay := smoothed_read(actx, PARAM_DECAY)
-		sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100
-		release := smoothed_read(actx, PARAM_RELEASE)
+		attack := sdk.smoothed_read(actx, PARAM_ATTACK)
+		decay := sdk.smoothed_read(actx, PARAM_DECAY)
+		sustain := sdk.smoothed_read(actx, PARAM_SUSTAIN) / 100
+		release := sdk.smoothed_read(actx, PARAM_RELEASE)
 		v.released_level = voice_env_level(&v, attack, decay, sustain, release)
 		v.gate = false
 		v.release_frames = 0
 	}
 }
 
-pokey_process_audio :: proc(plug: ^PluginProcessor) {
+pokey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
 	if actx.numChannels == 0 || actx.numSamples == 0 do return
 
-	state := plug.state
+	state := cast(^PokeyProcessState)plug.state
 	sample_rate := f64(actx.sampleRate)
 	num_channels := min(actx.numChannels, MAX_CHANNELS)
 
-	machine := smoothed_read(actx, PARAM_MACHINE) < 0.5 ? dsp.PokeyMachine.NTSC : dsp.PokeyMachine.PAL
+	machine := sdk.smoothed_read(actx, PARAM_MACHINE) < 0.5 ? dsp.PokeyMachine.NTSC : dsp.PokeyMachine.PAL
 	if machine != state.chip[0].machine {
 		for &chip in state.chip do dsp.pokey_init(&chip, machine) // re-init kills voices, registers are zeroed
 		for &v in state.voices do v.active = false
@@ -376,9 +380,9 @@ pokey_process_audio :: proc(plug: ^PluginProcessor) {
 
 	frame_len := sample_rate * pokey_frame_cycles(&state.chip[0]) / state.chip[0].main_clock
 
-	it := make_block_iterator(actx.events, actx.numSamples)
-	for block in next_block(&it) {
-		advance_smoothers(actx, block.sample_offset)
+	it := sdk.make_block_iterator(actx.events, actx.numSamples)
+	for block in sdk.next_block(&it) {
+		sdk.advance_smoothers(actx, block.sample_offset)
 		for &evt in block.events {
 			#partial switch evt.kind {
 			case .NoteOn: pokey_note_on(state, actx, evt.note_on)
@@ -425,80 +429,80 @@ pokey_timbre_to_string :: proc(val: f64) -> string {
 	return ""
 }
 
-pokey_draw :: proc(plug: ^PluginController) {
-	draw_set_clear_color(plug.draw, plug.ui.theme.bgColor)
-	draw_clear(plug.draw)
+pokey_draw :: proc(plug: ^sdk.PluginController) {
+	sdk.draw_set_clear_color(plug.draw, plug.ui.theme.bgColor)
+	sdk.draw_clear(plug.draw)
 
 	ui := plug.ui
-	if ui_frame_scoped(ui) {
-		if ui_panel(ui, skipDraw = true, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 14, padding = 14) {
-			if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
-				if ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
-					ui_label(ui, "Timbre")
-					ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = pokey_timbre_to_string)
+	if sdk.ui_frame_scoped(ui) {
+		if sdk.ui_panel(ui, skipDraw = true, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 14, padding = 14) {
+			if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
+				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+					sdk.ui_label(ui, "Timbre")
+					sdk.ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = pokey_timbre_to_string)
 				}
-				if ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
-					ui_label(ui, "Envelope")
-					if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
-						ui_knob_param_labeled(ui, PARAM_ATTACK)
-						ui_knob_param_labeled(ui, PARAM_DECAY)
-						ui_knob_param_labeled(ui, PARAM_SUSTAIN)
-						ui_knob_param_labeled(ui, PARAM_RELEASE)
+				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+					sdk.ui_label(ui, "Envelope")
+					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+						sdk.ui_knob_param_labeled(ui, PARAM_ATTACK)
+						sdk.ui_knob_param_labeled(ui, PARAM_DECAY)
+						sdk.ui_knob_param_labeled(ui, PARAM_SUSTAIN)
+						sdk.ui_knob_param_labeled(ui, PARAM_RELEASE)
 					}
 				}
 			}
-			if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
-				if ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
-					ui_label(ui, "Arpeggio")
-					if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
-						ui_knob_param_labeled(ui, PARAM_ARP_RATE)
-						ui_knob_param_labeled(ui, PARAM_ARP_STEP1)
-						ui_knob_param_labeled(ui, PARAM_ARP_STEP2)
+			if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
+				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+					sdk.ui_label(ui, "Arpeggio")
+					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+						sdk.ui_knob_param_labeled(ui, PARAM_ARP_RATE)
+						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP1)
+						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP2)
 					}
 				}
-				if ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
-					ui_label(ui, "Vibrato")
-					if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
-						ui_knob_param_labeled(ui, PARAM_VIB_DEPTH)
-						ui_knob_param_labeled(ui, PARAM_VIB_SPEED)
-						ui_knob_param_labeled(ui, PARAM_VIB_DELAY)
+				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+					sdk.ui_label(ui, "Vibrato")
+					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DEPTH)
+						sdk.ui_knob_param_labeled(ui, PARAM_VIB_SPEED)
+						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DELAY)
 					}
 				}
-				if ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
-					ui_label(ui, "Tune")
-					if ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
-						ui_knob_param_labeled(ui, PARAM_DETUNE)
-						ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = pokey_machine_to_string)
+				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+					sdk.ui_label(ui, "Tune")
+					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+						sdk.ui_knob_param_labeled(ui, PARAM_DETUNE)
+						sdk.ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = pokey_machine_to_string)
 					}
 				}
 			}
 		}
 	}
 
-	draw_submit(plug.draw)
+	sdk.draw_submit(plug.draw)
 }
 
-pokey_setup_controller :: proc(plug: ^PluginController) {
+pokey_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
+	state := new(PokeyProcessState, allocator = plug.host.session_allocator)
+	for &chip in state.chip do dsp.pokey_init(&chip, .NTSC)
+	for &v in state.voices do v.active = false
+	state.samples_to_frame = 0
+	return state
 }
 
-pokey_setup_processor :: proc(plug: ^PluginProcessor) {
-	for &chip in plug.state.chip do dsp.pokey_init(&chip, .NTSC)
-	for &v in plug.state.voices do v.active = false
-	plug.state.samples_to_frame = 0
+pokey_reset :: proc(plug: ^sdk.PluginProcessor) {
+	state := cast(^PokeyProcessState)plug.state
+	for &chip in state.chip do dsp.pokey_reset(&chip)
+	for &v in state.voices do v.active = false
+	state.samples_to_frame = 0
 }
 
-pokey_reset :: proc(plug: ^PluginProcessor) {
-	for &chip in plug.state.chip do dsp.pokey_reset(&chip)
-	for &v in plug.state.voices do v.active = false
-	plug.state.samples_to_frame = 0
-}
-
-pokey_api :: PluginApi {
+pokey_api :: sdk.PluginApi {
 	get_plugin_descriptor = pokey_get_plugin_descriptor,
 	process_audio         = pokey_process_audio,
 	draw                  = pokey_draw,
 
-	setup_controller      = pokey_setup_controller,
+	setup_controller      = nil,
 	view_attached         = nil,
 	view_removed          = nil,
 	view_resized          = nil,
@@ -536,5 +540,3 @@ test_pokey_tuning :: proc(t: ^testing.T) {
 	testing.expect_value(t, pokey_audf_for_freq(&pal, .Gritty, dsp.midi_to_freq(33)), 76)
 	testing.expect_value(t, pokey_audf_for_freq(&pal, .Gritty, dsp.midi_to_freq(45)), 37)
 }
-
-} // when block

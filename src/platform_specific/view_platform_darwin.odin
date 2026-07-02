@@ -72,10 +72,9 @@ MetalRenderer :: struct {
 	whiteTexture: bridge.TextureHandle,
 }
 
-// Obj-C class names are a process-global namespace. Suffix with the plugin
-// token so two Lindale plugins loaded into one host process don't collide
-// when registering the class. A duplicate registration crashes the host.
-METAL_VIEW_CLASS :: "LindaleMetalView_" + "asdfasdf"
+// Obj-C class names are a process-global namespace. Suffix with random ID
+// when registering the class, a duplicate registration crashes the host
+METAL_VIEW_CLASS :: "LindaleMetalView_" + string(bridge.BUILD_ID)
 
 // NSView subclass with CAMetalLayer
 @(objc_implement,

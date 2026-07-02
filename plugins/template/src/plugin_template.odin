@@ -1,15 +1,20 @@
 package template
 
-import l "../../src/framework"
+import "../../../src/sdk"
 
-@(rodata) template_param_table := [?]l.ParamDescriptor {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return template_api
+}
+
+@(rodata) template_param_table := [?]sdk.ParamDescriptor {
 	{
 		name = "Test Param", short_name = "tp", min = 0, max = 100, default_value = 0,
 		unit = .Percentage, flags = {.Automatable},
 	},
 }
 
-template_get_plugin_descriptor :: proc() -> l.PluginDescriptor {
+template_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Template",
 		vendor = "JagI",
@@ -24,26 +29,26 @@ template_get_plugin_descriptor :: proc() -> l.PluginDescriptor {
 	}
 }
 
-template_process_audio :: proc(plug: ^l.PluginProcessor) {
+template_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 
 }
 
-template_draw :: proc(plug: ^l.PluginController) {
-	l.draw_set_clear_color(plug.draw, l.ColorF32{0.2, 0.1, 0.2, 1})
-	l.draw_clear(plug.draw)
+template_draw :: proc(plug: ^sdk.PluginController) {
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32{0.2, 0.1, 0.2, 1})
+	sdk.draw_clear(plug.draw)
 
-	l.draw_submit(plug.draw)
+	sdk.draw_submit(plug.draw)
 }
 
-template_setup_controller :: proc(plug: ^l.PluginController) -> rawptr {
+template_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
 	return nil
 }
 
-template_setup_processor :: proc(plug: ^l.PluginProcessor) -> rawptr {
+template_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 	return nil
 }
 
-template_api :: l.PluginApi {
+template_api :: sdk.PluginApi {
 	get_plugin_descriptor = template_get_plugin_descriptor,
 	process_audio         = template_process_audio,
 	draw                  = template_draw,

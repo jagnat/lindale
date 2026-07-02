@@ -4,16 +4,15 @@ import "base:intrinsics"
 import "core:fmt"
 import "core:math"
 import "core:log"
-import lin "../../../src/lindale"
+import "../../../src/sdk"
 import b "../../../src/bridge"
 import "../../../src/dsp"
 import dit "../../../src/thirdparty/uFFT_DIT"
 
 @(export, link_name="lindale_get_plugin_api")
-get_plugin_api :: proc() -> lin.PluginApi {
+get_plugin_api :: proc() -> sdk.PluginApi {
 	return scopey_api
 }
-
 
 FFT_SIZE :: 4096
 RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot read
@@ -101,7 +100,7 @@ AnalysisFrame :: struct {
 @(rodata) scopey_param_table := [?]b.ParamDescriptor {
 }
 
-scopey_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
+scopey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Scopey",
 		vendor = "JagI",
@@ -110,7 +109,7 @@ scopey_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
 		params = scopey_param_table[:],
 		max_channels = MAX_CHANNELS,
 
-		view = lin.ViewConfig {
+		view = sdk.ViewConfig {
 			default_width = 640,
 			default_height = 480,
 			resizable = true,
@@ -118,7 +117,7 @@ scopey_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
 	}
 }
 
-scopey_process_audio :: proc(plug: ^lin.PluginProcessor) {
+scopey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
@@ -170,7 +169,7 @@ scopey_process_audio :: proc(plug: ^lin.PluginProcessor) {
 	}
 }
 
-scopey_run_analysis :: proc(plug: ^lin.PluginController) {
+scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 	state := cast(^ScopeyControlState)plug.state
 	process_state := cast(^ScopeyProcessState)plug.processor_peer.state
 	a := &state.analysis
@@ -313,8 +312,8 @@ scopey_run_analysis :: proc(plug: ^lin.PluginController) {
 	}
 }
 
-draw_canvas_frame :: proc(ctx: ^lin.UIContext, comp: ^lin.Component) {
-	lin.draw_push_rect(ctx.plugin.draw, lin.SimpleUIRect {
+draw_canvas_frame :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component) {
+	sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
 		x = comp.calcBounds.x, y = comp.calcBounds.y,
 		width = comp.calcBounds.w, height = comp.calcBounds.h,
 		color = {0, 0, 0, 0},
@@ -324,7 +323,7 @@ draw_canvas_frame :: proc(ctx: ^lin.UIContext, comp: ^lin.Component) {
 	})
 }
 
-draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
+draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
@@ -346,8 +345,8 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component,
 	log_span := math.log10(FMAX / FMIN)
 	fft_size := f32(FFT_SIZE)
 
-	label_color := lin.ColorU8{80, 80, 80, 255}
-	grid_color := lin.ColorU8{50, 50, 50, 255}
+	label_color := sdk.ColorU8{80, 80, 80, 255}
+	grid_color := sdk.ColorU8{50, 50, 50, 255}
 	label_size := f32(16)
 
 	decades := [?]struct{f: f32, label: string}{{10, "10"}, {100, "100"}, {1000, "1k"}, {10000, "10k"}}
@@ -357,24 +356,24 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component,
 			f := decade.f * f32(k)
 			if f >= FMAX do break
 			x := bounds.x + bounds.w * (math.log10(f / FMIN) / log_span)
-			lin.draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, grid_color)
+			sdk.draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, grid_color)
 		}
 		x := bounds.x + bounds.w * (math.log10(decade.f / FMIN) / log_span)
-		tw := lin.draw_measure_text(ctx.plugin.draw, decade.label, label_size).x
-		lin.draw_text(ctx.plugin.draw, decade.label, x - tw / 2, bounds.y + bounds.h + 1, color = label_color, size = label_size)
+		tw := sdk.draw_measure_text(ctx.plugin.draw, decade.label, label_size).x
+		sdk.draw_text(ctx.plugin.draw, decade.label, x - tw / 2, bounds.y + bounds.h + 1, color = label_color, size = label_size)
 	}
 
 	// dBFS gridlines and labels every 20db
 	for db := DB_TOP; db >= DB_FLOOR; db -= 20 {
 		t := (db - DB_FLOOR) / (DB_TOP - DB_FLOOR)
 		y := bounds.y + bounds.h * (1 - t)
-		if db != DB_TOP do lin.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
+		if db != DB_TOP do sdk.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
 		s := fmt.tprintf("%d", int(db))
-		tsz := lin.draw_measure_text(ctx.plugin.draw, s, label_size)
-		if db != DB_FLOOR do lin.draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
+		tsz := sdk.draw_measure_text(ctx.plugin.draw, s, label_size)
+		if db != DB_FLOOR do sdk.draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = label_color, size = label_size)
 	}
 
-	cols :[]lin.ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
+	cols :[]sdk.ColorU8= {{255, 100, 100, 255}, {100, 100, 255, 255}}
 
 	// Interpolate between bins using catmull-rom when bins are at least SMOOTH_MIN_BIN_PX apart
 	SMOOTH_MIN_BIN_PX :: f32(3)
@@ -388,17 +387,17 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component,
 	smooth_freq := clamp(unit_density_freq / SMOOTH_MIN_BIN_PX, FMIN, FMAX)
 
 	for c in 0 ..< a.num_channels {
-		pts := make([dynamic]lin.Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
+		pts := make([dynamic]sdk.Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
 
 		// For low freqs, catmull-rom through the bins up to the threshold
-		lf := make([dynamic]lin.Vec2f, 0, 256, context.temp_allocator)
+		lf := make([dynamic]sdk.Vec2f, 0, 256, context.temp_allocator)
 		for i in 1 ..= max_i {
 			freq := f32(i) * bin_hz
 			if freq < FMIN do continue
 			if freq > smooth_freq do break
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
 			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
-			append(&lf, lin.Vec2f{x, y})
+			append(&lf, sdk.Vec2f{x, y})
 		}
 
 		for k in 0 ..< max(len(lf) - 1, 0) {
@@ -408,7 +407,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component,
 			p3 := lf[min(k + 2, len(lf) - 1)]
 			segs := max(int(abs(p2.x - p1.x) / SMOOTH_SEG_PX), 1)
 			for s in 0 ..< segs {
-				pt := lin.catmull_rom(p0, p1, p2, p3, f32(s) / f32(segs))
+				pt := sdk.catmull_rom(p0, p1, p2, p3, f32(s) / f32(segs))
 				pt.y = clamp(pt.y, y_lo, y_hi)
 				append(&pts, pt)
 			}
@@ -422,10 +421,10 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component,
 			if freq > FMAX do break
 			x := bounds.x + bounds.w * (math.log10(freq / FMIN) / log_span)
 			y := bounds.y + bounds.h * (1 - clamp((a.fft_smooth_db[c][i] - DB_FLOOR) / (DB_TOP - DB_FLOOR), 0, 1))
-			append(&pts, lin.Vec2f{x, y})
+			append(&pts, sdk.Vec2f{x, y})
 		}
 
-		if len(pts) >= 2 do lin.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = cols[c])
+		if len(pts) >= 2 do sdk.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = cols[c])
 	}
 }
 
@@ -434,7 +433,7 @@ trail_alpha :: #force_inline proc(t: f32) -> f32 {
 	return t * t * t
 }
 
-draw_goniometer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
+draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 
 	bounds := comp.calcBounds
@@ -447,33 +446,33 @@ draw_goniometer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: 
 	SQRT_HALF :: f32(0.70710678)
 	dc := ctx.plugin.draw
 
-	label_color := lin.ColorU8{80, 80, 80, 255}
-	grid_color := lin.ColorU8{50, 50, 50, 255}
+	label_color := sdk.ColorU8{80, 80, 80, 255}
+	grid_color := sdk.ColorU8{50, 50, 50, 255}
 	label_size := f32(16)
 	lp := f32(3)
 
-	mp := lin.draw_measure_text(dc, "+M", label_size)
-	mn := lin.draw_measure_text(dc, "-M", label_size)
-	sp := lin.draw_measure_text(dc, "+S", label_size)
-	sn := lin.draw_measure_text(dc, "-S", label_size)
-	lt := lin.draw_measure_text(dc, "L", label_size)
-	rt := lin.draw_measure_text(dc, "R", label_size)
+	mp := sdk.draw_measure_text(dc, "+M", label_size)
+	mn := sdk.draw_measure_text(dc, "-M", label_size)
+	sp := sdk.draw_measure_text(dc, "+S", label_size)
+	sn := sdk.draw_measure_text(dc, "-S", label_size)
+	lt := sdk.draw_measure_text(dc, "L", label_size)
+	rt := sdk.draw_measure_text(dc, "R", label_size)
 
 	radius_v := bounds.h * 0.5 - max(mp.y, mn.y) - lp
 	radius_h := bounds.w * 0.5 - max(sp.x, sn.x) - lp
 	radius := min(radius_v, radius_h)
 	diag := radius * SQRT_HALF
 
-	lin.draw_push_rect(dc, lin.SimpleUIRect{
+	sdk.draw_push_rect(dc, sdk.SimpleUIRect{
 		x = cx - radius, y = cy - radius,
 		width = radius * 2, height = radius * 2,
 		cornerRad = radius,
 		borderColor = grid_color, borderWidth = 1,
 	})
-	lin.draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
-	lin.draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
-	lin.draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
-	lin.draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
+	sdk.draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
+	sdk.draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
+	sdk.draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, grid_color)
+	sdk.draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, grid_color)
 
 	scale := radius * a.gonio_gain
 
@@ -491,22 +490,22 @@ draw_goniometer_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: 
 			x1 := cx + (r - l) * SQRT_HALF * scale
 			y1 := cy - (l + r) * SQRT_HALF * scale
 			alpha := trail_alpha(f32(k) * inv_n)
-			col := lin.ColorU8{150, 100, 150, u8(alpha * 255)}
-			lin.draw_push_pill(dc, {x0, y0}, {x0, y0}, 2, col)
+			col := sdk.ColorU8{150, 100, 150, u8(alpha * 255)}
+			sdk.draw_push_pill(dc, {x0, y0}, {x0, y0}, 2, col)
 			x0 = x1
 			y0 = y1
 		}
 	}
 
-	lin.draw_text(dc, "+M", cx - mp.x / 2, cy - radius - mp.y - lp, label_color, label_size)
-	lin.draw_text(dc, "-M", cx - mn.x / 2, cy + radius + lp, label_color, label_size)
-	lin.draw_text(dc, "+S", cx + radius + lp, cy - sp.y / 2, label_color, label_size)
-	lin.draw_text(dc, "-S", cx - radius - sn.x - lp, cy - sn.y / 2, label_color, label_size)
-	lin.draw_text(dc, "L", cx - diag - lt.x - lp, cy - diag - lt.y - lp, label_color, label_size)
-	lin.draw_text(dc, "R", cx + diag + lp, cy - diag - rt.y - lp, label_color, label_size)
+	sdk.draw_text(dc, "+M", cx - mp.x / 2, cy - radius - mp.y - lp, label_color, label_size)
+	sdk.draw_text(dc, "-M", cx - mn.x / 2, cy + radius + lp, label_color, label_size)
+	sdk.draw_text(dc, "+S", cx + radius + lp, cy - sp.y / 2, label_color, label_size)
+	sdk.draw_text(dc, "-S", cx - radius - sn.x - lp, cy - sn.y / 2, label_color, label_size)
+	sdk.draw_text(dc, "L", cx - diag - lt.x - lp, cy - diag - lt.y - lp, label_color, label_size)
+	sdk.draw_text(dc, "R", cx + diag + lp, cy - diag - rt.y - lp, label_color, label_size)
 }
 
-draw_hilbert_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
+draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
@@ -526,16 +525,16 @@ draw_hilbert_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: raw
 		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
 		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
 		alpha := trail_alpha(f32(k) * inv_n)
-		col := lin.ColorU8{200, 200, 200, 255}
+		col := sdk.ColorU8{200, 200, 200, 255}
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
 		y1 := cy - imag(p1) * scale
-		lin.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
+		sdk.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
 	}
 }
 
-draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawptr) {
+draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	bounds := comp.calcBounds
 	a := cast(^AnalysisFrame)data
 
@@ -550,28 +549,28 @@ draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawpt
 	MIN_DB, ORANGE_DB, RED_DB, MAX_DB :: f32(-60), f32(-12), f32(-6), f32(0)
 
 	pix_per_db := bounds.h / (MAX_DB - MIN_DB)
-	segments := [?]struct { top_db: f32, peak_color, rms_color: lin.ColorU8 } {
+	segments := [?]struct { top_db: f32, peak_color, rms_color: sdk.ColorU8 } {
 		{ORANGE_DB, {0, 200, 80, 150}, {0, 200, 80, 255}},
 		{RED_DB, {220, 120, 0, 150}, {220, 120, 0, 255}},
 		{MAX_DB, {255, 20, 50, 150}, {255, 20, 50, 255}},
 	}
 
 	// labels every 6 dB
-	label_color := lin.ColorU8 {80, 80, 80, 255}
-	grid_color := lin.ColorU8 {50, 50, 50, 255}
+	label_color := sdk.ColorU8 {80, 80, 80, 255}
+	grid_color := sdk.ColorU8 {50, 50, 50, 255}
 	label_size := f32(11)
 	for db := MAX_DB; db >= MIN_DB; db -= 6 {
 		y := bounds.y + bounds.h * (1 - (db - MIN_DB) / (MAX_DB - MIN_DB))
 		s := fmt.tprintf("%d", int(db))
-		tsz := lin.draw_measure_text(ctx.plugin.draw, s, label_size)
-		lin.draw_text(ctx.plugin.draw, s, bounds.x - tsz.x - 4, y - tsz.y / 2, color = label_color, size = label_size)
-		lin.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
+		tsz := sdk.draw_measure_text(ctx.plugin.draw, s, label_size)
+		sdk.draw_text(ctx.plugin.draw, s, bounds.x - tsz.x - 4, y - tsz.y / 2, color = label_color, size = label_size)
+		sdk.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, grid_color)
 	}
 
 	// Peak first, RMS on top
 	for is_peak in ([?]bool{true, false}) {
 		for i in 0 ..< a.num_channels {
-			dbs := lin.linear_to_decibels(is_peak ? a.peak[i] : a.rms[i])
+			dbs := sdk.linear_to_decibels(is_peak ? a.peak[i] : a.rms[i])
 			if dbs < MIN_DB do continue
 			x := bounds.x + f32(i) * (meterW + STEREO_SPACING_PX)
 			prev_db := MIN_DB
@@ -581,7 +580,7 @@ draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawpt
 				h := pix_per_db * (top_db - prev_db)
 				y := bounds.y + bounds.h - pix_per_db * (top_db - MIN_DB)
 				color := is_peak ? seg.peak_color : seg.rms_color
-				lin.draw_push_rect(ctx.plugin.draw, {
+				sdk.draw_push_rect(ctx.plugin.draw, {
 					x = x, y = y, width = meterW, height = h,
 					color = color, cornerRad = 2,
 				})
@@ -592,7 +591,7 @@ draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawpt
 
 	PEAK_TICK_H :: f32(2)
 	for c in 0..< a.num_channels {
-		dbs := lin.linear_to_decibels(a.peak_hold[c])
+		dbs := sdk.linear_to_decibels(a.peak_hold[c])
 		if dbs < MIN_DB do continue
 		col := segments[len(segments) - 1].rms_color
 		for seg in segments {
@@ -603,7 +602,7 @@ draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawpt
 		}
 		x := bounds.x + f32(c) * (meterW + STEREO_SPACING_PX)
 		y := bounds.y + bounds.h - pix_per_db * (dbs - MIN_DB)
-		lin.draw_push_rect(ctx.plugin.draw, lin.SimpleUIRect {
+		sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
 			x = x, y = y - PEAK_TICK_H / 2, width = meterW, height = PEAK_TICK_H,
 			color = col, cornerRad = 1,
 		})
@@ -611,34 +610,34 @@ draw_meter_canvas :: proc(ctx: ^lin.UIContext, comp: ^lin.Component, data: rawpt
 }
 
 // Main draw proc
-scopey_draw :: proc(plug: ^lin.PluginController) {
+scopey_draw :: proc(plug: ^sdk.PluginController) {
 	scopey_run_analysis(plug)
 	state := cast(^ScopeyControlState)plug.state
 	a := &state.analysis
 
-	lin.draw_set_clear_color(plug.draw, lin.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
-	// lin.draw_set_clear_color(plug.draw, lin.ColorF32{ 0, 1, 0, 1})
-	lin.draw_clear(plug.draw)
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	// sdk.draw_set_clear_color(plug.draw, sdk.ColorF32{ 0, 1, 0, 1})
+	sdk.draw_clear(plug.draw)
 
-	if lin.ui_frame_scoped(plug.ui) {
-		if lin.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
-			if lin.ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
+	if sdk.ui_frame_scoped(plug.ui) {
+		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
+			if sdk.ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
 				// Goniometer
-				lin.ui_canvas(plug.ui, draw_goniometer_canvas, a)
+				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
-				lin.ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = lin.AxisSizing{type = .FIXED, value = 60})
+				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = sdk.AxisSizing{type = .FIXED, value = 60})
 				// david lu esque hilbert transform scope
-				lin.ui_canvas(plug.ui, draw_hilbert_canvas, a)
+				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
 			}
 			// Spectrum analyzer
-			lin.ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
+			sdk.ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
 		}
 	}
 
-	lin.draw_submit(plug.draw)
+	sdk.draw_submit(plug.draw)
 }
 
-scopey_setup_controller :: proc(plug: ^lin.PluginController) -> rawptr {
+scopey_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
 	state := new(ScopeyControlState, allocator = plug.host.session_allocator)
 	dsp.window_fill(state.fft_window[:], .Hann)
 	state.fft_window_gain = dsp.window_coherent_gain(state.fft_window[:])
@@ -654,7 +653,7 @@ scopey_setup_controller :: proc(plug: ^lin.PluginController) -> rawptr {
 	return state
 }
 
-scopey_setup_processor :: proc(plug: ^lin.PluginProcessor) -> rawptr {
+scopey_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 	state := new(ScopeyProcessState, allocator = plug.host.session_allocator)
 	for c in 0 ..< MAX_CHANNELS {
 		dsp.ring_init(&state.rings[c], state.backing_bufs[c][:])
@@ -666,7 +665,7 @@ scopey_setup_processor :: proc(plug: ^lin.PluginProcessor) -> rawptr {
 	return state
 }
 
-scopey_api :: lin.PluginApi {
+scopey_api :: sdk.PluginApi {
 	get_plugin_descriptor = scopey_get_plugin_descriptor,
 	process_audio         = scopey_process_audio,
 	draw                  = scopey_draw,

@@ -1,4 +1,4 @@
-package lindale
+package synth
 
 import "base:intrinsics"
 import "core:log"
@@ -6,12 +6,16 @@ import "core:mem"
 import "core:time"
 import "core:math"
 import "core:math/linalg"
-import dit "../thirdparty/uFFT_DIT"
+import dit "../../../src/thirdparty/uFFT_DIT"
 import "core:c"
-import b "../bridge"
-import dsp "../dsp"
+import "../../../src/sdk"
+import b "../../../src/bridge"
+import dsp "../../../src/dsp"
 
-when b.ACTIVE_PLUGIN == "beepboop" {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return synth_api
+}
 
 // Voice
 MAX_VOICES :: 16
@@ -67,26 +71,26 @@ SynthControlState :: struct {
 
 // Parameters
 
-PARAM_OSC1_WAVE :: ParamIndex(0)
-PARAM_OSC2_WAVE :: ParamIndex(1)
-PARAM_OSC_MIX   :: ParamIndex(2)
-PARAM_OSC2_DET  :: ParamIndex(3)
-PARAM_ATTACK    :: ParamIndex(4)
-PARAM_DECAY     :: ParamIndex(5)
-PARAM_SUSTAIN   :: ParamIndex(6)
-PARAM_RELEASE   :: ParamIndex(7)
-PARAM_GAIN      :: ParamIndex(8)
-PARAM_ARP_ON    :: ParamIndex(9)
-PARAM_ARP_RATE  :: ParamIndex(10)
+PARAM_OSC1_WAVE :: sdk.ParamIndex(0)
+PARAM_OSC2_WAVE :: sdk.ParamIndex(1)
+PARAM_OSC_MIX   :: sdk.ParamIndex(2)
+PARAM_OSC2_DET  :: sdk.ParamIndex(3)
+PARAM_ATTACK    :: sdk.ParamIndex(4)
+PARAM_DECAY     :: sdk.ParamIndex(5)
+PARAM_SUSTAIN   :: sdk.ParamIndex(6)
+PARAM_RELEASE   :: sdk.ParamIndex(7)
+PARAM_GAIN      :: sdk.ParamIndex(8)
+PARAM_ARP_ON    :: sdk.ParamIndex(9)
+PARAM_ARP_RATE  :: sdk.ParamIndex(10)
 
 @(rodata) synth_param_table := [?]b.ParamDescriptor {
 	{
 		name = "Osc1 Wave", short_name = "Osc1", min = 0, max = 4, default_value = 0,
-		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
+		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
 	{
 		name = "Osc2 Wave", short_name = "Osc2", min = 0, max = 4, default_value = 1,
-		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
+		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
 	{
 		name = "Osc Mix", short_name = "Mix", min = -1, max = 1, default_value = 0,
@@ -118,17 +122,17 @@ PARAM_ARP_RATE  :: ParamIndex(10)
 	},
 	{
 		name = "Arp On", short_name = "Arp", min = 0, max = 1, default_value = 0,
-		step_count = 1, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
+		step_count = 1, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
 	{
 		name = "Arp Rate", short_name = "Rate", min = 0, max = 3, default_value = 1,
-		step_count = 3, unit = .None, flags = {.Automatable, .List}, smooth_ms = NO_SMOOTHING,
+		step_count = 3, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
 }
 
 // Descriptor
 
-synth_get_plugin_descriptor :: proc() -> PluginDescriptor {
+synth_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Lindale Synth",
 		vendor = "JagI",
@@ -246,13 +250,13 @@ arp_gate_off_all :: proc(state: ^SynthProcessState) {
 
 // Audio
 
-synth_process_audio :: proc(plug: ^PluginProcessor) {
+synth_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
 	if actx.numChannels == 0 || actx.numSamples == 0 do return
 
-	state := plug.state
+	state := cast(^SynthProcessState)plug.state
 	num_samples := actx.numSamples
 	num_channels := actx.numChannels
 	transport := &actx.transport
@@ -260,9 +264,9 @@ synth_process_audio :: proc(plug: ^PluginProcessor) {
 
 	tempo := transport.tempo if (.Tempo in transport.valid && transport.tempo > 0) else 120.0
 
-	it := make_block_iterator(actx.events, num_samples)
-	for block in next_block(&it) {
-		arp_on := smoothed_read(actx, PARAM_ARP_ON) > 0.5
+	it := sdk.make_block_iterator(actx.events, num_samples)
+	for block in sdk.next_block(&it) {
+		arp_on := sdk.smoothed_read(actx, PARAM_ARP_ON) > 0.5
 
 		for &evt in block.events {
 			switch evt.kind {
@@ -290,10 +294,10 @@ synth_process_audio :: proc(plug: ^PluginProcessor) {
 
 		for s in 0 ..< block.sample_count {
 			abs_sample := block.sample_offset + s
-			advance_smoothers(actx, abs_sample)
+			sdk.advance_smoothers(actx, abs_sample)
 
-			arp_on = smoothed_read(actx, PARAM_ARP_ON) > 0.5
-			arp_rate := smoothed_read(actx, PARAM_ARP_RATE)
+			arp_on = sdk.smoothed_read(actx, PARAM_ARP_ON) > 0.5
+			arp_rate := sdk.smoothed_read(actx, PARAM_ARP_RATE)
 
 			if arp_on && state.arp_note_count > 0 {
 				step_dur := arp_step_samples(arp_rate, tempo, sample_rate)
@@ -315,15 +319,15 @@ synth_process_audio :: proc(plug: ^PluginProcessor) {
 				state.arp_step = 0
 			}
 
-			osc1_wave := waveform_from_param(smoothed_read(actx, PARAM_OSC1_WAVE))
-			osc2_wave := waveform_from_param(smoothed_read(actx, PARAM_OSC2_WAVE))
-			osc2_detune_cents := smoothed_read(actx, PARAM_OSC2_DET)
-			attack := smoothed_read(actx, PARAM_ATTACK) / 1000.0
-			decay := smoothed_read(actx, PARAM_DECAY) / 1000.0
-			sustain := smoothed_read(actx, PARAM_SUSTAIN) / 100.0
-			release := smoothed_read(actx, PARAM_RELEASE) / 1000.0
-			osc_mix := (smoothed_read(actx, PARAM_OSC_MIX) + 1.0) / 2.0
-			gain := dsp.db_to_linear(smoothed_read(actx, PARAM_GAIN))
+			osc1_wave := waveform_from_param(sdk.smoothed_read(actx, PARAM_OSC1_WAVE))
+			osc2_wave := waveform_from_param(sdk.smoothed_read(actx, PARAM_OSC2_WAVE))
+			osc2_detune_cents := sdk.smoothed_read(actx, PARAM_OSC2_DET)
+			attack := sdk.smoothed_read(actx, PARAM_ATTACK) / 1000.0
+			decay := sdk.smoothed_read(actx, PARAM_DECAY) / 1000.0
+			sustain := sdk.smoothed_read(actx, PARAM_SUSTAIN) / 100.0
+			release := sdk.smoothed_read(actx, PARAM_RELEASE) / 1000.0
+			osc_mix := (sdk.smoothed_read(actx, PARAM_OSC_MIX) + 1.0) / 2.0
+			gain := dsp.db_to_linear(sdk.smoothed_read(actx, PARAM_GAIN))
 
 			bend_semitones := state.pitch_bend * PITCH_BEND_RANGE
 			for &v in state.voices {
@@ -406,17 +410,17 @@ note_off :: proc(state: ^SynthProcessState, evt: b.NoteOff) {
 	}
 }
 
-synth_get_latency_samples :: proc(plug: ^PluginProcessor) -> u32 {
+synth_get_latency_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 	return 0
 }
 
-synth_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
+synth_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 	return 0
 }
 
 // UI
 
-synth_draw :: proc(plug: ^PluginController) {
+synth_draw :: proc(plug: ^sdk.PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
 	if plug.inDraw {
@@ -431,16 +435,18 @@ synth_draw :: proc(plug: ^PluginController) {
 	// Read FFT buffer (TODO kinda hacky, not at all atomic)
 	dbs: [ANALYSIS_BUFFER_SIZE / 2]f32
 	if plug.processor_peer != nil {
+		pstate := cast(^SynthProcessState)plug.processor_peer.state
+		cstate := cast(^SynthControlState)plug.state
 		vec: [ANALYSIS_BUFFER_SIZE]complex64
-		tmpBuf : [ANALYSIS_BUFFER_SIZE]f32 = plug.processor_peer.state.backingBuf
-		writeIdx := intrinsics.atomic_load_explicit(&plug.processor_peer.state.buffer.write_pos, .Relaxed)
+		tmpBuf : [ANALYSIS_BUFFER_SIZE]f32 = pstate.backingBuf
+		writeIdx := intrinsics.atomic_load_explicit(&pstate.buffer.write_pos, .Relaxed)
 		writeIdx %= ANALYSIS_BUFFER_SIZE
 		// Re-linearize
 		tmpBuf2 : [ANALYSIS_BUFFER_SIZE]f32
 		firstLen := ANALYSIS_BUFFER_SIZE - writeIdx
 		copy(tmpBuf2[:firstLen], tmpBuf[writeIdx:])
 		copy(tmpBuf2[firstLen:], tmpBuf[:writeIdx])
-		tmpBuf2 = tmpBuf2 * plug.state.fft_window
+		tmpBuf2 = tmpBuf2 * cstate.fft_window
 		for val, i in tmpBuf2 do vec[i] = complex64(val)
 		dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
 
@@ -451,8 +457,8 @@ synth_draw :: proc(plug: ^PluginController) {
 		}
 	}
 
-	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
-	draw_clear(plug.draw)
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	sdk.draw_clear(plug.draw)
 
 	osc_enum_to_string :: proc(val: f64) -> string {
 		waveform := waveform_from_param(f32(val))
@@ -487,7 +493,7 @@ synth_draw :: proc(plug: ^PluginController) {
 		fft_data.sample_rate = f32(plug.processor_peer.audioProcessor.sampleRate)
 	}
 
-	scope_draw :: proc(ctx: ^UIContext, comp: ^Component, data: rawptr) {
+	scope_draw :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 		fft := cast(^FftData)data
 		if fft == nil do return
 		bounds := comp.calcBounds
@@ -500,7 +506,7 @@ synth_draw :: proc(plug: ^PluginController) {
 		fft_size := f32(len(fft.vals) * 2)
 		log_span := math.log10(FMAX / FMIN)
 
-		pts: [ANALYSIS_BUFFER_SIZE / 2]Vec2f
+		pts: [ANALYSIS_BUFFER_SIZE / 2]sdk.Vec2f
 		n := 0
 		for val, i in fft.vals {
 			freq := f32(i) * fft.sample_rate / fft_size
@@ -514,56 +520,60 @@ synth_draw :: proc(plug: ^PluginController) {
 			n += 1
 		}
 		if n >= 2 {
-			draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1)
+			sdk.draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1)
 		}
 	}
 
-	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
+	if sdk.ui_frame_scoped(plug.ui) {
+		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
 			// Envelope params
-			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
-				ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
-				ui_knob_param_labeled(plug.ui, PARAM_DECAY)
-				ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
-				ui_knob_param_labeled(plug.ui, PARAM_RELEASE)
-				ui_knob_param_labeled(plug.ui, PARAM_GAIN)
+			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_DECAY)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_RELEASE)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_GAIN)
 			}
 			// Oscillator param
-			if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 0, skipDraw = true) {
-				ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
-				ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
-				ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
-				ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
+			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 0, skipDraw = true) {
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
 			}
-			ui_canvas(plug.ui, scope_draw, &fft_data)
+			sdk.ui_canvas(plug.ui, scope_draw, &fft_data)
 			
 			// Arp controls
-			if ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
-				ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
-				ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
+			if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+				sdk.ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
+				sdk.ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
 			}
 		}
 	}
 
-	draw_submit(plug.draw)
+	sdk.draw_submit(plug.draw)
 }
 
 // Vtable hooks
 
-synth_setup_processor :: proc(plug: ^PluginProcessor) {
-	synth_init_state(plug.state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+synth_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
+	state := new(SynthProcessState, allocator = plug.host.session_allocator)
+	synth_init_state(state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+	return state
 }
 
-synth_setup_controller :: proc(plug: ^PluginController) {
-	dsp.window_fill(plug.state.fft_window[:], .Hann)
-	plug.state.fft_window_gain = dsp.window_coherent_gain(plug.state.fft_window[:])
+synth_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
+	state := new(SynthControlState, allocator = plug.host.session_allocator)
+	dsp.window_fill(state.fft_window[:], .Hann)
+	state.fft_window_gain = dsp.window_coherent_gain(state.fft_window[:])
+	return state
 }
 
-synth_reset :: proc(plug: ^PluginProcessor) {
-	synth_reset_state(plug.state)
+synth_reset :: proc(plug: ^sdk.PluginProcessor) {
+	synth_reset_state(cast(^SynthProcessState)plug.state)
 }
 
-synth_api :: PluginApi {
+synth_api :: sdk.PluginApi {
 	get_plugin_descriptor = synth_get_plugin_descriptor,
 	process_audio         = synth_process_audio,
 	draw                  = synth_draw,
@@ -578,5 +588,3 @@ synth_api :: PluginApi {
 	get_tail_samples      = synth_get_tail_samples,
 	reset                 = synth_reset,
 }
-
-} // when block

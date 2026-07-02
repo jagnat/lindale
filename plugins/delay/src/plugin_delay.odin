@@ -1,13 +1,17 @@
-package lindale
+package delay
 
 import "core:log"
 import "core:math"
 import "core:mem"
 import "core:time"
-import b "../bridge"
-import dsp "../dsp"
+import "../../../src/sdk"
+import b "../../../src/bridge"
+import dsp "../../../src/dsp"
 
-when b.ACTIVE_PLUGIN == "delay" {
+@(export, link_name="lindale_get_plugin_api")
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return delay_api
+}
 
 MAX_DELAY_MS :: 2000.0
 
@@ -22,10 +26,10 @@ DelayControlState :: struct {}
 
 // Parameters
 
-PARAM_DELAY_TIME  :: ParamIndex(0)
-PARAM_FEEDBACK    :: ParamIndex(1)
-PARAM_MIX         :: ParamIndex(2)
-DELAY_PARAM_GAIN  :: ParamIndex(3)
+PARAM_DELAY_TIME  :: sdk.ParamIndex(0)
+PARAM_FEEDBACK    :: sdk.ParamIndex(1)
+PARAM_MIX         :: sdk.ParamIndex(2)
+DELAY_PARAM_GAIN  :: sdk.ParamIndex(3)
 
 @(rodata) delay_param_table := [?]b.ParamDescriptor {
 	{
@@ -56,7 +60,7 @@ DELAY_PARAM_GAIN  :: ParamIndex(3)
 
 // Descriptor
 
-delay_get_plugin_descriptor :: proc() -> PluginDescriptor {
+delay_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name         = "Lindale Delay",
 		vendor       = "JagI",
@@ -88,27 +92,27 @@ delay_reset_state :: proc(state: ^DelayProcessState) {
 
 // Audio
 
-delay_process_audio :: proc(plug: ^PluginProcessor) {
+delay_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audioProcessor
 	if actx == nil do return
 	if plug.state == nil do return
 	if actx.numChannels == 0 || actx.numSamples == 0 do return
 	if actx.inputs[0] == nil do return
 
-	state := plug.state
+	state := cast(^DelayProcessState)plug.state
 	num_samples := actx.numSamples
 	num_channels := actx.numChannels
 	sample_rate := f32(actx.sampleRate)
 
-	dry := capture_dry(actx.inputs[:num_channels], num_samples, plug.host.frame_allocator)
+	dry := sdk.capture_dry(actx.inputs[:num_channels], num_samples, plug.host.frame_allocator)
 
 	for s in 0 ..< num_samples {
-		advance_smoothers(actx, s)
+		sdk.advance_smoothers(actx, s)
 
-		delay_ms := smoothed_read(actx, PARAM_DELAY_TIME)
-		feedback := smoothed_read(actx, PARAM_FEEDBACK) / 100.0
-		mix := smoothed_read(actx, PARAM_MIX) / 100.0
-		gain := dsp.db_to_linear(smoothed_read(actx, DELAY_PARAM_GAIN))
+		delay_ms := sdk.smoothed_read(actx, PARAM_DELAY_TIME)
+		feedback := sdk.smoothed_read(actx, PARAM_FEEDBACK) / 100.0
+		mix := sdk.smoothed_read(actx, PARAM_MIX) / 100.0
+		gain := dsp.db_to_linear(sdk.smoothed_read(actx, DELAY_PARAM_GAIN))
 		delay_samples := delay_ms * sample_rate / 1000.0
 
 		for c in 0 ..< num_channels {
@@ -122,7 +126,7 @@ delay_process_audio :: proc(plug: ^PluginProcessor) {
 
 // UI
 
-delay_draw :: proc(plug: ^PluginController) {
+delay_draw :: proc(plug: ^sdk.PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
 	if plug.inDraw {
@@ -134,37 +138,39 @@ delay_draw :: proc(plug: ^PluginController) {
 
 	plug.lastDrawTime = time.tick_now()
 
-	draw_set_clear_color(plug.draw, ColorF32_from_ColorU8(plug.ui.theme.bgColor))
-	draw_clear(plug.draw)
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	sdk.draw_clear(plug.draw)
 
-	if ui_frame_scoped(plug.ui) {
-		if ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10) {
-			ui_knob_param_labeled(plug.ui, PARAM_DELAY_TIME)
-			ui_knob_param_labeled(plug.ui, PARAM_FEEDBACK)
-			ui_knob_param_labeled(plug.ui, PARAM_MIX)
-			ui_knob_param_labeled(plug.ui, DELAY_PARAM_GAIN)
+	if sdk.ui_frame_scoped(plug.ui) {
+		if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10) {
+			sdk.ui_knob_param_labeled(plug.ui, PARAM_DELAY_TIME)
+			sdk.ui_knob_param_labeled(plug.ui, PARAM_FEEDBACK)
+			sdk.ui_knob_param_labeled(plug.ui, PARAM_MIX)
+			sdk.ui_knob_param_labeled(plug.ui, DELAY_PARAM_GAIN)
 		}
 	}
 
-	draw_submit(plug.draw)
+	sdk.draw_submit(plug.draw)
 }
 
 // Vtable hooks
 
-delay_setup_processor :: proc(plug: ^PluginProcessor) {
-	delay_init_state(plug.state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+delay_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
+	state := new(DelayProcessState, allocator = plug.host.session_allocator)
+	delay_init_state(state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+	return state
 }
 
-delay_reset :: proc(plug: ^PluginProcessor) {
-	delay_reset_state(plug.state)
+delay_reset :: proc(plug: ^sdk.PluginProcessor) {
+	delay_reset_state(cast(^DelayProcessState)plug.state)
 }
 
-delay_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
+delay_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 	if plug.audioProcessor == nil do return 0
 	return u32(MAX_DELAY_MS * plug.audioProcessor.sampleRate / 1000.0)
 }
 
-delay_api :: PluginApi {
+delay_api :: sdk.PluginApi {
 	get_plugin_descriptor = delay_get_plugin_descriptor,
 	process_audio         = delay_process_audio,
 	draw                  = delay_draw,
@@ -179,5 +185,3 @@ delay_api :: PluginApi {
 	get_tail_samples      = delay_get_tail_samples,
 	reset                 = delay_reset,
 }
-
-}  // when block

@@ -6,14 +6,15 @@ Lindalë is a VST3 audio plugin framework in Odin (Mac + Windows), built around 
 
 ## Build Commands
 
-Run `build.odin`: `odin run . -- <mode> [plugin] [flags]`. Modes:
+Each plugin lives in `plugins/<name>/`. `cd` into it and run its build shim: `odin run . -- <mode> [flags]`. Modes:
 
 - `hotbuild` — rebuild only the hot-reloadable DLL. Use this during dev.
 - `build` — full VST3 plugin + hot DLL, then symlinks into the system VST3 folder.
-- `check` — `odin check` every plugin.
-- `select <plugin>` — set the active plugin in `src/bridge/plugin_id.odin`.
+- `check` — `odin check` this plugin.
 
-Flags: `--release` (else `-debug`), `--no-hot`.
+Flags: `-release` (else `-debug`), `-no-hot`.
+
+A plugin's identity is its folder name (the build derives `PLUGIN_NAME` from it); the build tool lives in `src/build/`. Each plugin dir holds a `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/scopey/src/plugin_scopey.odin`).
 
 ## Style
 
@@ -38,11 +39,11 @@ Flags: `--release` (else `-debug`), `--no-hot`.
 Four packages enforce the hot-reload boundary:
 
 - `src/bridge/` — shared types and vtables. Imports only Odin core. The dependency root.
-- `src/lindale/` — hot-reloadable plugin code (audio, UI, draw, parameters). Imports `bridge` and `dsp` only. **Never** imports `vst_host` or `platform_specific` — that rule is what makes it safe to swap as a standalone DLL.
+- `src/sdk/` — the plugin SDK: hot-reloadable framework code (audio, UI, draw, parameters) that plugin code imports. Imports `bridge` and `dsp` only. **Never** imports `vst_host` or `platform_specific` — that rule is what keeps the plugin DLL swappable at runtime.
 - `src/platform_specific/` — GPU renderers (Metal/DX11), timers, filesystem. Imports `bridge` only.
 - `src/vst_host/` — static VST3 layer and composition root. The only package that imports across the others.
 
-See `docs/architecture.md` for the hot-reload lifecycle, `HostContext` survival semantics, parameter/rendering/UI subsystems, and implementation notes.
+Plugin implementations live outside `src/`, under `plugins/<name>/src/`, and import `sdk` (plus `bridge`/`dsp`) via relative paths.
 
 ## Working Principles
 

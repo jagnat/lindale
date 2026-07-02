@@ -3,7 +3,7 @@
 // and contains the specification of what you need
 // to provide for a plugin implementation.
 
-package lindale
+package sdk
 
 import b "../bridge"
 

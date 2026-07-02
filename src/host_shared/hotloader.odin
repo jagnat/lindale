@@ -12,7 +12,7 @@ import "core:fmt"
 import "core:strings"
 import "core:path/filepath"
 
-import lin "../lindale"
+import "../sdk"
 
 // inspired by https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/
 
@@ -21,7 +21,7 @@ NUM_DLLS :: 2
 HOT_DLL :: #config(HOT_DLL, false)
 
 HotloadState :: struct {
-	apis: [NUM_DLLS]lin.PluginApi,
+	apis: [NUM_DLLS]sdk.PluginApi,
 	libs: [NUM_DLLS]dynlib.Library,
 	suffixes: [NUM_DLLS]int,
 	idx: int,
@@ -81,9 +81,9 @@ hotload_init :: proc() {
 	ctx.initialized = true
 }
 
-hotload_api :: proc() -> lin.PluginApi {
+hotload_api :: proc() -> sdk.PluginApi {
 	// Initialize in order so compiler throws an error if a function is missing
-	api : lin.PluginApi = {
+	api : sdk.PluginApi = {
 		buffer_get_plugin_descriptor,
 		buffer_process_audio,
 		buffer_draw,
@@ -102,135 +102,135 @@ hotload_api :: proc() -> lin.PluginApi {
 
 	return api
 
-	buffer_get_plugin_descriptor :: proc() -> lin.PluginDescriptor {
+	buffer_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 		when !HOT_DLL {
-			return lin.fallbackApi.get_plugin_descriptor()
+			return sdk.fallbackApi.get_plugin_descriptor()
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_plugin_descriptor == nil {
-				return lin.fallbackApi.get_plugin_descriptor()
+				return sdk.fallbackApi.get_plugin_descriptor()
 			} else {
 				return ctx.apis[idx].get_plugin_descriptor()
 			}
 		}
 	}
 
-	buffer_setup_controller :: proc(plug: ^lin.PluginController) -> rawptr{
+	buffer_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr{
 		when !HOT_DLL {
-			return lin.fallbackApi.setup_controller(plug)
+			return sdk.fallbackApi.setup_controller(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_controller == nil {
-				return lin.fallbackApi.setup_controller(plug)
+				return sdk.fallbackApi.setup_controller(plug)
 			} else {
 				return ctx.apis[idx].setup_controller(plug)
 			}
 		}
 	}
-	buffer_draw :: proc(plug: ^lin.PluginController) {
+	buffer_draw :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			lin.fallbackApi.draw(plug)
+			sdk.fallbackApi.draw(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
-				lin.fallbackApi.draw(plug)
+				sdk.fallbackApi.draw(plug)
 			} else {
 				ctx.apis[idx].draw(plug)
 			}
 		}
 	}
-	buffer_view_attached :: proc(plug: ^lin.PluginController) {
+	buffer_view_attached :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			lin.fallbackApi.view_attached(plug)
+			sdk.fallbackApi.view_attached(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_attached == nil {
-				lin.fallbackApi.view_attached(plug)
+				sdk.fallbackApi.view_attached(plug)
 			} else {
 				ctx.apis[idx].view_attached(plug)
 			}
 		}
 	}
-	buffer_view_removed :: proc(plug: ^lin.PluginController) {
+	buffer_view_removed :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			lin.fallbackApi.view_removed(plug)
+			sdk.fallbackApi.view_removed(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_removed == nil {
-				lin.fallbackApi.view_removed(plug)
+				sdk.fallbackApi.view_removed(plug)
 			} else {
 				ctx.apis[idx].view_removed(plug)
 			}
 		}
 	}
-	buffer_view_resized :: proc(plug: ^lin.PluginController, rect: lin.RectI32) {
+	buffer_view_resized :: proc(plug: ^sdk.PluginController, rect: sdk.RectI32) {
 		when !HOT_DLL {
-			lin.fallbackApi.view_resized(plug, rect)
+			sdk.fallbackApi.view_resized(plug, rect)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_resized == nil {
-				lin.fallbackApi.view_resized(plug, rect)
+				sdk.fallbackApi.view_resized(plug, rect)
 			} else {
 				ctx.apis[idx].view_resized(plug, rect)
 			}
 		}
 	}
 
-	buffer_setup_processor :: proc(plug: ^lin.PluginProcessor) -> rawptr {
+	buffer_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 		when !HOT_DLL {
-			return lin.fallbackApi.setup_processor(plug)
+			return sdk.fallbackApi.setup_processor(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_processor == nil {
-				return lin.fallbackApi.setup_processor(plug)
+				return sdk.fallbackApi.setup_processor(plug)
 			} else {
 				return ctx.apis[idx].setup_processor(plug)
 			}
 		}
 	}
-	buffer_process_audio :: proc(plug: ^lin.PluginProcessor) {
+	buffer_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 		when !HOT_DLL {
-			lin.fallbackApi.process_audio(plug)
+			sdk.fallbackApi.process_audio(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].process_audio == nil {
-				lin.fallbackApi.process_audio(plug)
+				sdk.fallbackApi.process_audio(plug)
 			} else {
 				ctx.apis[idx].process_audio(plug)
 			}
 		}
 	}
-	buffer_get_latency_samples :: proc(plug: ^lin.PluginProcessor) -> u32 {
+	buffer_get_latency_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 		when !HOT_DLL {
-			return lin.fallbackApi.get_latency_samples(plug)
+			return sdk.fallbackApi.get_latency_samples(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_latency_samples == nil {
-				return lin.fallbackApi.get_latency_samples(plug)
+				return sdk.fallbackApi.get_latency_samples(plug)
 			} else {
 				return ctx.apis[idx].get_latency_samples(plug)
 			}
 		}
 	}
-	buffer_get_tail_samples :: proc(plug: ^lin.PluginProcessor) -> u32 {
+	buffer_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 		when !HOT_DLL {
-			return lin.fallbackApi.get_tail_samples(plug)
+			return sdk.fallbackApi.get_tail_samples(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_tail_samples == nil {
-				return lin.fallbackApi.get_tail_samples(plug)
+				return sdk.fallbackApi.get_tail_samples(plug)
 			} else {
 				return ctx.apis[idx].get_tail_samples(plug)
 			}
 		}
 	}
-	buffer_reset :: proc(plug: ^lin.PluginProcessor) {
+	buffer_reset :: proc(plug: ^sdk.PluginProcessor) {
 		when !HOT_DLL {
-			lin.fallbackApi.reset(plug)
+			sdk.fallbackApi.reset(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].reset == nil {
-				lin.fallbackApi.reset(plug)
+				sdk.fallbackApi.reset(plug)
 			} else {
 				ctx.apis[idx].reset(plug)
 			}
@@ -273,7 +273,7 @@ hotload_deinit :: proc() {
 _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 	buf: [512]u8
 
-	ctx.apis[toIdx] = lin.PluginApi{}
+	ctx.apis[toIdx] = sdk.PluginApi{}
 	defer free_all(context.temp_allocator)
 
 	if ctx.libs[toIdx] != nil {
@@ -385,7 +385,7 @@ _load_api :: proc() -> bool {
 		ptr, found := dynlib.symbol_address(lib, "GetPluginApi")
 		if found {
 			log.info("Loaded GetPluginApi symbol")
-			GetPluginApi := cast(proc() -> lin.PluginApi)ptr
+			GetPluginApi := cast(proc() -> sdk.PluginApi)ptr
 			ctx.apis[nextIdx] = GetPluginApi()
 			ctx.libs[nextIdx] = lib
 			ctx.suffixes[nextIdx] = ctx.dllSuffix

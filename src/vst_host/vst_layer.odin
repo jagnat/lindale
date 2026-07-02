@@ -28,7 +28,7 @@ import vm "core:mem/virtual"
 import "../thirdparty/vst3"
 
 import hs "../host_shared"
-import lin "../lindale"
+import "../sdk"
 import plat "../platform_specific"
 import "../bridge"
 
@@ -53,11 +53,11 @@ LindalePluginFactory :: struct {
 	vtable: vst3.IPluginFactory3Vtbl,
 	initialized: bool,
 	ctx: runtime.Context,
-	desc: lin.PluginDescriptor,
+	desc: sdk.PluginDescriptor,
 }
 
 pluginFactory: LindalePluginFactory
-pluginApi: lin.PluginApi
+pluginApi: sdk.PluginApi
 
 when ODIN_OS == .Darwin {
 	@export bundleEntry :: proc "system" (bundleRef: rawptr) -> c.bool {
@@ -118,7 +118,7 @@ LindaleProcessor :: struct {
 
 	controllerLink: ^LindaleController,
 
-	plugin: lin.PluginProcessor,
+	plugin: sdk.PluginProcessor,
 	hostCtx: bridge.HostContext,
 	paramDescs: []bridge.ParamDescriptor,
 	paramValues: bridge.ParamValues,
@@ -228,7 +228,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 
 	processor.hostCtx.params = &processor.paramValues
 	processor.plugin.host = &processor.hostCtx
-	lin.plugin_init_processor(&processor.plugin)
+	sdk.plugin_init_processor(&processor.plugin)
 
 	return processor
 
@@ -507,7 +507,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 		outputs := data.outputs
 		inputs := data.inputs
 
-		paramChanges := make([][64]lin.ParameterChange, len(processor.paramDescs), context.temp_allocator)
+		paramChanges := make([][64]sdk.ParameterChange, len(processor.paramDescs), context.temp_allocator)
 
 		audioContext := processor.plugin.audioProcessor
 		if data.processContext != nil {
@@ -594,7 +594,7 @@ createLindaleProcessor :: proc() -> ^LindaleProcessor {
 							if result == vst3.kResultOk {
 								plainVal := bridge.normalized_to_param(normParam, processor.paramDescs[paramIdx])
 								processor.paramValues.values[paramIdx] = plainVal
-								paramChanges[paramIdx][actualCount] = lin.ParameterChange {
+								paramChanges[paramIdx][actualCount] = sdk.ParameterChange {
 									sampleOffset = sampleOffs,
 									value = plainVal,
 								}
@@ -868,7 +868,7 @@ LindaleController :: struct {
 
 	processorLink: ^LindaleProcessor,
 
-	plugin: lin.PluginController,
+	plugin: sdk.PluginController,
 	hostCtx: bridge.HostContext,
 	platformApi: bridge.PlatformApi,
 	hostApi: bridge.HostApi,
@@ -882,7 +882,7 @@ LindaleController :: struct {
 	componentHandler: ^vst3.IComponentHandler,
 	ctx: runtime.Context,
 	view: LindaleView,
-	viewConfig: lin.ViewConfig,
+	viewConfig: sdk.ViewConfig,
 
 	frameTemp: runtime.Default_Temp_Allocator,
 	sessionArena: vm.Arena,
@@ -974,10 +974,10 @@ createLindaleController :: proc () -> ^LindaleController {
 	controller.hostCtx.hostApi = &controller.hostApi
 	controller.plugin.host = &controller.hostCtx
 
-	controller.viewConfig = lin.resolve_view_config(pluginApi.get_plugin_descriptor().view)
+	controller.viewConfig = sdk.resolve_view_config(pluginApi.get_plugin_descriptor().view)
 	controller.plugin.viewBounds = {0, 0, controller.viewConfig.default_width, controller.viewConfig.default_height}
 
-	lin.plugin_init_controller(&controller.plugin)
+	sdk.plugin_init_controller(&controller.plugin)
 	pluginApi.setup_controller(&controller.plugin)
 
 	return controller
@@ -1321,7 +1321,7 @@ LindaleView :: struct {
 
 	controller: ^LindaleController,
 
-	plugin: ^lin.PluginController,
+	plugin: ^sdk.PluginController,
 
 	ctx: runtime.Context,
 	parent: rawptr,
@@ -1333,7 +1333,7 @@ LindaleView :: struct {
 MS_PER_FRAME :: 16
 
 // Publish seconds since the previous draw; clamp to throw away frames if we stall
-update_frame_dt :: proc (plug: ^lin.PluginController) {
+update_frame_dt :: proc (plug: ^sdk.PluginController) {
 	now := time.tick_now()
 	if plug.lastDrawTime != (time.Tick{}) {
 		dt := f32(time.duration_seconds(time.tick_diff(plug.lastDrawTime, now)))
@@ -1388,7 +1388,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 	free_all(context.temp_allocator)
 }
 
-createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vst3.TResult {
+createLindaleView :: proc(view: ^LindaleView, plug: ^sdk.PluginController) -> vst3.TResult {
 	view.pluginViewVtable = {
 		queryInterface = lv_queryInterface,
 		addRef = lv_addRef,
@@ -1509,7 +1509,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 		plat.renderer_set_mouse_state(view.renderer, &view.plugin.mouse)
 		plat.renderer_set_repaint_callback(view.renderer, repaint_callback, view)
 
-		controller.hostCtx.font_atlas = plat.renderer_create_texture(view.renderer, lin.FONT_ATLAS_SIZE, lin.FONT_ATLAS_SIZE, .R8)
+		controller.hostCtx.font_atlas = plat.renderer_create_texture(view.renderer, sdk.FONT_ATLAS_SIZE, sdk.FONT_ATLAS_SIZE, .R8)
 
 		pluginApi.view_attached(view.plugin)
 
@@ -1574,7 +1574,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 	lv_onSize :: proc "system" (this: rawptr, newSize: ^vst3.ViewRect) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "pluginView")
 		context = view.ctx
-		rect := lin.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
+		rect := sdk.RectI32{0, 0, newSize.right - newSize.left, newSize.bottom - newSize.top}
 		// log.debug("lv_onSize r:", newSize.right, "l:", newSize.left, "b:", newSize.bottom, "t:", newSize.top)
 		plat.renderer_resize(view.renderer, rect.w, rect.h)
 		pluginApi.view_resized(view.plugin, rect)
@@ -1614,7 +1614,7 @@ createLindaleView :: proc(view: ^LindaleView, plug: ^lin.PluginController) -> vs
 // Ratio-compare aspect lock : comparing deltas instead would
 // flicker against hosts that anchor their drag baseline
 // independently of our returned size.
-clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: lin.ViewConfig) {
+clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.ViewConfig) {
 	w := rect.right - rect.left
 	h := rect.bottom - rect.top
 
