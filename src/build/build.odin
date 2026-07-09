@@ -78,7 +78,10 @@ build_plugin :: proc () {
 	}
 	ps: os.Process_State
 	exec(args[:], ps = &ps)
-	if !ps.success do os.exit(1)
+	if !ps.success {
+		// fmt.println("Failed to build!", ps.exit_code)
+		os.exit(1)
+	}
 
 	if !opts.no_hot do build_hotloaded()
 
@@ -150,7 +153,6 @@ build_hotloaded :: proc() {
 	ps: os.Process_State
 	exec({
 		"odin", "build", "src",
-		"-define:HOT_DLL=true",
 		fmt.tprintf("-define:BUILD_ID=%s", build_id),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION),
@@ -202,7 +204,6 @@ check_plugin :: proc() {
 	exec({
 		"odin", "check", "src",
 		"-no-entry-point",
-		"-define:HOT_DLL=true",
 	}, ps = &ps)
 	if !ps.success {
 		fmt.println(plugin, "FAILED")

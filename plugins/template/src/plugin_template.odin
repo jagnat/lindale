@@ -2,9 +2,13 @@ package template
 
 import "../../../src/sdk"
 
-@(export, link_name="lindale_get_plugin_api")
-get_plugin_api :: proc() -> sdk.PluginApi {
-	return template_api
+@(export)
+GetPluginApi :: proc() -> sdk.PluginApi {
+	return sdk.fallbackApi
+}
+@(init)
+_register :: proc "contextless" () {
+	sdk.register_plugin(template_api)
 }
 
 @(rodata) template_param_table := [?]sdk.ParamDescriptor {

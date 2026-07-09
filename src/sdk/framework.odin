@@ -5,9 +5,14 @@ import "core:time"
 import b "../bridge"
 import dsp "../dsp"
 
-foreign {
-	@(link_name="lindale_get_plugin_api")
-	plugin_api :: proc() -> PluginApi ---
+@(private) active_plugin: PluginApi
+
+register_plugin :: proc "contextless" (api: PluginApi) {
+	active_plugin = api
+}
+
+plugin_api :: proc() -> PluginApi {
+	return active_plugin
 }
 
 ParamDescriptor :: b.ParamDescriptor
@@ -107,28 +112,6 @@ fallbackApi :: PluginApi {
 	get_latency_samples    = framework_get_latency_samples,
 	get_tail_samples       = framework_get_tail_samples,
 	reset                  = framework_reset,
-}
-
-HOT_DLL :: #config(HOT_DLL, false)
-
-when HOT_DLL {
-	@(export) GetPluginApi :: proc() -> PluginApi {
-		return PluginApi {
-			get_plugin_descriptor  = framework_get_plugin_descriptor,
-
-			setup_controller       = framework_setup_controller,
-			draw                   = framework_draw,
-			view_attached          = framework_view_attached,
-			view_removed           = framework_view_removed,
-			view_resized           = framework_view_resized,
-
-			setup_processor        = framework_setup_processor,
-			process_audio          = framework_process_audio,
-			get_latency_samples    = framework_get_latency_samples,
-			get_tail_samples       = framework_get_tail_samples,
-			reset                  = framework_reset,
-		}
-	}
 }
 
 // Required procs: just pass through to the plugin vtable

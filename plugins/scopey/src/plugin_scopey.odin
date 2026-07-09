@@ -9,12 +9,16 @@ import b "../../../src/bridge"
 import "../../../src/dsp"
 import dit "../../../src/thirdparty/uFFT_DIT"
 
-@(export, link_name="lindale_get_plugin_api")
-get_plugin_api :: proc() -> sdk.PluginApi {
-	return scopey_api
+@(export)
+GetPluginApi :: proc() -> sdk.PluginApi {
+	return sdk.fallbackApi
+}
+@(init)
+_register :: proc "contextless" () {
+	sdk.register_plugin(scopey_api)
 }
 
-FFT_SIZE :: 4096
+FFT_SIZE :: 1024
 RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot read
 MAX_CHANNELS :: 2
 
@@ -267,6 +271,7 @@ scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 
 		for v, i in time_slice do fft_buf[i] = complex64(v * state.fft_window[i])
 		dit.fft(&fft_buf[0], FFT_SIZE)
+		// dsp.smooth_brain_dft(&fft_buf)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
 		norm := f32(FFT_SIZE / 2) * state.fft_window_gain

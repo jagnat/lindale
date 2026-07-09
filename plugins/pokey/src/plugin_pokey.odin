@@ -6,9 +6,13 @@ import "../../../src/sdk"
 import b "../../../src/bridge"
 import "../../../src/dsp"
 
-@(export, link_name="lindale_get_plugin_api")
-get_plugin_api :: proc() -> sdk.PluginApi {
-	return pokey_api
+@(export)
+GetPluginApi :: proc() -> sdk.PluginApi {
+	return sdk.fallbackApi
+}
+@(init)
+_register :: proc "contextless" () {
+	sdk.register_plugin(pokey_api)
 }
 
 MAX_CHANNELS :: 2
