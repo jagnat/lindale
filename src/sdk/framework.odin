@@ -147,6 +147,7 @@ framework_view_attached :: proc(plug: ^PluginController) {
 	if plug.ui == nil {
 		plug.ui = new(UIContext)
 		plug.ui.plugin = plug
+		plug.ui.theme = THEME_JQ
 	}
 	if plugin_api().view_attached != nil do plugin_api().view_attached(plug)
 }

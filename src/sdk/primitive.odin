@@ -34,6 +34,16 @@ ColorU8_from_hex :: proc(hexCode: u32) -> ColorU8 {
 	return {r, g, b, a}
 }
 
+ColorU8_lerp :: proc(from, to: ColorU8, t: f32) -> ColorU8 {
+	t := clamp(t, 0, 1)
+	return {
+		u8(f32(from.r) + (f32(to.r) - f32(from.r)) * t),
+		u8(f32(from.g) + (f32(to.g) - f32(from.g)) * t),
+		u8(f32(from.b) + (f32(to.b) - f32(from.b)) * t),
+		u8(f32(from.a) + (f32(to.a) - f32(from.a)) * t),
+	}
+}
+
 ColorF32_from_ColorU8 :: proc(col: ColorU8) -> ColorF32 {
 	r := f32(col.r) / 255.0
 	g := f32(col.g) / 255.0

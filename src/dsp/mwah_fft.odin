@@ -1,65 +1,37 @@
 package dsp
 
+import "base:intrinsics"
 import "base:runtime"
 import "core:math"
 import "core:math/cmplx"
 
 MAXFACTORS :: 32
 
-FftConfig :: struct {
-	nfft: i32,
-	inverse: bool,
-	factors: [2*MAXFACTORS]i32,
-	twiddles: []complex64,
+radix2_fft :: proc(buf: ^[]complex64) {
+	size := u32(len(buf))
+	assert(intrinsics.count_ones(size) == 1, "Must use power of 2 for array size")
 
-}
-
-mwah_fft_create :: proc(nfft: i32, inverse: bool = false, alloc: runtime.Allocator = context.allocator) -> FftConfig {
-	cfg := FftConfig {
-		nfft = nfft,
-		inverse = inverse,
-	}
-
-	cfg.twiddles = make([]complex64, nfft);
-
-	for i in 0..<nfft {
-		phase := math.TAU * -1.0 * f32(i) / f32(nfft)
-		if cfg.inverse do phase *= -1
-		cfg.twiddles[i] = cmplx.exp(phase)
-	}
-
-	mwah_factor(nfft, cfg.factors[:])
-	return cfg
-}
-
-// Factorize n into slice
-mwah_factor :: proc(n: i32, factors: []i32) {
-	n := n
-	p := i32(4)
-	floor_sqrt := math.floor(math.sqrt(f32(n)))
-	factorIdx := 0
-
-	for { // Do
-		for n % p != 0 {
-			if p == 4 do p = 2
-			else if p == 2 do p = 3
-			else do p += 2
-
-			if f32(p) > floor_sqrt do p = n
+	// Perform bit-reversal swap relative to the size of the array
+	bit_width := intrinsics.count_trailing_zeros(size)
+	for i in 0..<size {
+		rev := intrinsics.reverse_bits(i) >> (32 - bit_width)
+		if i < rev {
+			buf[i], buf[rev] = buf[rev], buf[i]
 		}
-		n /= p
-		factors[factorIdx] = p
-		factors[factorIdx + 1] = n
-		factorIdx += 2
-
-		if n <= 1 do break // While n > 1
 	}
-}
 
-mwah_fft :: proc(cfg: FftConfig, input: []complex64, output: []complex64) {
-	mwah_fft_stride(cfg, input, output, 1)
-}
-
-mwah_fft_stride :: proc(cfg: FftConfig, input: []complex64, output: []complex64, strid: i32) {
-	
+	for stage in 1..=bit_width {
+		m : u32= 1 << stage
+		m2 : u32= m >> 1
+		for group_start: u32= 0; group_start < size; group_start += m {
+			for j in 0..<m2 {
+				// todo: precomputed twiddle factor
+				twiddle: complex64
+				even := buf[group_start + j]
+				odd := buf[group_start + j + m2]
+				buf[group_start + j] = even + twiddle * odd
+				buf[group_start + j + m2] = even - twiddle * odd
+			}
+		}
+	}
 }

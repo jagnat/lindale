@@ -461,7 +461,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 		}
 	}
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
 	sdk.draw_clear(plug.draw)
 
 	osc_enum_to_string :: proc(val: f64) -> string {
@@ -500,7 +500,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	scope_draw :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 		fft := cast(^FftData)data
 		if fft == nil do return
-		bounds := comp.calcBounds
+		bounds := comp.calc_bounds
 
 		if fft.sample_rate <= 0 || len(fft.vals) < 2 do return
 
@@ -529,9 +529,9 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	}
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 40, padding = 10) {
+		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 40, padding = 10) {
 			// Envelope params
-			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .FIT}, child_gaps = 6, padding = 0, skip_draw = true) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_DECAY)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
@@ -539,7 +539,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_GAIN)
 			}
 			// Oscillator param
-			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 0, skipDraw = true) {
+			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 0, skip_draw = true) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
@@ -548,7 +548,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 			sdk.ui_canvas(plug.ui, scope_draw, &fft_data)
 			
 			// Arp controls
-			if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .FIT}, child_gaps = 6, padding = 0, skipDraw = true) {
+			if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .FIT}, child_gaps = 6, padding = 0, skip_draw = true) {
 				sdk.ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
 				sdk.ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
 			}

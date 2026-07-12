@@ -142,11 +142,11 @@ delay_draw :: proc(plug: ^sdk.PluginController) {
 
 	plug.lastDrawTime = time.tick_now()
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10) {
+		if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 10) {
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_DELAY_TIME)
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_FEEDBACK)
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_MIX)

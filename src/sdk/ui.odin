@@ -6,90 +6,139 @@ import "core:testing"
 import b "../bridge"
 
 UITheme :: struct {
-	bgColor: ColorU8,
-	panelBgColor: ColorU8,
+	bg_color: ColorU8,
+	panel_bg_color: ColorU8,
 
-	buttonColor: ColorU8,
-	buttonHoverColor: ColorU8,
-	buttonActiveColor: ColorU8,
+	button_color: ColorU8,
+	button_hover_color: ColorU8,
+	button_active_color: ColorU8,
 
-	sliderTrackColor: ColorU8,
-	sliderColor: ColorU8,
-	sliderHoverColor: ColorU8,
-	sliderActiveColor: ColorU8,
+	slider_track_color: ColorU8,
+	slider_color: ColorU8,
+	slider_hover_color: ColorU8,
+	slider_active_color: ColorU8,
 
-	toggleOnColor: ColorU8,
-	toggleOffColor: ColorU8,
-	toggleThumbColor: ColorU8,
+	toggle_on_color: ColorU8,
+	toggle_off_color: ColorU8,
+	toggle_thumb_color: ColorU8,
 
-	textColor: ColorU8,
+	text_color: ColorU8,
 
-	borderColor: ColorU8,
+	border_color: ColorU8,
+	panel_border_color: ColorU8,
 
 	padding: f32,
-	itemSpacing: f32,
-	cornerRadius: f32,
-	borderWidth: f32,
-	fontSize: f32,
+	item_spacing: f32,
+	corner_radius: f32,
+	border_width: f32,
+	font_size: f32,
+	panel_border_width: f32,
+
+	slider_width: f32,
+	slider_rail_width: f32,
+	slider_rail_border_width: f32,
+	slider_thumb_border_width: f32,
+
+	knob_size: f32,
+	knob_arc_thickness: f32,
+	knob_track_thickness: f32,
+	knob_indicator_inset: f32,
+	knob_start_angle: f32,
+	knob_sweep_angle: f32,
+	knob_drag_pixels: f32,
+
+	toggle_width: f32,
+	toggle_height: f32,
+	toggle_thumb_margin: f32,
 }
 
-// Todo: Part of theme
-slider_width :: 20
-slider_rail_width :: 4
-
-knob_size            :: 64
-knob_arc_thickness   :: 5
-knob_track_thickness :: 3
-knob_indicator_inset :: 2
-knob_endcap_radius   :: 4
-knob_start_angle     :: f32(3 * math.PI / 4)
-knob_sweep_angle     :: f32(3 * math.PI / 2)
-knob_drag_pixels     :: f32(200)
-
 DEFAULT_THEME : UITheme : {
-	bgColor = {0x3c, 0x3f, 0x41, 0xff},
-	panelBgColor = {0x3c, 0x3f, 0x41, 0xff},
-	buttonColor = {0x4e, 0x50, 0x52, 0xff},
-	buttonHoverColor = {0x55, 0x58, 0x5a, 0xff},
-	buttonActiveColor = {0x5d, 0x5f, 0x62, 0xff},
-	sliderTrackColor = {0x61, 0x66, 0x69, 0xff},
-	sliderColor = {0x4c, 0x87, 0xc8, 0xff},
-	sliderHoverColor = {0x60, 0x94, 0xce, 0xff},
-	sliderActiveColor = {0x6b, 0x9c, 0xd2, 0xff},
-	toggleOnColor = {0x4c, 0x87, 0xc8, 0xff},
-	toggleOffColor = {0x61, 0x66, 0x69, 0xff},
-	toggleThumbColor = {0xff, 0xff, 0xff, 0xff},
-	textColor = {0xff, 0xff, 0xff, 0xff},
-	borderColor = {0x61, 0x63, 0x65, 0xff},
+	bg_color = {0x3c, 0x3f, 0x41, 0xff},
+	panel_bg_color = {0x3c, 0x3f, 0x41, 0xff},
+	button_color = {0x4e, 0x50, 0x52, 0xff},
+	button_hover_color = {0x55, 0x58, 0x5a, 0xff},
+	button_active_color = {0x5d, 0x5f, 0x62, 0xff},
+	slider_track_color = {0x61, 0x66, 0x69, 0xff},
+	slider_color = {0x4c, 0x87, 0xc8, 0xff},
+	slider_hover_color = {0x60, 0x94, 0xce, 0xff},
+	slider_active_color = {0x6b, 0x9c, 0xd2, 0xff},
+	toggle_on_color = {0x4c, 0x87, 0xc8, 0xff},
+	toggle_off_color = {0x61, 0x66, 0x69, 0xff},
+	toggle_thumb_color = {0xff, 0xff, 0xff, 0xff},
+	text_color = {0xff, 0xff, 0xff, 0xff},
+	border_color = {0x61, 0x63, 0x65, 0xff},
+	panel_border_color = {0xff, 0xff, 0xff, 0xff},
 
 	padding = 10,
-	itemSpacing = 10,
-	cornerRadius = 10,
-	borderWidth = 1.5,
-	fontSize = FONT_SIZE_DEFAULT,
+	item_spacing = 10,
+	corner_radius = 10,
+	border_width = 1.5,
+	font_size = FONT_SIZE_DEFAULT,
+	panel_border_width = 0.4,
+
+	slider_width = 20,
+	slider_rail_width = 4,
+	slider_rail_border_width = 0.8,
+	slider_thumb_border_width = 0.5,
+
+	knob_size = 64,
+	knob_arc_thickness = 5,
+	knob_track_thickness = 3,
+	knob_indicator_inset = 2,
+	knob_start_angle = f32(3 * math.PI / 4),
+	knob_sweep_angle = f32(3 * math.PI / 2),
+	knob_drag_pixels = 200,
+
+	toggle_width = 40,
+	toggle_height = 22,
+	toggle_thumb_margin = 3,
 }
 
 THEME_JQ : UITheme : {
-	bgColor = {0x1b, 0x1c, 0x19, 0xff},
-	panelBgColor = {0x1b, 0x1c, 0x19, 0xff},
-	buttonColor = {0x4e, 0x50, 0x52, 0xff},
-	buttonHoverColor = {0x55, 0x58, 0x5a, 0xff},
-	buttonActiveColor = {0x5d, 0x5f, 0x62, 0xff},
-	sliderTrackColor = {0xcc, 0xc5, 0xb9, 0xff},
-	sliderColor = {0x8d, 0xb3, 0x67, 0xff},
-	sliderHoverColor = {0x9a, 0xbe, 0x6f, 0xff},
-	sliderActiveColor = {0xb2, 0xd9, 0x8c, 0xff},
-	toggleOnColor = {0x57, 0x72, 0x77, 0xff},
-	toggleOffColor = {0x40, 0x35, 0x44, 0xff},
-	toggleThumbColor = {0xeb, 0xed, 0xe9, 0xff},
-	textColor = {0xe9, 0xe6, 0xde, 0xff},
-	borderColor = {0xe9, 0xe6, 0xde, 0xff},
+	bg_color = {0x1b, 0x1c, 0x19, 0xff},
+	panel_bg_color = {0x1b, 0x1c, 0x19, 0xff},
+	button_color = {0x4e, 0x50, 0x52, 0xff},
+	button_hover_color = {0x55, 0x58, 0x5a, 0xff},
+	button_active_color = {0x5d, 0x5f, 0x62, 0xff},
+	slider_track_color = {0xcc, 0xc5, 0xb9, 0xff},
+	slider_color = {0x8d, 0xb3, 0x67, 0xff},
+	slider_hover_color = {0x9a, 0xbe, 0x6f, 0xff},
+	slider_active_color = {0xb2, 0xd9, 0x8c, 0xff},
+	toggle_on_color = {0x57, 0x72, 0x77, 0xff},
+	toggle_off_color = {0x40, 0x35, 0x44, 0xff},
+	toggle_thumb_color = {0xeb, 0xed, 0xe9, 0xff},
+	text_color = {0xe9, 0xe6, 0xde, 0xff},
+	border_color = {0xe9, 0xe6, 0xde, 0xff},
+	panel_border_color = {0xff, 0xff, 0xff, 0xff},
 
 	padding = 10,
-	itemSpacing = 10,
-	cornerRadius = 10,
-	borderWidth = 1.2,
-	fontSize = FONT_SIZE_DEFAULT,
+	item_spacing = 10,
+	corner_radius = 10,
+	border_width = 1.2,
+	font_size = FONT_SIZE_DEFAULT,
+	panel_border_width = 0.4,
+
+	slider_width = 20,
+	slider_rail_width = 4,
+	slider_rail_border_width = 0.8,
+	slider_thumb_border_width = 0.5,
+
+	knob_size = 64,
+	knob_arc_thickness = 5,
+	knob_track_thickness = 3,
+	knob_indicator_inset = 2,
+	knob_start_angle = f32(3 * math.PI / 4),
+	knob_sweep_angle = f32(3 * math.PI / 2),
+	knob_drag_pixels = 200,
+
+	toggle_width = 40,
+	toggle_height = 22,
+	toggle_thumb_margin = 3,
+}
+
+// Persists across frames; call any time, e.g. once in view_attached
+ui_set_theme :: proc(ctx: ^UIContext, theme: UITheme) {
+	ctx.theme = theme
 }
 
 LayoutDirection :: enum { VERTICAL, HORIZONTAL, }
@@ -97,12 +146,13 @@ SliderOrientation :: enum { VERTICAL, HORIZONTAL }
 
 AlignX :: enum { LEFT, CENTER, RIGHT, }
 AlignY :: enum { TOP, CENTER, BOTTOM, }
-SizingType :: enum { FIXED, FIT, GROW }
+SizingType :: enum { FIXED, FIT, GROW, PERCENT }
 
 AxisSizing :: struct {
 	type: SizingType,
-	value: f32, // for fixed size;
-	min, max: f32, // for grow/fit
+	value: f32, // FIXED: pixels; PERCENT: 0..1 fraction of parent content box
+	min, max: f32, // for grow/fit/percent
+	weight: f32, // grow share relative to sibling grow children, 0 means 1
 	padding: f32,
 }
 
@@ -117,7 +167,7 @@ ComponentType :: enum {
 }
 
 PanelData :: struct {
-	skipDraw: bool,
+	skip_draw: bool,
 }
 
 LabelData :: struct {
@@ -161,7 +211,6 @@ SliderData :: struct {
 
 ToggleData :: struct {
 	id: u32,
-	t: f32, // reserved for future animation (0 = off, 1 = on)
 	binding: ToggleBinding,
 }
 
@@ -187,20 +236,25 @@ ComponentData :: union {
 
 Component :: struct {
 	type: ComponentType,
-	sizingHoriz, sizingVert: AxisSizing,
+	sizing_horiz, sizing_vert: AxisSizing,
 
 	direction: LayoutDirection,
 	child_gaps: f32,
-	alignX: AlignX,
-	alignY: AlignY,
+	align_x: AlignX,
+	align_y: AlignY,
+
+	// Floating components are excluded from flow layout and drawn on top.
+	// Positioned against the parent content box via align_x/align_y plus float_offset
+	floating: bool,
+	float_offset: Vec2f,
 
 	// w and h are calculated first, then finally x and y
-	calcBounds: RectF32,
+	calc_bounds: RectF32,
 	cursor: Vec2f, // Used for positioning pass
 
 	parent: ^Component,
-	firstChild: ^Component,
-	nextSibling: ^Component,
+	first_child: ^Component,
+	next_sibling: ^Component,
 
 	data: ComponentData,
 }
@@ -211,25 +265,109 @@ ComponentIterator :: struct {
 
 UI_MAX_COMPONENTS :: 512
 UI_MAX_DEPTH :: 128
+UI_MAX_ANIMS :: 128
+
+UIAnimState :: struct {
+	id: u32,
+	value: f32,
+	last_frame_touched: u32,
+}
 
 UIContext :: struct {
 	// 'Arena'
-	componentPool: [UI_MAX_COMPONENTS]Component,
-	componentCount: int,
+	component_pool: [UI_MAX_COMPONENTS]Component,
+	component_count: int,
 
 	root: ^Component,
-	currentComponent: ^Component,
+	current_component: ^Component,
 
 	// Hit testing
-	hoveredId: u32,
-	activeId: u32,
-	lastClickedId: u32,
-	dragAnchorMouseY: f32,
-	dragAnchorNorm: f32,
+	hovered_id: u32,
+	active_id: u32,
+	last_clicked_id: u32,
+	drag_anchor_mouse_y: f32,
+	drag_anchor_norm: f32,
 	mouse: MouseState,
 	theme: UITheme,
 
+	// Id scoping
+	id_seed_stack: [UI_MAX_DEPTH]u32,
+	id_seed_count: int,
+
+	// Retained animation state by widget ID
+	anims: [UI_MAX_ANIMS]UIAnimState,
+	anim_count: int,
+	frame_counter: u32,
+
 	plugin: ^PluginController
+}
+
+// Widget ids hash the label with the current scope seed, so
+// duplicate labels are distinct in different scopes
+ui_make_id :: proc(ctx: ^UIContext, label: string) -> u32 {
+	id := string_hash_u32(label)
+	if ctx.id_seed_count > 0 {
+		id = (id ~ ctx.id_seed_stack[ctx.id_seed_count - 1]) * 0x01000193
+	}
+	return id
+}
+
+ui_push_id_raw :: proc(ctx: ^UIContext, value: u32) {
+	assert(ctx.id_seed_count < UI_MAX_DEPTH)
+	seed := ctx.id_seed_stack[ctx.id_seed_count - 1] if ctx.id_seed_count > 0 else 0
+	ctx.id_seed_stack[ctx.id_seed_count] = (seed ~ value) * 0x01000193
+	ctx.id_seed_count += 1
+}
+
+ui_push_id_string :: proc(ctx: ^UIContext, label: string) {
+	ui_push_id_raw(ctx, string_hash_u32(label))
+}
+
+ui_push_id_index :: proc(ctx: ^UIContext, index: int) {
+	ui_push_id_raw(ctx, u32(index) * 0x9E3779B1)
+}
+
+ui_push_id :: proc {ui_push_id_string, ui_push_id_index}
+
+ui_pop_id :: proc(ctx: ^UIContext) {
+	assert(ctx.id_seed_count > 0)
+	ctx.id_seed_count -= 1
+}
+
+@(deferred_in = _ui_id_scope_end)
+ui_id_scope :: proc(ctx: ^UIContext, label: string) -> bool {
+	ui_push_id_string(ctx, label)
+	return true
+}
+_ui_id_scope_end :: proc(ctx: ^UIContext, label: string) {
+	ui_pop_id(ctx)
+}
+
+// Exponential approach toward target
+ui_animate :: proc(ctx: ^UIContext, id: u32, target: f32, rate: f32 = 14) -> f32 {
+	slot: ^UIAnimState
+	for &a in ctx.anims[:ctx.anim_count] {
+		if a.id == id {
+			slot = &a
+			break
+		}
+	}
+	if slot == nil {
+		if ctx.anim_count < UI_MAX_ANIMS {
+			slot = &ctx.anims[ctx.anim_count]
+			ctx.anim_count += 1
+		} else {
+			// Evict the least recently touched entry
+			slot = &ctx.anims[0]
+			for &a in ctx.anims[1:] {
+				if a.last_frame_touched < slot.last_frame_touched do slot = &a
+			}
+		}
+		slot^ = {id = id, value = target}
+	}
+	slot.last_frame_touched = ctx.frame_counter
+	slot.value += (target - slot.value) * (1 - math.exp(-rate * ctx.plugin.frameDt))
+	return slot.value
 }
 
 @(deferred_in = ui_frame_end)
@@ -243,83 +381,95 @@ ui_panel :: proc(ctx: ^UIContext,
 	dir: LayoutDirection = .HORIZONTAL,
 	child_gaps: f32 = 10,
 	padding: f32 = 10,
-	sizingHoriz: AxisSizing = {type = .FIT},
-	sizingVert: AxisSizing = {type = .FIT},
-	skipDraw: bool = false) -> bool {
+	sizing_horiz: AxisSizing = {type = .FIT},
+	sizing_vert: AxisSizing = {type = .FIT},
+	skip_draw: bool = false,
+	align_x: AlignX = .LEFT,
+	align_y: AlignY = .TOP,
+	floating: bool = false,
+	float_offset: Vec2f = {}) -> bool {
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = skipDraw}
+	comp.data = PanelData{skip_draw = skip_draw}
 	comp.direction = dir
-	comp.sizingHoriz = sizingHoriz
-	comp.sizingHoriz.padding = padding
-	comp.sizingVert = sizingVert
-	comp.sizingVert.padding = padding
+	comp.sizing_horiz = sizing_horiz
+	comp.sizing_horiz.padding = padding
+	comp.sizing_vert = sizing_vert
+	comp.sizing_vert.padding = padding
 	comp.child_gaps = child_gaps
+	comp.align_x = align_x
+	comp.align_y = align_y
+	comp.floating = floating
+	comp.float_offset = float_offset
 	return true
 }
 _ui_panel_close :: proc(ctx: ^UIContext,
 	dir: LayoutDirection = .HORIZONTAL,
 	child_gaps: f32 = 10,
 	padding: f32 = 10,
-	sizingHoriz: AxisSizing = {type = .FIT},
-	sizingVert: AxisSizing = {type = .FIT},
-	skipDraw: bool = false,) {
+	sizing_horiz: AxisSizing = {type = .FIT},
+	sizing_vert: AxisSizing = {type = .FIT},
+	skip_draw: bool = false,
+	align_x: AlignX = .LEFT,
+	align_y: AlignY = .TOP,
+	floating: bool = false,
+	float_offset: Vec2f = {}) {
 	ui_close_component(ctx)
 }
 
 ui_canvas :: proc(ctx: ^UIContext,
 	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
 	data: rawptr,
-	sizingHoriz: AxisSizing = {type = .GROW},
-	sizingVert: AxisSizing = {type = .GROW},) 
+	sizing_horiz: AxisSizing = {type = .GROW},
+	sizing_vert: AxisSizing = {type = .GROW},)
 {
 	comp := ui_open_component(ctx)
 	comp.type = .CANVAS
 	comp.data = CanvasData{draw_proc, data}
-	comp.sizingHoriz = sizingHoriz
-	comp.sizingVert = sizingVert
+	comp.sizing_horiz = sizing_horiz
+	comp.sizing_vert = sizing_vert
 	ui_close_component(ctx)
 }
 
-ui_label :: proc(ctx: ^UIContext, text: string, alignX: AlignX = .LEFT, minWidth: f32 = 0, size: f32 = 0) {
+ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .LEFT, min_width: f32 = 0, size: f32 = 0) {
 	comp := ui_open_component(ctx)
 	comp.type = .LABEL
-	comp.alignX = alignX
-	resolvedSize := size if size > 0 else ctx.theme.fontSize
-	textSize := draw_measure_text(ctx.plugin.draw, text, resolvedSize)
-	comp.sizingHoriz = {type = .FIXED, value = math.max(textSize.x, minWidth)}
-	comp.sizingVert = {type = .FIXED, value = textSize.y}
-	comp.data = LabelData{text = text, size = resolvedSize}
+	comp.align_x = align_x
+	resolved_size := size if size > 0 else ctx.theme.font_size
+	text_size := draw_measure_text(ctx.plugin.draw, text, resolved_size)
+	comp.sizing_horiz = {type = .FIXED, value = math.max(text_size.x, min_width)}
+	comp.sizing_vert = {type = .FIXED, value = text_size.y}
+	comp.data = LabelData{text = text, size = resolved_size}
 	ui_close_component(ctx)
 }
 
 ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
-	id := string_hash_u32(label)
-	clicked := ctx.lastClickedId == id
-	if clicked do ctx.lastClickedId = 0
+	id := ui_make_id(ctx, label)
+	clicked := ctx.last_clicked_id == id
+	if clicked do ctx.last_clicked_id = 0
 
 	comp := ui_open_component(ctx)
 	comp.type = .BUTTON
-	textSize := draw_measure_text(ctx.plugin.draw, label, ctx.theme.fontSize)
-	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.fontState, ctx.theme.fontSize)
-	comp.sizingHoriz = {type = .FIXED, value = textSize.x + ctx.theme.padding * 2}
-	comp.sizingVert = {type = .FIXED, value = (ascent - descent) + ctx.theme.padding * 2}
+	text_size := draw_measure_text(ctx.plugin.draw, label, ctx.theme.font_size)
+	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.fontState, ctx.theme.font_size)
+	comp.sizing_horiz = {type = .FIXED, value = text_size.x + ctx.theme.padding * 2}
+	comp.sizing_vert = {type = .FIXED, value = (ascent - descent) + ctx.theme.padding * 2}
 	comp.data = ButtonData{label = label, id = id}
 	ui_close_component(ctx)
 	return clicked
 }
 
-ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .VERTICAL, alignX: AlignX = .CENTER, alignY: AlignY = .CENTER) {
-	id := string_hash_u32(label)
+ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .VERTICAL, align_x: AlignX = .CENTER, align_y: AlignY = .CENTER) {
+	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
 	comp.type = .SLIDER
 	if orientation == .VERTICAL {
-		comp.alignX = alignX
-		comp.sizingHoriz = {type = .FIXED, value = slider_width}
-		comp.sizingVert = {type = .GROW, value = 200, min = 200, max = 500}
+		comp.align_x = align_x
+		comp.sizing_horiz = {type = .FIXED, value = ctx.theme.slider_width}
+		comp.sizing_vert = {type = .GROW, value = 200, min = 200, max = 500}
 	} else {
-		comp.alignY = alignY
-		comp.sizingHoriz = {type = .GROW, min = 100, max = 500}
-		comp.sizingVert = {type = .FIXED, value = slider_width}
+		comp.align_y = align_y
+		comp.sizing_horiz = {type = .GROW, min = 100, max = 500}
+		comp.sizing_vert = {type = .FIXED, value = ctx.theme.slider_width}
 	}
 	comp.data = SliderData{id, orientation, binding}
 	ui_close_component(ctx)
@@ -328,37 +478,37 @@ ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orienta
 ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
+	comp.data = PanelData{skip_draw = true}
 	comp.direction = .VERTICAL
 	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .GROW}
+	comp.sizing_horiz = {type = .FIT}
+	comp.sizing_vert = {type = .GROW}
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_slider(ctx, desc.name, ParamBinding{param_idx})
-	ui_label(ctx, desc.name, alignX = .CENTER)
+	ui_label(ctx, desc.name, align_x = .CENTER)
 	ui_close_component(ctx)
 }
 
 ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
+	comp.data = PanelData{skip_draw = true}
 	comp.direction = .HORIZONTAL
 	comp.child_gaps = 5
-	comp.sizingHoriz = {type = .GROW}
-	comp.sizingVert = {type = .FIT}
+	comp.sizing_horiz = {type = .GROW}
+	comp.sizing_vert = {type = .FIT}
 	ui_label(ctx, desc.name)
 	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .HORIZONTAL)
-	ui_param_value_label(ctx, param_idx, enum_to_string, alignX = .RIGHT)
+	ui_param_value_label(ctx, param_idx, enum_to_string, align_x = .RIGHT)
 	ui_close_component(ctx)
 }
 
 ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
-	id := string_hash_u32(label)
+	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
 	comp.type = .TOGGLE
-	comp.sizingHoriz = {type = .FIXED, value = 40}
-	comp.sizingVert = {type = .FIXED, value = 22}
+	comp.sizing_horiz = {type = .FIXED, value = ctx.theme.toggle_width}
+	comp.sizing_vert = {type = .FIXED, value = ctx.theme.toggle_height}
 	comp.data = ToggleData{id = id, binding = binding}
 	ui_close_component(ctx)
 }
@@ -366,23 +516,23 @@ ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
 ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
+	comp.data = PanelData{skip_draw = true}
 	comp.direction = .HORIZONTAL
 	comp.child_gaps = 6
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .FIT}
+	comp.sizing_horiz = {type = .FIT}
+	comp.sizing_vert = {type = .FIT}
 	ui_toggle(ctx, desc.name, ParamBinding{param_idx})
 	ui_label(ctx, desc.name)
 	ui_close_component(ctx)
 }
 
-ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, alignX: AlignX = .CENTER) {
-	id := string_hash_u32(label)
+ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .CENTER) {
+	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
 	comp.type = .KNOB
-	comp.alignX = alignX
-	comp.sizingHoriz = {type = .FIXED, value = knob_size}
-	comp.sizingVert = {type = .FIXED, value = knob_size}
+	comp.align_x = align_x
+	comp.sizing_horiz = {type = .FIXED, value = ctx.theme.knob_size}
+	comp.sizing_vert = {type = .FIXED, value = ctx.theme.knob_size}
 	comp.data = KnobData{id, binding}
 	ui_close_component(ctx)
 }
@@ -390,12 +540,12 @@ ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, alignX: A
 ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skipDraw = true}
+	comp.data = PanelData{skip_draw = true}
 	comp.direction = .VERTICAL
 	comp.child_gaps = 4
-	comp.sizingHoriz = {type = .FIT}
-	comp.sizingVert = {type = .FIT}
-	ui_label(ctx, desc.name, alignX = .CENTER)
+	comp.sizing_horiz = {type = .FIT}
+	comp.sizing_vert = {type = .FIT}
+	ui_label(ctx, desc.name, align_x = .CENTER)
 	ui_knob(ctx, desc.name, ParamBinding{param_idx})
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_close_component(ctx)
@@ -406,34 +556,34 @@ ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_st
 ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) -> f32 {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
-	maxWidth: f32 = 0
+	max_width: f32 = 0
 
 	if .List in desc.flags && enum_to_string != nil {
 		for i in 0..=desc.step_count {
 			norm := f64(i) / f64(desc.step_count) if desc.step_count > 0 else 0
 			val := b.normalized_to_param(norm, desc)
 			str := b.param_format_value_with_unit(val, desc, buf, enum_to_string)
-			w := draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x
-			maxWidth = math.max(maxWidth, w)
+			w := draw_measure_text(ctx.plugin.draw, str, ctx.theme.font_size).x
+			max_width = math.max(max_width, w)
 		}
 	} else {
 		str := b.param_format_value_with_unit(desc.min, desc, buf, nil)
-		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x)
+		max_width = math.max(max_width, draw_measure_text(ctx.plugin.draw, str, ctx.theme.font_size).x)
 		str = b.param_format_value_with_unit(desc.max, desc, buf, nil)
-		maxWidth = math.max(maxWidth, draw_measure_text(ctx.plugin.draw, str, ctx.theme.fontSize).x)
+		max_width = math.max(max_width, draw_measure_text(ctx.plugin.draw, str, ctx.theme.font_size).x)
 	}
-	return maxWidth
+	return max_width
 }
 
 @(private="file")
 ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
                              enum_to_string: proc(val: f64) -> string = nil,
-                             alignX: AlignX = .CENTER) {
+                             align_x: AlignX = .CENTER) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
-	maxW := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
+	max_w := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
 	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, buf, enum_to_string)
-	ui_label(ctx, str, alignX = alignX, minWidth = maxW)
+	ui_label(ctx, str, align_x = align_x, min_width = max_w)
 }
 
 @(private="file")
@@ -511,61 +661,62 @@ binding_reset_to_default :: proc(ctx: ^UIContext, binding: ValueBinding) {
 
 @(private="file")
 ui_alloc_component :: proc(ctx: ^UIContext) -> ^Component {
-	assert(ctx.componentCount + 1 <= UI_MAX_COMPONENTS)
-	comp := &ctx.componentPool[ctx.componentCount]
-	ctx.componentCount += 1
+	assert(ctx.component_count + 1 <= UI_MAX_COMPONENTS)
+	comp := &ctx.component_pool[ctx.component_count]
+	ctx.component_count += 1
 	comp^ = {}
 	return comp
 }
 
 ui_add_child_component :: proc(parent, child: ^Component) {
-	if parent.firstChild == nil {
-		parent.firstChild = child
+	if parent.first_child == nil {
+		parent.first_child = child
 	} else {
-		lastSib := parent.firstChild
-		for lastSib.nextSibling != nil {
-			lastSib = lastSib.nextSibling
+		last_sib := parent.first_child
+		for last_sib.next_sibling != nil {
+			last_sib = last_sib.next_sibling
 		}
-		lastSib.nextSibling = child
+		last_sib.next_sibling = child
 	}
 	child.parent = parent
 }
 
 ui_open_component :: proc(ctx: ^UIContext) -> ^Component {
 	comp := ui_alloc_component(ctx)
-	parent := ctx.currentComponent
+	parent := ctx.current_component
 	ui_add_child_component(parent, comp)
-	ctx.currentComponent = comp
+	ctx.current_component = comp
 	return comp
 }
 
 ui_close_component :: proc(ctx: ^UIContext) {
-	currentComp := ctx.currentComponent
-	#partial switch currentComp.sizingHoriz.type {
-		case .FIXED: currentComp.calcBounds.w = currentComp.sizingHoriz.value
+	current_comp := ctx.current_component
+	#partial switch current_comp.sizing_horiz.type {
+		case .FIXED: current_comp.calc_bounds.w = current_comp.sizing_horiz.value
 		case .FIT: ui_size_fit_on_axis(ctx, true)
 	}
-	#partial switch currentComp.sizingVert.type {
-		case .FIXED: currentComp.calcBounds.h = currentComp.sizingVert.value
+	#partial switch current_comp.sizing_vert.type {
+		case .FIXED: current_comp.calc_bounds.h = current_comp.sizing_vert.value
 		case .FIT: ui_size_fit_on_axis(ctx, false)
 	}
-	ctx.currentComponent = currentComp.parent
+	ctx.current_component = current_comp.parent
 }
 
 ui_frame_begin :: proc(ctx: ^UIContext) {
-	ctx.theme = THEME_JQ
 	ctx.mouse = ctx.plugin.mouse
 	ctx.plugin.mouse.pressed = {}
 	ctx.plugin.mouse.released = {}
 	ctx.plugin.mouse.doubleClicked = {}
 	ctx.plugin.mouse.scrollDelta = {}
-	ctx.hoveredId = 0
-	ctx.componentCount = 0
+	ctx.hovered_id = 0
+	ctx.component_count = 0
+	ctx.id_seed_count = 0
+	ctx.frame_counter += 1
 	ctx.root = ui_alloc_component(ctx)
 	ctx.root^ = Component{}
 	size := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer)
-	ctx.root.calcBounds = RectF32 {0, 0, f32(size.logicalWidth), f32(size.logicalHeight)}
-	ctx.currentComponent = ctx.root
+	ctx.root.calc_bounds = RectF32 {0, 0, f32(size.logicalWidth), f32(size.logicalHeight)}
+	ctx.current_component = ctx.root
 }
 
 ui_frame_end :: proc(ctx: ^UIContext) {
@@ -580,71 +731,71 @@ ui_frame_end :: proc(ctx: ^UIContext) {
 ui_snap_components_to_pixels :: proc(ctx: ^UIContext) {
 	it := ui_iterate_pre_order(ctx)
 	for c in ui_next_pre_order(&it) {
-		x0 := math.round(c.calcBounds.x)
-		y0 := math.round(c.calcBounds.y)
-		x1 := math.round(c.calcBounds.x + c.calcBounds.w)
-		y1 := math.round(c.calcBounds.y + c.calcBounds.h)
-		c.calcBounds = {x0, y0, x1 - x0, y1 - y0}
+		x0 := math.round(c.calc_bounds.x)
+		y0 := math.round(c.calc_bounds.y)
+		x1 := math.round(c.calc_bounds.x + c.calc_bounds.w)
+		y1 := math.round(c.calc_bounds.y + c.calc_bounds.h)
+		c.calc_bounds = {x0, y0, x1 - x0, y1 - y0}
 	}
 }
 
 ui_interact_components :: proc(ctx: ^UIContext) {
-	it := ui_iterate_pre_order(ctx)
-	for c in ui_next_pre_order(&it) {
+	it := ui_iterate_draw_order(ctx)
+	for c in ui_next_draw_order(&it) {
 		if c == ctx.root do continue
 		switch c.type {
 			case .PANEL, .LABEL: break
 			case .CANVAS: break // TODO: Canvas interact callback?
 			case .BUTTON: {
 				d := c.data.(ButtonData) or_continue
-				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
-				if mouseOver do ctx.hoveredId = d.id
-				if d.id == ctx.activeId {
+				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
+				if mouse_over do ctx.hovered_id = d.id
+				if d.id == ctx.active_id {
 					if .Left not_in ctx.mouse.down {
-						if mouseOver do ctx.lastClickedId = d.id
-						ctx.activeId = 0
+						if mouse_over do ctx.last_clicked_id = d.id
+						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
-					ctx.activeId = d.id
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = d.id
 				}
 			}
 			case .SLIDER: {
 				d := c.data.(SliderData) or_continue
-				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
-				if mouseOver do ctx.hoveredId = d.id
-				if d.id == ctx.activeId {
-					thumbR := f32(slider_width) / 2
+				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
+				if mouse_over do ctx.hovered_id = d.id
+				if d.id == ctx.active_id {
+					thumb_r := ctx.theme.slider_width / 2
 					norm: f32
 					if d.orientation == .VERTICAL {
-						trackRange := c.calcBounds.h - f32(slider_width)
-						mouseP := clamp(ctx.mouse.pos.y, c.calcBounds.y + thumbR, c.calcBounds.y + c.calcBounds.h - thumbR)
-						norm = clamp(1.0 - (mouseP - c.calcBounds.y - thumbR) / trackRange, 0, 1)
+						track_range := c.calc_bounds.h - ctx.theme.slider_width
+						mouse_p := clamp(ctx.mouse.pos.y, c.calc_bounds.y + thumb_r, c.calc_bounds.y + c.calc_bounds.h - thumb_r)
+						norm = clamp(1.0 - (mouse_p - c.calc_bounds.y - thumb_r) / track_range, 0, 1)
 					} else {
-						trackRange := c.calcBounds.w - f32(slider_width)
-						mouseP := clamp(ctx.mouse.pos.x, c.calcBounds.x + thumbR, c.calcBounds.x + c.calcBounds.w - thumbR)
-						norm = clamp((mouseP - c.calcBounds.x - thumbR) / trackRange, 0, 1)
+						track_range := c.calc_bounds.w - ctx.theme.slider_width
+						mouse_p := clamp(ctx.mouse.pos.x, c.calc_bounds.x + thumb_r, c.calc_bounds.x + c.calc_bounds.w - thumb_r)
+						norm = clamp((mouse_p - c.calc_bounds.x - thumb_r) / track_range, 0, 1)
 					}
 					binding_set_norm(ctx, d.binding, norm)
 					if .Left not_in ctx.mouse.down {
 						binding_end_edit(ctx, d.binding)
-						ctx.activeId = 0
+						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.doubleClicked {
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.doubleClicked {
 					// Reset param to default on double click
 					binding_reset_to_default(ctx, d.binding)
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
-					ctx.activeId = d.id
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = d.id
 					binding_begin_edit(ctx, d.binding)
 				}
 			}
 			case .TOGGLE: {
 				d := c.data.(ToggleData) or_continue
-				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
-				if mouseOver do ctx.hoveredId = d.id
+				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
+				if mouse_over do ctx.hovered_id = d.id
 				// Click = press + release while hovered
-				if d.id == ctx.activeId {
+				if d.id == ctx.active_id {
 					if .Left not_in ctx.mouse.down {
-						if mouseOver {
+						if mouse_over {
 							switch v in d.binding {
 							case ToggleBoolBinding:
 								v.val^ = !v.val^
@@ -656,30 +807,30 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 								ui_param_end_edit(ctx, v.param_idx)
 							}
 						}
-						ctx.activeId = 0
+						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
-					ctx.activeId = d.id
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = d.id
 				}
 			}
 			case .KNOB: {
 				d := c.data.(KnobData) or_continue
-				mouseOver := collide_vec2_rect(ctx.mouse.pos, c.calcBounds)
-				if mouseOver do ctx.hoveredId = d.id
-				if d.id == ctx.activeId {
-					norm := clamp(ctx.dragAnchorNorm + (ctx.dragAnchorMouseY - ctx.mouse.pos.y) / knob_drag_pixels, 0, 1)
+				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
+				if mouse_over do ctx.hovered_id = d.id
+				if d.id == ctx.active_id {
+					norm := clamp(ctx.drag_anchor_norm + (ctx.drag_anchor_mouse_y - ctx.mouse.pos.y) / ctx.theme.knob_drag_pixels, 0, 1)
 					binding_set_norm(ctx, d.binding, norm)
 					if .Left not_in ctx.mouse.down {
 						binding_end_edit(ctx, d.binding)
-						ctx.activeId = 0
+						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.doubleClicked {
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.doubleClicked {
 					// Reset param to default on double click
 					binding_reset_to_default(ctx, d.binding)
-				} else if d.id == ctx.hoveredId && .Left in ctx.mouse.pressed {
-					ctx.activeId = d.id
-					ctx.dragAnchorMouseY = ctx.mouse.pos.y
-					ctx.dragAnchorNorm = binding_get_norm(ctx, d.binding)
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = d.id
+					ctx.drag_anchor_mouse_y = ctx.mouse.pos.y
+					ctx.drag_anchor_norm = binding_get_norm(ctx, d.binding)
 					binding_begin_edit(ctx, d.binding)
 				}
 			}
@@ -698,235 +849,256 @@ ui_size_grow_components :: proc(ctx: ^UIContext) {
 
 ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
 	sizing_along_axis := (comp.direction == .HORIZONTAL) == horiz
-	padding := comp.sizingHoriz.padding if horiz else comp.sizingVert.padding
-	parent_size := comp.calcBounds.w if horiz else comp.calcBounds.h
+	padding := comp.sizing_horiz.padding if horiz else comp.sizing_vert.padding
+	parent_size := comp.calc_bounds.w if horiz else comp.calc_bounds.h
+	content_size := parent_size - padding * 2
 
-	if sizing_along_axis {
-		// Main axis - distribute remaining space among grow children
-		used: f32
-		grow_count: int
-		child_count: int
-
-		childIter := ui_iterate_children(comp)
-		for c in ui_next_child(&childIter) {
-			child_count += 1
-			sizing := c.sizingHoriz if horiz else c.sizingVert
-			if sizing.type == .GROW {
-				grow_count += 1
-			} else {
-				used += c.calcBounds.w if horiz else c.calcBounds.h
-			}
+	child_iter := ui_iterate_children(comp)
+	for c in ui_next_child(&child_iter) {
+		sizing := c.sizing_horiz if horiz else c.sizing_vert
+		size: f32
+		if sizing.type == .PERCENT {
+			size = sizing.value * content_size
+		} else if sizing.type == .GROW && (c.floating || !sizing_along_axis) {
+			size = content_size
+		} else {
+			continue
 		}
-
-		if grow_count == 0 do return
-
-		if child_count > 1 {
-			used += comp.child_gaps * f32(child_count - 1)
+		if sizing.min > 0 do size = math.max(size, sizing.min)
+		if sizing.max > 0 do size = math.min(size, sizing.max)
+		if horiz {
+			c.calc_bounds.w = size
+		} else {
+			c.calc_bounds.h = size
 		}
-		used += padding * 2
+	}
 
-		grow_size := (parent_size - used) / f32(grow_count)
+	if !sizing_along_axis do return
+	// main axis
 
-		childIter = ui_iterate_children(comp)
-		for c in ui_next_child(&childIter) {
-			sizing := &c.sizingHoriz if horiz else &c.sizingVert
-			if sizing.type != .GROW do continue
-			size := grow_size
-			if sizing.min > 0 do size = math.max(size, sizing.min)
-			if sizing.max > 0 do size = math.min(size, sizing.max)
-			if horiz {
-				c.calcBounds.w = size
-			} else {
-				c.calcBounds.h = size
-			}
+	// distribute remaining space among grow children by weight
+	used: f32
+	weight_sum: f32
+	child_count: int
+
+	child_iter = ui_iterate_children(comp)
+	for c in ui_next_child(&child_iter) {
+		if c.floating do continue
+		child_count += 1
+		sizing := c.sizing_horiz if horiz else c.sizing_vert
+		if sizing.type == .GROW {
+			weight_sum += sizing.weight if sizing.weight > 0 else 1
+		} else {
+			used += c.calc_bounds.w if horiz else c.calc_bounds.h
 		}
-	} else {
-		// cross axis - grow children expand to fill parent minus padding
-		max_size := parent_size - padding * 2
+	}
 
-		childIter := ui_iterate_children(comp)
-		for c in ui_next_child(&childIter) {
-			sizing := &c.sizingHoriz if horiz else &c.sizingVert
-			if sizing.type != .GROW do continue
-			size := max_size
-			if sizing.min > 0 do size = math.max(size, sizing.min)
-			if sizing.max > 0 do size = math.min(size, sizing.max)
-			if horiz {
-				c.calcBounds.w = size
-			} else {
-				c.calcBounds.h = size
-			}
+	if weight_sum == 0 do return
+
+	if child_count > 1 {
+		used += comp.child_gaps * f32(child_count - 1)
+	}
+	used += padding * 2
+
+	grow_space := parent_size - used
+
+	child_iter = ui_iterate_children(comp)
+	for c in ui_next_child(&child_iter) {
+		if c.floating do continue
+		sizing := &c.sizing_horiz if horiz else &c.sizing_vert
+		if sizing.type != .GROW do continue
+		weight := sizing.weight if sizing.weight > 0 else 1
+		size := grow_space * weight / weight_sum
+		if sizing.min > 0 do size = math.max(size, sizing.min)
+		if sizing.max > 0 do size = math.min(size, sizing.max)
+		if horiz {
+			c.calc_bounds.w = size
+		} else {
+			c.calc_bounds.h = size
 		}
 	}
 }
 
 ui_position_components :: proc(ctx: ^UIContext) {
-	ctx.root.cursor = {ctx.root.sizingHoriz.padding, ctx.root.sizingVert.padding}
+	ctx.root.cursor = {ctx.root.sizing_horiz.padding, ctx.root.sizing_vert.padding}
 	it := ui_iterate_pre_order(ctx)
 
 	for c in ui_next_pre_order(&it) {
 		if c == ctx.root do continue
 		parent := c.parent
+		content_w := parent.calc_bounds.w - 2 * parent.sizing_horiz.padding
+		content_h := parent.calc_bounds.h - 2 * parent.sizing_vert.padding
 
-		if parent.direction == .HORIZONTAL {
-			c.calcBounds.x = parent.cursor.x
-			content_h := parent.calcBounds.h - 2 * parent.sizingVert.padding
-			switch c.alignY {
-			case .TOP:    c.calcBounds.y = parent.calcBounds.y + parent.sizingVert.padding
-			case .CENTER: c.calcBounds.y = parent.calcBounds.y + parent.sizingVert.padding + (content_h - c.calcBounds.h) * 0.5
-			case .BOTTOM: c.calcBounds.y = parent.calcBounds.y + parent.sizingVert.padding + content_h - c.calcBounds.h
+		if c.floating {
+			switch c.align_x {
+			case .LEFT:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
+			case .CENTER: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
+			case .RIGHT:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
 			}
-			parent.cursor.x += c.calcBounds.w + parent.child_gaps
+			switch c.align_y {
+			case .TOP:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
+			case .CENTER: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
+			case .BOTTOM: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+			}
+			c.calc_bounds.x += c.float_offset.x
+			c.calc_bounds.y += c.float_offset.y
+		} else if parent.direction == .HORIZONTAL {
+			c.calc_bounds.x = parent.cursor.x
+			switch c.align_y {
+			case .TOP:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
+			case .CENTER: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
+			case .BOTTOM: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+			}
+			parent.cursor.x += c.calc_bounds.w + parent.child_gaps
 		} else {
-			c.calcBounds.y = parent.cursor.y
-			content_w := parent.calcBounds.w - 2 * parent.sizingHoriz.padding
-			switch c.alignX {
-			case .LEFT:   c.calcBounds.x = parent.calcBounds.x + parent.sizingHoriz.padding
-			case .CENTER: c.calcBounds.x = parent.calcBounds.x + parent.sizingHoriz.padding + (content_w - c.calcBounds.w) * 0.5
-			case .RIGHT:  c.calcBounds.x = parent.calcBounds.x + parent.sizingHoriz.padding + content_w - c.calcBounds.w
+			c.calc_bounds.y = parent.cursor.y
+			switch c.align_x {
+			case .LEFT:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
+			case .CENTER: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
+			case .RIGHT:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
 			}
-			parent.cursor.y += c.calcBounds.h + parent.child_gaps
+			parent.cursor.y += c.calc_bounds.h + parent.child_gaps
 		}
 
-		c.cursor = {c.calcBounds.x + c.sizingHoriz.padding, c.calcBounds.y + c.sizingVert.padding}
+		c.cursor = {c.calc_bounds.x + c.sizing_horiz.padding, c.calc_bounds.y + c.sizing_vert.padding}
 	}
 }
 
 ui_generate_draw_calls :: proc(ctx: ^UIContext) {
-	it := ui_iterate_pre_order(ctx)
+	it := ui_iterate_draw_order(ctx)
 
-	for c in ui_next_pre_order(&it) {
+	for c in ui_next_draw_order(&it) {
 		if c == ctx.root do continue // Skip root node
 		switch c.type {
 			case .PANEL: {
 				d := c.data.(PanelData) or_continue
-				if d.skipDraw do continue
+				if d.skip_draw do continue
 				rect := SimpleUIRect{}
-				rect.x = c.calcBounds.x
-				rect.y = c.calcBounds.y
-				rect.width = c.calcBounds.w
-				rect.height = c.calcBounds.h
-				rect.color = ctx.theme.panelBgColor
-				rect.cornerRad = ctx.theme.cornerRadius
-				rect.borderWidth = 0.4
-				rect.borderColor = {255, 255, 255, 255}
+				rect.x = c.calc_bounds.x
+				rect.y = c.calc_bounds.y
+				rect.width = c.calc_bounds.w
+				rect.height = c.calc_bounds.h
+				rect.color = ctx.theme.panel_bg_color
+				rect.cornerRad = ctx.theme.corner_radius
+				rect.borderWidth = ctx.theme.panel_border_width
+				rect.borderColor = ctx.theme.panel_border_color
 				draw_push_rect(ctx.plugin.draw, rect)
 			}
 			case .LABEL: {
 				d := c.data.(LabelData) or_continue
-				textSize := draw_measure_text(ctx.plugin.draw, d.text, d.size)
-				textX := c.calcBounds.x
-				switch c.alignX {
+				text_size := draw_measure_text(ctx.plugin.draw, d.text, d.size)
+				text_x := c.calc_bounds.x
+				switch c.align_x {
 				case .LEFT:
-				case .CENTER: textX = c.calcBounds.x + (c.calcBounds.w - textSize.x) * 0.5
-				case .RIGHT:  textX = c.calcBounds.x + c.calcBounds.w - textSize.x
+				case .CENTER: text_x = c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5
+				case .RIGHT:  text_x = c.calc_bounds.x + c.calc_bounds.w - text_size.x
 				}
-				draw_text(ctx.plugin.draw, d.text, textX, c.calcBounds.y, ctx.theme.textColor, d.size)
+				draw_text(ctx.plugin.draw, d.text, text_x, c.calc_bounds.y, ctx.theme.text_color, d.size)
 			}
 			case .BUTTON: {
-				bgColor := ctx.theme.buttonColor
 				d := c.data.(ButtonData) or_continue
-				if d.id == ctx.activeId do bgColor = ctx.theme.buttonActiveColor
-				else if d.id == ctx.hoveredId do bgColor = ctx.theme.buttonHoverColor
+				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				bg_color := ColorU8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
+				if d.id == ctx.active_id do bg_color = ctx.theme.button_active_color
 				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-					x = c.calcBounds.x, y = c.calcBounds.y,
-					width = c.calcBounds.w, height = c.calcBounds.h,
-					color = bgColor,
-					cornerRad = ctx.theme.cornerRadius,
-					borderColor = ctx.theme.borderColor,
-					borderWidth = ctx.theme.borderWidth,
+					x = c.calc_bounds.x, y = c.calc_bounds.y,
+					width = c.calc_bounds.w, height = c.calc_bounds.h,
+					color = bg_color,
+					cornerRad = ctx.theme.corner_radius,
+					borderColor = ctx.theme.border_color,
+					borderWidth = ctx.theme.border_width,
 				})
-				textSize := draw_measure_text(ctx.plugin.draw, d.label, ctx.theme.fontSize)
+				text_size := draw_measure_text(ctx.plugin.draw, d.label, ctx.theme.font_size)
 				draw_text(ctx.plugin.draw, d.label,
-					c.calcBounds.x + (c.calcBounds.w - textSize.x) * 0.5,
-					c.calcBounds.y + (c.calcBounds.h - textSize.y) * 0.5,
-					ctx.theme.textColor, ctx.theme.fontSize)
+					c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5,
+					c.calc_bounds.y + (c.calc_bounds.h - text_size.y) * 0.5,
+					ctx.theme.text_color, ctx.theme.font_size)
 			}
 			case .SLIDER: {
-				bounds := c.calcBounds
+				bounds := c.calc_bounds
 				d := c.data.(SliderData) or_continue
-				thumbR := f32(slider_width) / 2
+				thumb_r := ctx.theme.slider_width / 2
 
 				norm := binding_get_norm(ctx, d.binding)
 
-				thumbColor := ctx.theme.sliderColor
-				if d.id == ctx.activeId do thumbColor = ctx.theme.sliderActiveColor
-				else if d.id == ctx.hoveredId do thumbColor = ctx.theme.sliderHoverColor
+				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				thumb_color := ColorU8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
+				if d.id == ctx.active_id do thumb_color = ctx.theme.slider_active_color
 
 				if d.orientation == .VERTICAL {
-					trackRange := bounds.h - f32(slider_width)
-					sliderY := norm * trackRange
+					track_range := bounds.h - ctx.theme.slider_width
+					slider_y := norm * track_range
 
 					// Rail background
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (slider_rail_width / 2),
-						y = bounds.y + thumbR,
-						width = slider_rail_width,
-						height = trackRange,
-						color = ctx.theme.sliderTrackColor,
-						cornerRad = 2,
-						borderColor = ctx.theme.borderColor,
-						borderWidth = 0.8,
+						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
+						y = bounds.y + thumb_r,
+						width = ctx.theme.slider_rail_width,
+						height = track_range,
+						color = ctx.theme.slider_track_color,
+						cornerRad = ctx.theme.slider_rail_width / 2,
+						borderColor = ctx.theme.border_color,
+						borderWidth = ctx.theme.slider_rail_border_width,
 					})
 					// Filled portion
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (slider_rail_width / 2),
-						y = bounds.y + thumbR + (trackRange - sliderY),
-						width = slider_rail_width,
-						height = sliderY,
-						color = ctx.theme.sliderColor,
-						cornerRad = 2,
+						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
+						y = bounds.y + thumb_r + (track_range - slider_y),
+						width = ctx.theme.slider_rail_width,
+						height = slider_y,
+						color = ctx.theme.slider_color,
+						cornerRad = ctx.theme.slider_rail_width / 2,
 					})
 					// Thumb circle
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (slider_width / 2),
-						y = bounds.y + (trackRange - sliderY),
-						width = slider_width,
-						height = slider_width,
-						color = thumbColor,
-						cornerRad = slider_width / 2,
-						borderColor = ctx.theme.sliderActiveColor,
-						borderWidth = 0.5,
+						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_width / 2),
+						y = bounds.y + (track_range - slider_y),
+						width = ctx.theme.slider_width,
+						height = ctx.theme.slider_width,
+						color = thumb_color,
+						cornerRad = ctx.theme.slider_width / 2,
+						borderColor = ctx.theme.slider_active_color,
+						borderWidth = ctx.theme.slider_thumb_border_width,
 					})
 				} else {
-					trackRange := bounds.w - f32(slider_width)
-					sliderX := norm * trackRange
+					track_range := bounds.w - ctx.theme.slider_width
+					slider_x := norm * track_range
 
 					// Rail background
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + thumbR,
-						y = bounds.y + (bounds.h / 2) - (slider_rail_width / 2),
-						width = trackRange,
-						height = slider_rail_width,
-						color = ctx.theme.sliderTrackColor,
-						cornerRad = 2,
-						borderColor = ctx.theme.borderColor,
-						borderWidth = 0.8,
+						x = bounds.x + thumb_r,
+						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
+						width = track_range,
+						height = ctx.theme.slider_rail_width,
+						color = ctx.theme.slider_track_color,
+						cornerRad = ctx.theme.slider_rail_width / 2,
+						borderColor = ctx.theme.border_color,
+						borderWidth = ctx.theme.slider_rail_border_width,
 					})
 					// Filled portion
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + thumbR,
-						y = bounds.y + (bounds.h / 2) - (slider_rail_width / 2),
-						width = sliderX,
-						height = slider_rail_width,
-						color = ctx.theme.sliderColor,
-						cornerRad = 2,
+						x = bounds.x + thumb_r,
+						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
+						width = slider_x,
+						height = ctx.theme.slider_rail_width,
+						color = ctx.theme.slider_color,
+						cornerRad = ctx.theme.slider_rail_width / 2,
 					})
 					// Thumb circle
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + sliderX,
-						y = bounds.y + (bounds.h / 2) - (slider_width / 2),
-						width = slider_width,
-						height = slider_width,
-						color = thumbColor,
-						cornerRad = slider_width / 2,
-						borderColor = ctx.theme.sliderActiveColor,
-						borderWidth = 0.5,
+						x = bounds.x + slider_x,
+						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_width / 2),
+						width = ctx.theme.slider_width,
+						height = ctx.theme.slider_width,
+						color = thumb_color,
+						cornerRad = ctx.theme.slider_width / 2,
+						borderColor = ctx.theme.slider_active_color,
+						borderWidth = ctx.theme.slider_thumb_border_width,
 					})
 				}
 			}
 			case .TOGGLE: {
-				bounds := c.calcBounds
+				bounds := c.calc_bounds
 				d := c.data.(ToggleData) or_continue
 
 				on: bool
@@ -937,57 +1109,58 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 					on = ui_param_get_normalized(ctx, v.param_idx) >= 0.5
 				}
 
-				bgColor := ctx.theme.toggleOnColor if on else ctx.theme.toggleOffColor
-				pillRad := bounds.h / 2
+				t := ui_animate(ctx, d.id, f32(1) if on else f32(0), 18)
+				bg_color := ColorU8_lerp(ctx.theme.toggle_off_color, ctx.theme.toggle_on_color, t)
+				pill_rad := bounds.h / 2
 				// Pill background
 				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = bounds.x, y = bounds.y,
 					width = bounds.w, height = bounds.h,
-					color = bgColor,
-					cornerRad = pillRad,
+					color = bg_color,
+					cornerRad = pill_rad,
 				})
 				// Thumb circle
-				margin: f32 = 3
-				thumbR := pillRad - margin
-				thumbX := bounds.x + margin + thumbR + (bounds.w - bounds.h) * (f32(1) if on else f32(0))
-				thumbY := bounds.y + pillRad
-				draw_circle(ctx.plugin.draw, thumbX, thumbY, thumbR, ctx.theme.toggleThumbColor)
+				margin := ctx.theme.toggle_thumb_margin
+				thumb_r := pill_rad - margin
+				thumb_x := bounds.x + margin + thumb_r + (bounds.w - bounds.h) * t
+				thumb_y := bounds.y + pill_rad
+				draw_circle(ctx.plugin.draw, thumb_x, thumb_y, thumb_r, ctx.theme.toggle_thumb_color)
 			}
 			case .KNOB: {
-				bounds := c.calcBounds
+				bounds := c.calc_bounds
 				d := c.data.(KnobData) or_continue
 
 				norm := binding_get_norm(ctx, d.binding)
 
-				arcColor := ctx.theme.sliderColor
-				if d.id == ctx.activeId do arcColor = ctx.theme.sliderActiveColor
-				else if d.id == ctx.hoveredId do arcColor = ctx.theme.sliderHoverColor
+				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				arc_color := ColorU8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
+				if d.id == ctx.active_id do arc_color = ctx.theme.slider_active_color
 
 				center := Vec2f{bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.5}
-				radius := math.min(bounds.w, bounds.h) * 0.5 - knob_arc_thickness
+				radius := math.min(bounds.w, bounds.h) * 0.5 - ctx.theme.knob_arc_thickness
 
 				// Track arc (full sweep)
 				draw_push_arc(ctx.plugin.draw, center, radius,
-					knob_start_angle, knob_start_angle + knob_sweep_angle,
-					knob_track_thickness, ctx.theme.sliderTrackColor)
+					ctx.theme.knob_start_angle, ctx.theme.knob_start_angle + ctx.theme.knob_sweep_angle,
+					ctx.theme.knob_track_thickness, ctx.theme.slider_track_color)
 
-				end_fill := knob_start_angle + norm * knob_sweep_angle
+				end_fill := ctx.theme.knob_start_angle + norm * ctx.theme.knob_sweep_angle
 				if norm > 0.001 {
 					draw_push_arc(ctx.plugin.draw, center, radius,
-						knob_start_angle, end_fill,
-						knob_arc_thickness, arcColor)
+						ctx.theme.knob_start_angle, end_fill,
+						ctx.theme.knob_arc_thickness, arc_color)
 				}
 
 				// Indicator line + end-cap dot at the current angle
 				dir := Vec2f{math.cos(end_fill), math.sin(end_fill)}
-				inner := Vec2f{center.x + dir.x * knob_indicator_inset, center.y + dir.y * knob_indicator_inset}
-				outer := Vec2f{center.x + dir.x * (radius - knob_arc_thickness - 4), center.y + dir.y * (radius - knob_arc_thickness - 4)}
-				draw_push_pill(ctx.plugin.draw, inner, outer, knob_track_thickness, arcColor)
+				inner := Vec2f{center.x + dir.x * ctx.theme.knob_indicator_inset, center.y + dir.y * ctx.theme.knob_indicator_inset}
+				outer := Vec2f{center.x + dir.x * (radius - ctx.theme.knob_arc_thickness - 4), center.y + dir.y * (radius - ctx.theme.knob_arc_thickness - 4)}
+				draw_push_pill(ctx.plugin.draw, inner, outer, ctx.theme.knob_track_thickness, arc_color)
 			}
 			case .CANVAS: {
 				d := c.data.(CanvasData) or_continue
-				b := c.calcBounds
-				draw_set_scissor(ctx.plugin.draw, RectI32{i32(b.x), i32(b.y), i32(b.w), i32(b.h)})
+				cb := c.calc_bounds
+				draw_set_scissor(ctx.plugin.draw, RectI32{i32(cb.x), i32(cb.y), i32(cb.w), i32(cb.h)})
 				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
 				draw_remove_scissor(ctx.plugin.draw)
 			}
@@ -996,17 +1169,21 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 }
 
 ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
-	comp := ctx.currentComponent
-	childIter := ui_iterate_children(comp)
+	comp := ctx.current_component
+	child_iter := ui_iterate_children(comp)
 	sizing_along_axis := (comp.direction == .HORIZONTAL) == horiz
 	size: f32
 	child_count: int
 
-	for c in ui_next_child(&childIter) {
+	for c in ui_next_child(&child_iter) {
+		if c.floating do continue
 		child_count += 1
-		child_sizing := c.sizingHoriz if horiz else c.sizingVert
-		// GROW children contribute their min to FIT calculation
-		child_size := child_sizing.min if child_sizing.type == .GROW else (c.calcBounds.w if horiz else c.calcBounds.h)
+		child_sizing := c.sizing_horiz if horiz else c.sizing_vert
+		// GROW and PERCENT children contribute their min to FIT calculation
+		child_size := c.calc_bounds.w if horiz else c.calc_bounds.h
+		if child_sizing.type == .GROW || child_sizing.type == .PERCENT {
+			child_size = child_sizing.min
+		}
 		if sizing_along_axis {
 			size += child_size
 		} else {
@@ -1017,35 +1194,35 @@ ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
 	if sizing_along_axis && child_count > 1 {
 		size += comp.child_gaps * f32(child_count - 1)
 	}
-	size += 2 * (horiz ? comp.sizingHoriz.padding : comp.sizingVert.padding)
+	size += 2 * (horiz ? comp.sizing_horiz.padding : comp.sizing_vert.padding)
 
 	// Clamp to FIT min/max
-	fit_sizing := comp.sizingHoriz if horiz else comp.sizingVert
+	fit_sizing := comp.sizing_horiz if horiz else comp.sizing_vert
 	if fit_sizing.max > 0 do size = math.min(size, fit_sizing.max)
 	if fit_sizing.min > 0 do size = math.max(size, fit_sizing.min)
 
 	if horiz {
-		comp.calcBounds.w = size
+		comp.calc_bounds.w = size
 	} else {
-		comp.calcBounds.h = size
+		comp.calc_bounds.h = size
 	}
 }
 
 ui_component_lastchild :: proc(node: ^Component) -> ^Component {
 	node := node
-	for node.firstChild != nil do node = node.firstChild
+	for node.first_child != nil do node = node.first_child
 	return node
 }
 
 ui_iterate_children :: proc(comp: ^Component) -> ComponentIterator {
-	return ComponentIterator{comp.firstChild}
+	return ComponentIterator{comp.first_child}
 }
 
 ui_next_child :: proc(iter: ^ComponentIterator) -> (next: ^Component, cont: bool) {
-	currentNode := iter.current
-	if currentNode == nil do return nil, false
-	iter.current = iter.current.nextSibling
-	return currentNode, true
+	current_node := iter.current
+	if current_node == nil do return nil, false
+	iter.current = iter.current.next_sibling
+	return current_node, true
 }
 
 ui_iterate_pre_order :: proc(ctx: ^UIContext) -> ComponentIterator {
@@ -1053,24 +1230,24 @@ ui_iterate_pre_order :: proc(ctx: ^UIContext) -> ComponentIterator {
 }
 
 ui_next_pre_order :: proc(iter: ^ComponentIterator) -> (next: ^Component, cont: bool) {
-	currentNode := iter.current
-	if currentNode == nil do return nil, false
+	current_node := iter.current
+	if current_node == nil do return nil, false
 
-	if currentNode.firstChild != nil {
-		iter.current = currentNode.firstChild
+	if current_node.first_child != nil {
+		iter.current = current_node.first_child
 	} else {
-		walkUp := currentNode
-		for walkUp != nil {
-			if walkUp.nextSibling != nil {
-				iter.current = walkUp.nextSibling
-				return currentNode, true
+		walk_up := current_node
+		for walk_up != nil {
+			if walk_up.next_sibling != nil {
+				iter.current = walk_up.next_sibling
+				return current_node, true
 			}
-			walkUp = walkUp.parent
+			walk_up = walk_up.parent
 		}
 		iter.current = nil
 	}
 
-	return currentNode, true
+	return current_node, true
 }
 
 ui_iterate_post_order :: proc(ctx: ^UIContext) -> ComponentIterator {
@@ -1078,34 +1255,66 @@ ui_iterate_post_order :: proc(ctx: ^UIContext) -> ComponentIterator {
 }
 
 ui_next_post_order :: proc(iter: ^ComponentIterator) -> (next: ^Component, cont: bool) {
-	currentNode := iter.current
-	if currentNode == nil do return nil, false
+	current_node := iter.current
+	if current_node == nil do return nil, false
 
-	if currentNode.nextSibling != nil {
-		iter.current = ui_component_lastchild(iter.current.nextSibling)
+	if current_node.next_sibling != nil {
+		iter.current = ui_component_lastchild(iter.current.next_sibling)
 	} else {
-		iter.current = currentNode.parent
+		iter.current = current_node.parent
 	}
 
-	return currentNode, true
+	return current_node, true
+}
+
+ui_in_floating_subtree :: proc(c: ^Component) -> bool {
+	for n := c; n != nil; n = n.parent {
+		if n.floating do return true
+	}
+	return false
+}
+
+// yields in-flow components in pre-order, then floating, so floating
+// content draws and hit-tests on top of everything else
+DrawOrderIterator :: struct {
+	ctx: ^UIContext,
+	inner: ComponentIterator,
+	floating_pass: bool,
+}
+
+ui_iterate_draw_order :: proc(ctx: ^UIContext) -> DrawOrderIterator {
+	return DrawOrderIterator{ctx, ui_iterate_pre_order(ctx), false}
+}
+
+ui_next_draw_order :: proc(it: ^DrawOrderIterator) -> (next: ^Component, cont: bool) {
+	for {
+		c, ok := ui_next_pre_order(&it.inner)
+		if !ok {
+			if it.floating_pass do return nil, false
+			it.floating_pass = true
+			it.inner = ui_iterate_pre_order(it.ctx)
+			continue
+		}
+		if ui_in_floating_subtree(c) == it.floating_pass do return c, true
+	}
 }
 
 // Layout tests
 
 @(private = "file")
 test_init_ctx :: proc(ctx: ^UIContext) {
-	ctx.componentCount = 0
+	ctx.component_count = 0
 	ctx.root = ui_alloc_component(ctx)
 	ctx.root^ = Component{}
-	ctx.root.calcBounds = {0, 0, 400, 300}
-	ctx.currentComponent = ctx.root
+	ctx.root.calc_bounds = {0, 0, 400, 300}
+	ctx.current_component = ctx.root
 }
 
 @(private = "file")
-test_open_comp :: proc(ctx: ^UIContext, sizingH, sizingV: AxisSizing, dir: LayoutDirection = .HORIZONTAL, child_gaps: f32 = 0) -> ^Component {
+test_open_comp :: proc(ctx: ^UIContext, sizing_h, sizing_v: AxisSizing, dir: LayoutDirection = .HORIZONTAL, child_gaps: f32 = 0) -> ^Component {
 	comp := ui_open_component(ctx)
-	comp.sizingHoriz = sizingH
-	comp.sizingVert = sizingV
+	comp.sizing_horiz = sizing_h
+	comp.sizing_vert = sizing_v
 	comp.direction = dir
 	comp.child_gaps = child_gaps
 	return comp
@@ -1117,8 +1326,8 @@ test_close_comp :: proc(ctx: ^UIContext) {
 }
 
 @(private = "file")
-test_leaf :: proc(ctx: ^UIContext, sizingH, sizingV: AxisSizing) -> ^Component {
-	comp := test_open_comp(ctx, sizingH, sizingV)
+test_leaf :: proc(ctx: ^UIContext, sizing_h, sizing_v: AxisSizing) -> ^Component {
+	comp := test_open_comp(ctx, sizing_h, sizing_v)
 	test_close_comp(ctx)
 	return comp
 }
@@ -1142,12 +1351,12 @@ test_fixed_children_horizontal :: proc(t: ^testing.T) {
 	ui_position_components(&ctx)
 
 	// FIT parent should wrap children: 100 + 10 gap + 80 = 190
-	testing.expect(t, approx(parent.calcBounds.w, 190), "parent width")
-	testing.expect(t, approx(parent.calcBounds.h, 50), "parent height")
+	testing.expect(t, approx(parent.calc_bounds.w, 190), "parent width")
+	testing.expect(t, approx(parent.calc_bounds.h, 50), "parent height")
 
 	// Children positioned left to right
-	testing.expect(t, approx(a.calcBounds.x, 0), "a.x")
-	testing.expect(t, approx(b.calcBounds.x, 110), "b.x") // 100 + 10 gap
+	testing.expect(t, approx(a.calc_bounds.x, 0), "a.x")
+	testing.expect(t, approx(b.calc_bounds.x, 110), "b.x") // 100 + 10 gap
 }
 
 @(test)
@@ -1160,8 +1369,8 @@ test_grow_fills_parent :: proc(t: ^testing.T) {
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
 
-	testing.expect(t, approx(child.calcBounds.w, 400), "child width")
-	testing.expect(t, approx(child.calcBounds.h, 300), "child height")
+	testing.expect(t, approx(child.calc_bounds.w, 400), "child width")
+	testing.expect(t, approx(child.calc_bounds.h, 300), "child height")
 }
 
 @(test)
@@ -1176,10 +1385,10 @@ test_grow_distributes_evenly :: proc(t: ^testing.T) {
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
 
-	testing.expect(t, approx(a.calcBounds.w, 200), "a width")
-	testing.expect(t, approx(b.calcBounds.w, 200), "b width")
-	testing.expect(t, approx(a.calcBounds.x, 0), "a.x")
-	testing.expect(t, approx(b.calcBounds.x, 200), "b.x")
+	testing.expect(t, approx(a.calc_bounds.w, 200), "a width")
+	testing.expect(t, approx(b.calc_bounds.w, 200), "b width")
+	testing.expect(t, approx(a.calc_bounds.x, 0), "a.x")
+	testing.expect(t, approx(b.calc_bounds.x, 200), "b.x")
 }
 
 @(test)
@@ -1196,8 +1405,8 @@ test_grow_with_fixed_sibling :: proc(t: ^testing.T) {
 	ui_position_components(&ctx)
 
 	// 400 - 100 fixed - 10 gap = 290
-	testing.expect(t, approx(fixed.calcBounds.w, 100), "fixed width")
-	testing.expect(t, approx(grow.calcBounds.w, 290), "grow width")
+	testing.expect(t, approx(fixed.calc_bounds.w, 100), "fixed width")
+	testing.expect(t, approx(grow.calc_bounds.w, 290), "grow width")
 }
 
 @(test)
@@ -1216,11 +1425,11 @@ test_padding :: proc(t: ^testing.T) {
 	ui_position_components(&ctx)
 
 	// FIT + padding: 100 + 30 = 130
-	testing.expect(t, approx(parent.calcBounds.w, 130), "parent width with padding")
-	testing.expect(t, approx(parent.calcBounds.h, 80), "parent height with padding")
+	testing.expect(t, approx(parent.calc_bounds.w, 130), "parent width with padding")
+	testing.expect(t, approx(parent.calc_bounds.h, 80), "parent height with padding")
 	// Child offset by padding
-	testing.expect(t, approx(child.calcBounds.x, parent.calcBounds.x + 15), "child x offset by padding")
-	testing.expect(t, approx(child.calcBounds.y, parent.calcBounds.y + 15), "child y offset by padding")
+	testing.expect(t, approx(child.calc_bounds.x, parent.calc_bounds.x + 15), "child x offset by padding")
+	testing.expect(t, approx(child.calc_bounds.y, parent.calc_bounds.y + 15), "child y offset by padding")
 }
 
 @(test)
@@ -1235,8 +1444,8 @@ test_vertical_layout :: proc(t: ^testing.T) {
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
 
-	testing.expect(t, approx(a.calcBounds.y, 0), "a.y")
-	testing.expect(t, approx(b.calcBounds.y, 35), "b.y") // 30 + 5 gap
+	testing.expect(t, approx(a.calc_bounds.y, 0), "a.y")
+	testing.expect(t, approx(b.calc_bounds.y, 35), "b.y") // 30 + 5 gap
 }
 
 @(test)
@@ -1250,5 +1459,57 @@ test_grow_min_max_clamp :: proc(t: ^testing.T) {
 	ui_size_grow_components(&ctx)
 
 	// Parent is 400, but max clamps to 150
-	testing.expect(t, approx(child.calcBounds.w, 150), "clamped to max")
+	testing.expect(t, approx(child.calc_bounds.w, 150), "clamped to max")
+}
+
+@(test)
+test_percent_of_parent :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	ctx.root.direction = .HORIZONTAL
+	a := test_leaf(&ctx, {type = .PERCENT, value = 0.5}, {type = .PERCENT, value = 0.25})
+
+	ui_size_grow_components(&ctx)
+	ui_position_components(&ctx)
+
+	testing.expect(t, approx(a.calc_bounds.w, 200), "50 percent of 400")
+	testing.expect(t, approx(a.calc_bounds.h, 75), "25 percent of 300")
+}
+
+@(test)
+test_grow_weights :: proc(t: ^testing.T) {
+	// Weighted GROW children split 1:3
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	ctx.root.direction = .HORIZONTAL
+	a := test_leaf(&ctx, {type = .GROW, weight = 1}, {type = .FIXED, value = 50})
+	b := test_leaf(&ctx, {type = .GROW, weight = 3}, {type = .FIXED, value = 50})
+
+	ui_size_grow_components(&ctx)
+	ui_position_components(&ctx)
+
+	testing.expect(t, approx(a.calc_bounds.w, 100), "weight 1 of 4")
+	testing.expect(t, approx(b.calc_bounds.w, 300), "weight 3 of 4")
+}
+
+@(test)
+test_floating_skips_flow :: proc(t: ^testing.T) {
+	// Floating child doesn't affect FIT sizing or flow, positions from parent origin
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	parent := test_open_comp(&ctx, {type = .FIT}, {type = .FIT}, .HORIZONTAL, child_gaps = 10)
+	a := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 50})
+	f := test_open_comp(&ctx, {type = .FIXED, value = 30}, {type = .FIXED, value = 30})
+	f.floating = true
+	f.float_offset = {5, 6}
+	test_close_comp(&ctx)
+	test_close_comp(&ctx)
+
+	ui_size_grow_components(&ctx)
+	ui_position_components(&ctx)
+
+	testing.expect(t, approx(parent.calc_bounds.w, 100), "fit parent ignores floating child")
+	testing.expect(t, approx(a.calc_bounds.x, 0), "in-flow child position unchanged")
+	testing.expect(t, approx(f.calc_bounds.x, 5), "floating x from parent origin plus offset")
+	testing.expect(t, approx(f.calc_bounds.y, 6), "floating y from parent origin plus offset")
 }

@@ -434,20 +434,20 @@ pokey_timbre_to_string :: proc(val: f64) -> string {
 }
 
 pokey_draw :: proc(plug: ^sdk.PluginController) {
-	sdk.draw_set_clear_color(plug.draw, plug.ui.theme.bgColor)
+	sdk.draw_set_clear_color(plug.draw, plug.ui.theme.bg_color)
 	sdk.draw_clear(plug.draw)
 
 	ui := plug.ui
 	if sdk.ui_frame_scoped(ui) {
-		if sdk.ui_panel(ui, skipDraw = true, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 14, padding = 14) {
-			if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
+		if sdk.ui_panel(ui, skip_draw = true, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 14, padding = 14) {
+			if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
 				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Timbre")
 					sdk.ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = pokey_timbre_to_string)
 				}
 				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Envelope")
-					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_ATTACK)
 						sdk.ui_knob_param_labeled(ui, PARAM_DECAY)
 						sdk.ui_knob_param_labeled(ui, PARAM_SUSTAIN)
@@ -455,10 +455,10 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 					}
 				}
 			}
-			if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
+			if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
 				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Arpeggio")
-					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_RATE)
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP1)
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP2)
@@ -466,7 +466,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 				}
 				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Vibrato")
-					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DEPTH)
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_SPEED)
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DELAY)
@@ -474,7 +474,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 				}
 				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Tune")
-					if sdk.ui_panel(ui, skipDraw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_DETUNE)
 						sdk.ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = pokey_machine_to_string)
 					}

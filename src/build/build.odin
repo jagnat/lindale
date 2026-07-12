@@ -67,8 +67,8 @@ build_plugin :: proc () {
 
 	args := make([dynamic]string)
 	append(&args, "odin", "build", "vst3",
-		fmt.tprintf("-define:PLUGIN_NAME=%s", plugin),
-		fmt.tprintf("-define:BUILD_ID=%s", build_id),
+		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
+		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/%s.vst3/Contents/%s/%s.vst3", plugin, subdir, plugin),
 		opts.release ? "-o:speed" : "-debug")
@@ -153,7 +153,7 @@ build_hotloaded :: proc() {
 	ps: os.Process_State
 	exec({
 		"odin", "build", "src",
-		fmt.tprintf("-define:BUILD_ID=%s", build_id),
+		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION),
 		opts.release ? "-o:speed" : "-debug",

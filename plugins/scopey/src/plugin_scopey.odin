@@ -3,6 +3,7 @@ package scopey
 import "base:intrinsics"
 import "core:fmt"
 import "core:math"
+import "core:math/cmplx"
 import "core:log"
 import "../../../src/sdk"
 import b "../../../src/bridge"
@@ -18,7 +19,7 @@ _register :: proc "contextless" () {
 	sdk.register_plugin(scopey_api)
 }
 
-FFT_SIZE :: 1024
+FFT_SIZE :: 4096
 RING_SIZE :: FFT_SIZE * 2 // headroom so audio thread can't overrun a snapshot read
 MAX_CHANNELS :: 2
 
@@ -319,8 +320,8 @@ scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 
 draw_canvas_frame :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component) {
 	sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
-		x = comp.calcBounds.x, y = comp.calcBounds.y,
-		width = comp.calcBounds.w, height = comp.calcBounds.h,
+		x = comp.calc_bounds.x, y = comp.calc_bounds.y,
+		width = comp.calc_bounds.w, height = comp.calc_bounds.h,
 		color = {0, 0, 0, 0},
 		cornerRad = 10,
 		borderColor = {80, 80, 80, 255},
@@ -330,7 +331,7 @@ draw_canvas_frame :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component) {
 
 draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
-	bounds := comp.calcBounds
+	bounds := comp.calc_bounds
 	a := cast(^AnalysisFrame)data
 	if a == nil || a.sample_rate <= 0 do return
 
@@ -441,7 +442,7 @@ trail_alpha :: #force_inline proc(t: f32) -> f32 {
 draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
 
-	bounds := comp.calcBounds
+	bounds := comp.calc_bounds
 	a := cast(^AnalysisFrame)data
 	if a == nil do return
 
@@ -512,7 +513,7 @@ draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: 
 
 draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	draw_canvas_frame(ctx, comp)
-	bounds := comp.calcBounds
+	bounds := comp.calc_bounds
 	a := cast(^AnalysisFrame)data
 	if a == nil do return
 
@@ -530,7 +531,9 @@ draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: raw
 		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
 		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
 		alpha := trail_alpha(f32(k) * inv_n)
-		col := sdk.ColorU8{200, 200, 200, 255}
+		// col := sdk.ColorU8{200, 200, 200, 255}
+		norm := min(max(real(p0), real(p1)), 1)
+		col := sdk.ColorU8{u8(norm * 255), 200, 200, 255}
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
@@ -540,7 +543,7 @@ draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: raw
 }
 
 draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
-	bounds := comp.calcBounds
+	bounds := comp.calc_bounds
 	a := cast(^AnalysisFrame)data
 
 	METER_OFFSET_X :: 22
@@ -620,17 +623,17 @@ scopey_draw :: proc(plug: ^sdk.PluginController) {
 	state := cast(^ScopeyControlState)plug.state
 	a := &state.analysis
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bgColor))
+	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
 	// sdk.draw_set_clear_color(plug.draw, sdk.ColorF32{ 0, 1, 0, 1})
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizingHoriz = {type = .GROW}, sizingVert = {type = .GROW}, child_gaps = 10, padding = 10, skipDraw = true) {
-			if sdk.ui_panel(plug.ui, dir=.HORIZONTAL, sizingHoriz= {type = .GROW}, sizingVert = {type = .GROW}, padding = 0, child_gaps = 10, skipDraw = true) {
+		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 10, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, dir=.HORIZONTAL, sizing_horiz= {type = .GROW}, sizing_vert = {type = .GROW}, padding = 0, child_gaps = 10, skip_draw = true) {
 				// Goniometer
 				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
-				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizingHoriz = sdk.AxisSizing{type = .FIXED, value = 60})
+				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = sdk.AxisSizing{type = .FIXED, value = 60})
 				// david lu esque hilbert transform scope
 				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
 			}
