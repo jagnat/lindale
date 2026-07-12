@@ -49,43 +49,43 @@ MacTimer :: struct {
 	timer: CFRunLoopTimerRef,
 }
 
-macTimerCallback :: proc "c" (timerRef: CFTimerRef, info: rawptr) {
+mac_timer_callback :: proc "c" (timer_ref: CFTimerRef, info: rawptr) {
 	timer := cast(^Timer)info
 	context = timer.ctx
 
 	timer->callback()
 }
 
-timer_create :: proc (periodMs: u32, callback: proc (timer: ^Timer), data: rawptr) -> ^Timer {
+timer_create :: proc (period_ms: u32, callback: proc (timer: ^Timer), data: rawptr) -> ^Timer {
 	timer := new(Timer)
-	timer.timePeriodMs = periodMs
+	timer.time_period_ms = period_ms
 	timer.callback = callback
 	timer.data = data
 	timer.ctx = context
-	#assert(size_of(MacTimer) <= size_of(timer.platformTimerMem))
-	macTimer: ^MacTimer = cast(^MacTimer)&timer.platformTimerMem
-	macTimer.callback = macTimerCallback
+	#assert(size_of(MacTimer) <= size_of(timer.platform_timer_mem))
+	mac_timer: ^MacTimer = cast(^MacTimer)&timer.platform_timer_mem
+	mac_timer.callback = mac_timer_callback
 	return timer
 }
 
 timer_start :: proc (timer: ^Timer) -> bool {
-	macTimer: ^MacTimer = cast(^MacTimer)&timer.platformTimerMem
-	if macTimer.timer != nil do return false
+	mac_timer: ^MacTimer = cast(^MacTimer)&timer.platform_timer_mem
+	if mac_timer.timer != nil do return false
 
-	timerCtx: CFRunLoopTimerContext
-	timerCtx.info = timer
-	currentTime := CFAbsoluteTimeGetCurrent()
-	macTimer.timer = CFRunLoopTimerCreate(
+	timer_ctx: CFRunLoopTimerContext
+	timer_ctx.info = timer
+	current_time := CFAbsoluteTimeGetCurrent()
+	mac_timer.timer = CFRunLoopTimerCreate(
 		nil,
-		cast(CFAbsoluteTime)(currentTime + f64(timer.timePeriodMs) * 0.001),
-		f64(timer.timePeriodMs) * 0.001,
+		cast(CFAbsoluteTime)(current_time + f64(timer.time_period_ms) * 0.001),
+		f64(timer.time_period_ms) * 0.001,
 		0,
 		0,
-		macTimer.callback,
-		&timerCtx
+		mac_timer.callback,
+		&timer_ctx
 	)
-	if macTimer.timer != nil {
-		CFRunLoopAddTimer(CFRunLoopGetCurrent(), macTimer.timer, kCFRunLoopCommonModes)
+	if mac_timer.timer != nil {
+		CFRunLoopAddTimer(CFRunLoopGetCurrent(), mac_timer.timer, kCFRunLoopCommonModes)
 		return true
 	}
 
@@ -93,15 +93,15 @@ timer_start :: proc (timer: ^Timer) -> bool {
 }
 
 timer_running :: proc(timer: ^Timer) -> bool {
-	macTimer: ^MacTimer = cast(^MacTimer)&timer.platformTimerMem
-	return macTimer.timer != nil
+	mac_timer: ^MacTimer = cast(^MacTimer)&timer.platform_timer_mem
+	return mac_timer.timer != nil
 }
 
 timer_stop :: proc (timer: ^Timer) {
-	macTimer: ^MacTimer = cast(^MacTimer)&timer.platformTimerMem
-	if macTimer.timer != nil {
-		CFRunLoopTimerInvalidate(macTimer.timer)
-		CoreFoundation.CFRelease(cast(CoreFoundation.TypeRef)macTimer.timer)
-		macTimer.timer = nil
+	mac_timer: ^MacTimer = cast(^MacTimer)&timer.platform_timer_mem
+	if mac_timer.timer != nil {
+		CFRunLoopTimerInvalidate(mac_timer.timer)
+		CoreFoundation.CFRelease(cast(CoreFoundation.TypeRef)mac_timer.timer)
+		mac_timer.timer = nil
 	}
 }

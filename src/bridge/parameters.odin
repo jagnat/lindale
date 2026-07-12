@@ -13,7 +13,7 @@ ParamUnit :: enum {
 	None,
 }
 
-@(rodata) ParamUnitStrings := [ParamUnit]string {
+@(rodata) param_unit_strings := [ParamUnit]string {
 	.Decibel = "dB",
 	.Hertz = "Hz",
 	.Percentage = "%",
@@ -24,8 +24,8 @@ ParamUnit :: enum {
 
 ParamFlag :: enum {
 	Automatable,
-	Read_Only,
-	Wrap_Around,
+	ReadOnly,
+	WrapAround,
 	List,
 	Hidden,
 }
@@ -104,14 +104,14 @@ param_format_value :: proc(value: f64, desc: ParamDescriptor, buf: []u8) -> stri
 param_format_value_with_unit :: proc(value: f64, desc: ParamDescriptor, buf: []u8, enum_to_string : proc(val: f64) -> string = nil) -> string {
 	switch desc.unit {
 	case .Decibel, .Normalized:
-		return fmt.bprintf(buf, "{:.2f} {}", value, ParamUnitStrings[desc.unit])
+		return fmt.bprintf(buf, "{:.2f} {}", value, param_unit_strings[desc.unit])
 	case .Hertz, .Percentage, .Milliseconds:
-		return fmt.bprintf(buf, "{:.0f} {}", value, ParamUnitStrings[desc.unit])
+		return fmt.bprintf(buf, "{:.0f} {}", value, param_unit_strings[desc.unit])
 	case .None:
 		if .List in desc.flags && enum_to_string != nil {
 			return fmt.bprintf(buf, "{}", enum_to_string(value))
 		} else {
-			return fmt.bprintf(buf, "{:.2f} {}", value, ParamUnitStrings[desc.unit])
+			return fmt.bprintf(buf, "{:.2f} {}", value, param_unit_strings[desc.unit])
 		}
 	}
 	return fmt.bprintf(buf, "{:.2f}", value)

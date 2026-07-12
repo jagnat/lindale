@@ -14,7 +14,7 @@ import "../bridge"
 
 foreign import ObjCRuntime "system:objc"
 
-ObjC_Super :: struct {
+ObjCSuper :: struct {
 	receiver:    ^intrinsics.objc_object,
 	super_class: ^intrinsics.objc_class,
 }
@@ -34,7 +34,7 @@ TextureSlot :: struct {
 	width: u32,
 	height: u32,
 	format: bridge.PixelFormat,
-	inUse: bool,
+	in_use: bool,
 }
 
 // Metal renderer state - coupled with the view
@@ -42,34 +42,34 @@ MetalRenderer :: struct {
 	view: ^LindaleMetalView,
 	layer: ^CA.MetalLayer,
 	device: ^MTL.Device,
-	commandQueue: ^MTL.CommandQueue,
+	command_queue: ^MTL.CommandQueue,
 	pipeline: ^MTL.RenderPipelineState,
 
 	// One large buffer for all instances
-	instanceBuffer: ^MTL.Buffer,
-	instanceCapacity: u32,
+	instance_buffer: ^MTL.Buffer,
+	instance_capacity: u32,
 
-	uniformBuffer: ^MTL.Buffer,
+	uniform_buffer: ^MTL.Buffer,
 	uniforms: bridge.UniformBuffer,
 
 	textures: [bridge.MAX_TEXTURES]TextureSlot,
-	nextTextureSlot: u32,
+	next_texture_slot: u32,
 	sampler: ^MTL.SamplerState,
 
 	// Current frame state
-	commandBuffer: ^MTL.CommandBuffer,
-	renderEncoder: ^MTL.RenderCommandEncoder,
-	currentDrawable: ^CA.MetalDrawable,
+	command_buffer: ^MTL.CommandBuffer,
+	render_encoder: ^MTL.RenderCommandEncoder,
+	current_drawable: ^CA.MetalDrawable,
 
 	// logical = points for UI, physical = actual pixels
-	logicalWidth: i32,
-	logicalHeight: i32,
-	scaleFactor: f32,
-	physicalWidth: i32,
-	physicalHeight: i32,
+	logical_width: i32,
+	logical_height: i32,
+	scale_factor: f32,
+	physical_width: i32,
+	physical_height: i32,
 
 	// For solid color rendering
-	whiteTexture: bridge.TextureHandle,
+	white_texture: bridge.TextureHandle,
 }
 
 // Obj-C class names are a process-global namespace. Suffix with random ID
@@ -80,31 +80,31 @@ METAL_VIEW_CLASS :: "LindaleMetalView_" + string(bridge.BUILD_ID)
 @(objc_implement,
 	objc_class            = METAL_VIEW_CLASS,
 	objc_superclass       = F.View,
-	objc_ivar             = LindaleMetalView_Var,
-	objc_context_provider = LindaleMetalView_get_context,
+	objc_ivar             = LindaleMetalViewVar,
+	objc_context_provider = lindale_metal_view_get_context,
 )
 LindaleMetalView :: struct {
 	using _: F.View,
 }
 
-LindaleMetalView_Var :: struct {
+LindaleMetalViewVar :: struct {
 	ctx: runtime.Context,
 	mouse: ^bridge.MouseState,
-	onRepaint: proc "c" (rawptr),
-	onRepaintData: rawptr,
+	on_repaint: proc "c" (rawptr),
+	on_repaint_data: rawptr,
 }
 
-LindaleMetalView_get_context :: proc "c" (self: ^LindaleMetalView_Var) -> runtime.Context {
+lindale_metal_view_get_context :: proc "c" (self: ^LindaleMetalViewVar) -> runtime.Context {
 	return self.ctx
 }
 
 @(objc_type=LindaleMetalView, objc_name="initWithFrameAndContext")
-LindaleMetalView_initWithFrameAndContext :: proc "c" (self: ^LindaleMetalView, frame: F.Rect, ctx: runtime.Context) -> ^LindaleMetalView {
+lindale_metal_view_init_with_frame_and_context :: proc "c" (self: ^LindaleMetalView, frame: F.Rect, ctx: runtime.Context) -> ^LindaleMetalView {
 	intrinsics.objc_send(nil, self, "initWithFrame:", frame)
 	self.ctx = ctx
 	self.mouse = nil
-	self.onRepaint = nil
-	self.onRepaintData = nil
+	self.on_repaint = nil
+	self.on_repaint_data = nil
 	return self
 }
 
@@ -137,8 +137,8 @@ LindaleMetalView_mouseDown :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Left}
 	self.mouse.pressed += {.Left}
-	if event->clickCount() >= 2 do self.mouse.doubleClicked += {.Left}
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if event->clickCount() >= 2 do self.mouse.double_clicked += {.Left}
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseUp:")
@@ -147,21 +147,21 @@ LindaleMetalView_mouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down -= {.Left}
 	self.mouse.released += {.Left}
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseDragged:")
 LindaleMetalView_mouseDragged :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	if self.mouse == nil do return
 	self.mouse.pos = view_get_mouse_pos(self, event)
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="mouseMoved:")
 LindaleMetalView_mouseMoved :: proc (self: ^LindaleMetalView, event: ^F.Event) {
 	if self.mouse == nil do return
 	self.mouse.pos = view_get_mouse_pos(self, event)
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseDown:")
@@ -170,8 +170,8 @@ LindaleMetalView_rightMouseDown :: proc (self: ^LindaleMetalView, event: ^F.Even
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down += {.Right}
 	self.mouse.pressed += {.Right}
-	if event->clickCount() >= 2 do self.mouse.doubleClicked += {.Right}
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if event->clickCount() >= 2 do self.mouse.double_clicked += {.Right}
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="rightMouseUp:")
@@ -180,7 +180,7 @@ LindaleMetalView_rightMouseUp :: proc (self: ^LindaleMetalView, event: ^F.Event)
 	self.mouse.pos = view_get_mouse_pos(self, event)
 	self.mouse.down -= {.Right}
 	self.mouse.released += {.Right}
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="scrollWheel:")
@@ -188,16 +188,16 @@ LindaleMetalView_scrollWheel :: proc (self: ^LindaleMetalView, event: ^F.Event) 
 	if self.mouse == nil do return
 	dx := intrinsics.objc_send(F.Float, event, "scrollingDeltaX")
 	dy := intrinsics.objc_send(F.Float, event, "scrollingDeltaY")
-	self.mouse.scrollDelta.x += f32(dx)
-	self.mouse.scrollDelta.y += f32(dy)
+	self.mouse.scroll_delta.x += f32(dx)
+	self.mouse.scroll_delta.y += f32(dy)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="setFrameSize:")
-LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, newSize: F.Size) {
+LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, new_size: F.Size) {
 	cls := intrinsics.objc_send(^intrinsics.objc_class, self, "class")
-	sup := ObjC_Super{auto_cast self, cls}
+	sup := ObjCSuper{auto_cast self, cls}
 	sel := intrinsics.objc_find_selector("setFrameSize:")
-	objc_msgSendSuper2(&sup, sel, newSize)
+	objc_msgSendSuper2(&sup, sel, new_size)
 
 	// Keep the drawable in lock-step with the view; otherwise the
 	// logical bounds and drawable pixels disagree for a frame
@@ -209,10 +209,10 @@ LindaleMetalView_setFrameSize :: proc (self: ^LindaleMetalView, newSize: F.Size)
 		if window != nil {
 			scale = intrinsics.objc_send(F.Float, window, "backingScaleFactor")
 		}
-		layer->setDrawableSize(F.Size{newSize.width * scale, newSize.height * scale})
+		layer->setDrawableSize(F.Size{new_size.width * scale, new_size.height * scale})
 	}
 
-	if self.onRepaint != nil do self.onRepaint(self.onRepaintData)
+	if self.on_repaint != nil do self.on_repaint(self.on_repaint_data)
 }
 
 @(objc_type=LindaleMetalView, objc_implement, objc_selector="updateTrackingAreas")
@@ -229,9 +229,9 @@ LindaleMetalView_updateTrackingAreas :: proc (self: ^LindaleMetalView) {
 	// NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingActiveAlways
 	options := F.UInteger(0x01 | 0x02 | 0x20)
 	area := intrinsics.objc_send(^NSTrackingArea, NSTrackingArea, "alloc")
-	trackingArea := intrinsics.objc_send(^NSTrackingArea, area,
+	tracking_area := intrinsics.objc_send(^NSTrackingArea, area,
 		"initWithRect:options:owner:userInfo:", bounds, options, self, rawptr(nil))
-	intrinsics.objc_send(nil, self, "addTrackingArea:", trackingArea)
+	intrinsics.objc_send(nil, self, "addTrackingArea:", tracking_area)
 }
 
 @(objc_type=LindaleMetalView, objc_implement=false, objc_is_class_method=true)
@@ -257,11 +257,11 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 
 	renderer := new(MetalRenderer)
 	renderer.device = device
-	renderer.logicalWidth = width
-	renderer.logicalHeight = height
-	renderer.scaleFactor = 1.0
-	renderer.physicalWidth = width
-	renderer.physicalHeight = height
+	renderer.logical_width = width
+	renderer.logical_height = height
+	renderer.scale_factor = 1.0
+	renderer.physical_width = width
+	renderer.physical_height = height
 
 	view := LindaleMetalView.alloc()->initWithFrameAndContext(frame, context)
 	intrinsics.objc_send(nil, view, "setWantsLayer:", bool(true))
@@ -275,17 +275,17 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	layer->setPresentsWithTransaction(true)
 
 	if parent != nil {
-		parentView := cast(^F.View)(parent)
+		parent_view := cast(^F.View)(parent)
 		// NSViewWidthSizable | NSViewHeightSizable — track parent size on resize
 		intrinsics.objc_send(nil, view, "setAutoresizingMask:", u64(2 | 16))
-		F.View_addSubview(parentView, view)
+		F.View_addSubview(parent_view, view)
 	}
 
 	renderer.view = view
 	renderer.layer = layer
 
-	renderer.commandQueue = device->newCommandQueue()
-	if renderer.commandQueue == nil {
+	renderer.command_queue = device->newCommandQueue()
+	if renderer.command_queue == nil {
 		free(renderer)
 		return nil
 	}
@@ -296,34 +296,34 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	}
 
 	// 1MB instance buffer
-	instanceBufferSize := F.UInteger(bridge.MAX_INSTANCES * size_of(bridge.DrawInstance))
-	renderer.instanceBuffer = device->newBufferWithLength(instanceBufferSize, {.StorageModeManaged})
-	if renderer.instanceBuffer == nil {
+	instance_buffer_size := F.UInteger(bridge.MAX_INSTANCES * size_of(bridge.DrawInstance))
+	renderer.instance_buffer = device->newBufferWithLength(instance_buffer_size, {.StorageModeManaged})
+	if renderer.instance_buffer == nil {
 		free(renderer)
 		return nil
 	}
-	renderer.instanceCapacity = bridge.MAX_INSTANCES
+	renderer.instance_capacity = bridge.MAX_INSTANCES
 
-	renderer.uniformBuffer = device->newBufferWithLength(size_of(bridge.UniformBuffer), {.StorageModeManaged})
-	if renderer.uniformBuffer == nil {
+	renderer.uniform_buffer = device->newBufferWithLength(size_of(bridge.UniformBuffer), {.StorageModeManaged})
+	if renderer.uniform_buffer == nil {
 		free(renderer)
 		return nil
 	}
 
-	samplerDesc := F.new(MTL.SamplerDescriptor)
-	defer F.release(samplerDesc)
-	samplerDesc->setMinFilter(.Nearest)
-	samplerDesc->setMagFilter(.Nearest)
-	samplerDesc->setMipFilter(.NotMipmapped)
-	samplerDesc->setSAddressMode(.Repeat)
-	samplerDesc->setTAddressMode(.Repeat)
-	renderer.sampler = device->newSamplerState(samplerDesc)
+	sampler_desc := F.new(MTL.SamplerDescriptor)
+	defer F.release(sampler_desc)
+	sampler_desc->setMinFilter(.Nearest)
+	sampler_desc->setMagFilter(.Nearest)
+	sampler_desc->setMipFilter(.NotMipmapped)
+	sampler_desc->setSAddressMode(.Repeat)
+	sampler_desc->setTAddressMode(.Repeat)
+	renderer.sampler = device->newSamplerState(sampler_desc)
 
 	// Create 1x1 white texture for solid color rendering
-	renderer.nextTextureSlot = 1 // Reserve slot 0 as invalid
-	whitePixel := []u8{255, 255, 255, 255}
-	renderer.whiteTexture = create_texture_internal(renderer, 1, 1, .RGBA8)
-	upload_texture_internal(renderer, renderer.whiteTexture, whitePixel)
+	renderer.next_texture_slot = 1 // Reserve slot 0 as invalid
+	white_pixel := []u8{255, 255, 255, 255}
+	renderer.white_texture = create_texture_internal(renderer, 1, 1, .RGBA8)
+	upload_texture_internal(renderer, renderer.white_texture, white_pixel)
 
 	// Set initial projection (scale factor will be updated in renderer_begin_pass)
 	resize_internal(renderer, width, height, 1.0)
@@ -336,16 +336,16 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	if renderer == nil do return
 
 	for &slot in renderer.textures {
-		if slot.inUse && slot.texture != nil {
+		if slot.in_use && slot.texture != nil {
 			F.release(cast(^F.Object)slot.texture)
 		}
 	}
 
 	if renderer.sampler != nil do F.release(cast(^F.Object)renderer.sampler)
-	if renderer.uniformBuffer != nil do F.release(cast(^F.Object)renderer.uniformBuffer)
-	if renderer.instanceBuffer != nil do F.release(cast(^F.Object)renderer.instanceBuffer)
+	if renderer.uniform_buffer != nil do F.release(cast(^F.Object)renderer.uniform_buffer)
+	if renderer.instance_buffer != nil do F.release(cast(^F.Object)renderer.instance_buffer)
 	if renderer.pipeline != nil do F.release(cast(^F.Object)renderer.pipeline)
-	if renderer.commandQueue != nil do F.release(cast(^F.Object)renderer.commandQueue)
+	if renderer.command_queue != nil do F.release(cast(^F.Object)renderer.command_queue)
 
 	if renderer.view != nil {
 		intrinsics.objc_send(nil, renderer.view, "removeFromSuperview")
@@ -366,29 +366,29 @@ renderer_set_mouse_state :: proc(r: bridge.Renderer, mouse: ^bridge.MouseState) 
 renderer_set_repaint_callback :: proc(r: bridge.Renderer, callback: proc "c" (rawptr), data: rawptr) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	renderer.view.onRepaint = callback
-	renderer.view.onRepaintData = data
+	renderer.view.on_repaint = callback
+	renderer.view.on_repaint_data = data
 }
 
 renderer_resize :: proc(r: bridge.Renderer, width, height: i32) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	scaleFactor := get_backing_scale_factor(renderer)
-	resize_internal(renderer, width, height, scaleFactor)
+	scale_factor := get_backing_scale_factor(renderer)
+	resize_internal(renderer, width, height, scale_factor)
 }
 
 @(private)
-resize_internal :: proc(renderer: ^MetalRenderer, logicalWidth, logicalHeight: i32, scaleFactor: f32) {
-	renderer.logicalWidth = logicalWidth
-	renderer.logicalHeight = logicalHeight
-	renderer.scaleFactor = scaleFactor
-	renderer.physicalWidth = i32(f32(logicalWidth) * scaleFactor)
-	renderer.physicalHeight = i32(f32(logicalHeight) * scaleFactor)
+resize_internal :: proc(renderer: ^MetalRenderer, logical_width, logical_height: i32, scale_factor: f32) {
+	renderer.logical_width = logical_width
+	renderer.logical_height = logical_height
+	renderer.scale_factor = scale_factor
+	renderer.physical_width = i32(f32(logical_width) * scale_factor)
+	renderer.physical_height = i32(f32(logical_height) * scale_factor)
 
 	// Projection maps logical coordinates to physical drawable
-	// UI code works in logical coords (0 to logicalWidth/Height)
-	renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
-	renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
+	// UI code works in logical coords (0 to logical_width/Height)
+	renderer.uniforms.proj_matrix = linalg.matrix_ortho3d_f32(0, f32(logical_width), f32(logical_height), 0, -1, 1)
+	renderer.uniforms.dims = {f32(logical_width), f32(logical_height)}
 }
 
 @(private)
@@ -407,11 +407,11 @@ renderer_get_size :: proc(r: bridge.Renderer) -> bridge.RendererSize {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return {}
 	return bridge.RendererSize{
-		logicalWidth = renderer.logicalWidth,
-		logicalHeight = renderer.logicalHeight,
-		scaleFactor = renderer.scaleFactor,
-		physicalWidth = renderer.physicalWidth,
-		physicalHeight = renderer.physicalHeight,
+		logical_width = renderer.logical_width,
+		logical_height = renderer.logical_height,
+		scale_factor = renderer.scale_factor,
+		physical_width = renderer.physical_width,
+		physical_height = renderer.physical_height,
 	}
 }
 
@@ -428,7 +428,7 @@ create_texture_internal :: proc(renderer: ^MetalRenderer, width, height: u32, fo
 	// Find free slot
 	slot: u32 = 0
 	for i in 1..<u32(bridge.MAX_TEXTURES) {
-		if !renderer.textures[i].inUse {
+		if !renderer.textures[i].in_use {
 			slot = i
 			break
 		}
@@ -443,14 +443,14 @@ create_texture_internal :: proc(renderer: ^MetalRenderer, width, height: u32, fo
 	desc->setStorageMode(.Managed)
 	desc->setUsage({.ShaderRead})
 
-	mtlFormat: MTL.PixelFormat
+	mtl_format: MTL.PixelFormat
 	switch format {
 	case .RGBA8:
-		mtlFormat = .RGBA8Unorm
+		mtl_format = .RGBA8Unorm
 	case .R8:
-		mtlFormat = .R8Unorm
+		mtl_format = .R8Unorm
 	}
-	desc->setPixelFormat(mtlFormat)
+	desc->setPixelFormat(mtl_format)
 
 	texture := renderer.device->newTexture(desc)
 	if texture == nil do return bridge.INVALID_TEXTURE
@@ -460,7 +460,7 @@ create_texture_internal :: proc(renderer: ^MetalRenderer, width, height: u32, fo
 		width = width,
 		height = height,
 		format = format,
-		inUse = true,
+		in_use = true,
 	}
 
 	return bridge.TextureHandle(slot)
@@ -473,7 +473,7 @@ renderer_destroy_texture :: proc(r: bridge.Renderer, handle: bridge.TextureHandl
 	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
-	if slot.inUse && slot.texture != nil {
+	if slot.in_use && slot.texture != nil {
 		F.release(cast(^F.Object)slot.texture)
 		slot^ = {}
 	}
@@ -491,23 +491,23 @@ upload_texture_internal :: proc(renderer: ^MetalRenderer, handle: bridge.Texture
 	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
-	if !slot.inUse || slot.texture == nil do return
+	if !slot.in_use || slot.texture == nil do return
 
-	bytesPerPixel: u32 = slot.format == .RGBA8 ? 4 : 1
-	bytesPerRow := slot.width * bytesPerPixel
+	bytes_per_pixel: u32 = slot.format == .RGBA8 ? 4 : 1
+	bytes_per_row := slot.width * bytes_per_pixel
 
 	region := MTL.Region{
 		origin = {0, 0, 0},
 		size = {F.Integer(slot.width), F.Integer(slot.height), 1},
 	}
 
-	slot.texture->replaceRegion(region, 0, raw_data(pixels), F.UInteger(bytesPerRow))
+	slot.texture->replaceRegion(region, 0, raw_data(pixels), F.UInteger(bytes_per_row))
 }
 
 renderer_get_white_texture :: proc(r: bridge.Renderer) -> bridge.TextureHandle {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return bridge.INVALID_TEXTURE
-	return renderer.whiteTexture
+	return renderer.white_texture
 }
 
 // Frame rendering
@@ -518,18 +518,18 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 
 	// contentsScale and drawableSize need to be in lock-step.
 	// A cross-DPI screen change updates one but not the other, stranding the drawable at the old pixel count
-	scaleFactor := get_backing_scale_factor(renderer)
-	intrinsics.objc_send(nil, renderer.layer, "setContentsScale:", F.Float(scaleFactor))
+	scale_factor := get_backing_scale_factor(renderer)
+	intrinsics.objc_send(nil, renderer.layer, "setContentsScale:", F.Float(scale_factor))
 	bounds := intrinsics.objc_send(F.Rect, renderer.view, "bounds")
-	renderer.layer->setDrawableSize(F.Size{bounds.size.width * F.Float(scaleFactor), bounds.size.height * F.Float(scaleFactor)})
+	renderer.layer->setDrawableSize(F.Size{bounds.size.width * F.Float(scale_factor), bounds.size.height * F.Float(scale_factor)})
 
-	renderer.currentDrawable = renderer.layer->nextDrawable()
-	if renderer.currentDrawable == nil {
+	renderer.current_drawable = renderer.layer->nextDrawable()
+	if renderer.current_drawable == nil {
 		return false
 	}
 
-	renderer.commandBuffer = renderer.commandQueue->commandBuffer()
-	if renderer.commandBuffer == nil do return false
+	renderer.command_buffer = renderer.command_queue->commandBuffer()
+	if renderer.command_buffer == nil do return false
 
 	return true
 }
@@ -537,148 +537,148 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 renderer_end_frame :: proc(r: bridge.Renderer) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	if renderer.commandBuffer == nil do return
+	if renderer.command_buffer == nil do return
 
 	// With presentsWithTransaction, commit + wait + present manually so the
 	// surface lands in the same CA transaction as the host's window-resize update
-	renderer.commandBuffer->commit()
-	if renderer.currentDrawable != nil {
-		renderer.commandBuffer->waitUntilScheduled()
-		(cast(^MTL.Drawable)renderer.currentDrawable)->present()
+	renderer.command_buffer->commit()
+	if renderer.current_drawable != nil {
+		renderer.command_buffer->waitUntilScheduled()
+		(cast(^MTL.Drawable)renderer.current_drawable)->present()
 	}
 
-	renderer.commandBuffer = nil
-	renderer.currentDrawable = nil
+	renderer.command_buffer = nil
+	renderer.current_drawable = nil
 }
 
 renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawInstance) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instanceCapacity {
-		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instanceCapacity)
+	if u32(len(instances)) > renderer.instance_capacity {
+		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instance_capacity)
 		assert(false, "draw instance count exceeded MAX_INSTANCES")
 		return
 	}
 
-	bufferPtr := renderer.instanceBuffer->contentsAsSlice([]bridge.DrawInstance)
-	copy(bufferPtr, instances)
+	buffer_ptr := renderer.instance_buffer->contentsAsSlice([]bridge.DrawInstance)
+	copy(buffer_ptr, instances)
 
 	// Mark the modified range for managed storage mode
-	renderer.instanceBuffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.DrawInstance))})
+	renderer.instance_buffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.DrawInstance))})
 }
 
-renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
+renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	if renderer.currentDrawable == nil do return
+	if renderer.current_drawable == nil do return
 
-	frameBuffer := renderer.currentDrawable->texture()
+	frame_buffer := renderer.current_drawable->texture()
 
 	// Use the actual drawable texture size for the viewport
-	physicalWidth := i32(frameBuffer->width())
-	physicalHeight := i32(frameBuffer->height())
+	physical_width := i32(frame_buffer->width())
+	physical_height := i32(frame_buffer->height())
 
 	// View bounds are always in points (logical coordinates)
 	bounds := intrinsics.objc_send(F.Rect, renderer.view, "bounds")
-	logicalWidth := i32(bounds.size.width)
-	logicalHeight := i32(bounds.size.height)
+	logical_width := i32(bounds.size.width)
+	logical_height := i32(bounds.size.height)
 
-	scaleFactor := get_backing_scale_factor(renderer)
+	scale_factor := get_backing_scale_factor(renderer)
 
-	if logicalWidth != renderer.logicalWidth || logicalHeight != renderer.logicalHeight || scaleFactor != renderer.scaleFactor {
-		renderer.logicalWidth = logicalWidth
-		renderer.logicalHeight = logicalHeight
-		renderer.scaleFactor = scaleFactor
-		renderer.physicalWidth = physicalWidth
-		renderer.physicalHeight = physicalHeight
-		renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
-		renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
+	if logical_width != renderer.logical_width || logical_height != renderer.logical_height || scale_factor != renderer.scale_factor {
+		renderer.logical_width = logical_width
+		renderer.logical_height = logical_height
+		renderer.scale_factor = scale_factor
+		renderer.physical_width = physical_width
+		renderer.physical_height = physical_height
+		renderer.uniforms.proj_matrix = linalg.matrix_ortho3d_f32(0, f32(logical_width), f32(logical_height), 0, -1, 1)
+		renderer.uniforms.dims = {f32(logical_width), f32(logical_height)}
 	}
 
-	passDesc := MTL.RenderPassDescriptor.renderPassDescriptor()
-	colorAttachment := passDesc->colorAttachments()->object(0)
-	colorAttachment->setTexture(frameBuffer)
-	colorAttachment->setClearColor(MTL.ClearColor{f64(clearColor[0]), f64(clearColor[1]), f64(clearColor[2]), f64(clearColor[3])})
-	colorAttachment->setLoadAction(.Clear)
-	colorAttachment->setStoreAction(.Store)
+	pass_desc := MTL.RenderPassDescriptor.renderPassDescriptor()
+	color_attachment := pass_desc->colorAttachments()->object(0)
+	color_attachment->setTexture(frame_buffer)
+	color_attachment->setClearColor(MTL.ClearColor{f64(clear_color[0]), f64(clear_color[1]), f64(clear_color[2]), f64(clear_color[3])})
+	color_attachment->setLoadAction(.Clear)
+	color_attachment->setStoreAction(.Store)
 
-	renderer.renderEncoder = renderer.commandBuffer->renderCommandEncoderWithDescriptor(passDesc)
-	renderer.renderEncoder->setRenderPipelineState(renderer.pipeline)
+	renderer.render_encoder = renderer.command_buffer->renderCommandEncoderWithDescriptor(pass_desc)
+	renderer.render_encoder->setRenderPipelineState(renderer.pipeline)
 
 	viewport := MTL.Viewport{
 		originX = 0,
 		originY = 0,
-		width = f64(physicalWidth),
-		height = f64(physicalHeight),
+		width = f64(physical_width),
+		height = f64(physical_height),
 		znear = 0,
 		zfar = 1,
 	}
-	renderer.renderEncoder->setViewport(viewport)
+	renderer.render_encoder->setViewport(viewport)
 
 	// Bind instance buffer (buffer index 1 for vertex data)
-	renderer.renderEncoder->setVertexBuffer(renderer.instanceBuffer, 0, 1)
+	renderer.render_encoder->setVertexBuffer(renderer.instance_buffer, 0, 1)
 }
 
 renderer_end_pass :: proc(r: bridge.Renderer) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	if renderer.renderEncoder == nil do return
+	if renderer.render_encoder == nil do return
 
-	renderer.renderEncoder->endEncoding()
-	renderer.renderEncoder = nil
+	renderer.render_encoder->endEncoding()
+	renderer.render_encoder = nil
 }
 
 renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
-	if renderer.renderEncoder == nil do return
-	if cmd.instanceCount == 0 do return
+	if renderer.render_encoder == nil do return
+	if cmd.instance_count == 0 do return
 
 	// Set scissor if specified (scale logical coords to physical pixels)
 	if cmd.scissor.w > 0 && cmd.scissor.h > 0 {
-		scale := renderer.scaleFactor
-		scissorRect := MTL.ScissorRect{
+		scale := renderer.scale_factor
+		scissor_rect := MTL.ScissorRect{
 			x = F.Integer(f32(cmd.scissor.x) * scale),
 			y = F.Integer(f32(cmd.scissor.y) * scale),
 			width = F.Integer(f32(cmd.scissor.w) * scale),
 			height = F.Integer(f32(cmd.scissor.h) * scale),
 		}
-		renderer.renderEncoder->setScissorRect(scissorRect)
+		renderer.render_encoder->setScissorRect(scissor_rect)
 	} else {
 		// Full viewport scissor (physical pixels)
-		scissorRect := MTL.ScissorRect{
+		scissor_rect := MTL.ScissorRect{
 			x = 0,
 			y = 0,
-			width = F.Integer(renderer.physicalWidth),
-			height = F.Integer(renderer.physicalHeight),
+			width = F.Integer(renderer.physical_width),
+			height = F.Integer(renderer.physical_height),
 		}
-		renderer.renderEncoder->setScissorRect(scissorRect)
+		renderer.render_encoder->setScissorRect(scissor_rect)
 	}
 
-	renderer.uniforms.singleChannelTexture = cmd.singleChannelTexture ? 1 : 0
+	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
 
-	uniformPtr := renderer.uniformBuffer->contentsAsSlice([]bridge.UniformBuffer)
-	uniformPtr[0] = renderer.uniforms
-	renderer.uniformBuffer->didModifyRange(F.Range{0, size_of(bridge.UniformBuffer)})
-	renderer.renderEncoder->setVertexBuffer(renderer.uniformBuffer, 0, 0)
-	renderer.renderEncoder->setFragmentBuffer(renderer.uniformBuffer, 0, 0)
+	uniform_ptr := renderer.uniform_buffer->contentsAsSlice([]bridge.UniformBuffer)
+	uniform_ptr[0] = renderer.uniforms
+	renderer.uniform_buffer->didModifyRange(F.Range{0, size_of(bridge.UniformBuffer)})
+	renderer.render_encoder->setVertexBuffer(renderer.uniform_buffer, 0, 0)
+	renderer.render_encoder->setFragmentBuffer(renderer.uniform_buffer, 0, 0)
 
-	textureHandle := cmd.texture
-	if textureHandle == bridge.INVALID_TEXTURE {
-		textureHandle = renderer.whiteTexture
+	texture_handle := cmd.texture
+	if texture_handle == bridge.INVALID_TEXTURE {
+		texture_handle = renderer.white_texture
 	}
 
-	if u32(textureHandle) < bridge.MAX_TEXTURES {
-		slot := &renderer.textures[textureHandle]
-		if slot.inUse && slot.texture != nil {
-			renderer.renderEncoder->setFragmentTexture(slot.texture, 0)
-			renderer.renderEncoder->setFragmentSamplerState(renderer.sampler, 0)
+	if u32(texture_handle) < bridge.MAX_TEXTURES {
+		slot := &renderer.textures[texture_handle]
+		if slot.in_use && slot.texture != nil {
+			renderer.render_encoder->setFragmentTexture(slot.texture, 0)
+			renderer.render_encoder->setFragmentSamplerState(renderer.sampler, 0)
 		}
 	}
 
 	// 4 vertices per instance (triangle strip quad), starting at the instance offset
-	renderer.renderEncoder->drawPrimitivesWithInstances(.TriangleStrip, 0, 4, F.UInteger(cmd.instanceCount), F.UInteger(cmd.instanceOffset))
+	renderer.render_encoder->drawPrimitivesWithInstances(.TriangleStrip, 0, 4, F.UInteger(cmd.instance_count), F.UInteger(cmd.instance_offset))
 }
 
 // Pipeline creation
@@ -686,96 +686,96 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 @(private)
 create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	// Compile shader
-	compileOptions := F.new(MTL.CompileOptions)
-	defer F.release(compileOptions)
+	compile_options := F.new(MTL.CompileOptions)
+	defer F.release(compile_options)
 
-	shaderString := F.String.alloc()->initWithBytesNoCopy(raw_data(shader_source), F.UInteger(len(shader_source)), .UTF8, false)
-	defer F.release(shaderString)
+	shader_string := F.String.alloc()->initWithBytesNoCopy(raw_data(shader_source), F.UInteger(len(shader_source)), .UTF8, false)
+	defer F.release(shader_string)
 
-	library, err := renderer.device->newLibraryWithSource(shaderString, compileOptions)
+	library, err := renderer.device->newLibraryWithSource(shader_string, compile_options)
 	if err != nil do return false
 	defer F.release(cast(^F.Object)library)
 
-	vertexFunc := library->newFunctionWithName(F.AT("VSMain"))
-	fragmentFunc := library->newFunctionWithName(F.AT("PSMain"))
-	if vertexFunc == nil || fragmentFunc == nil do return false
-	defer F.release(cast(^F.Object)vertexFunc)
-	defer F.release(cast(^F.Object)fragmentFunc)
+	vertex_func := library->newFunctionWithName(F.AT("VSMain"))
+	fragment_func := library->newFunctionWithName(F.AT("PSMain"))
+	if vertex_func == nil || fragment_func == nil do return false
+	defer F.release(cast(^F.Object)vertex_func)
+	defer F.release(cast(^F.Object)fragment_func)
 
 	// Create vertex descriptor for instance data
-	vertexDesc := F.new(MTL.VertexDescriptor)
-	defer F.release(vertexDesc)
+	vertex_desc := F.new(MTL.VertexDescriptor)
+	defer F.release(vertex_desc)
 
 	// Attribute 0: pos0
-	vertexDesc->attributes()->object(0)->setFormat(.Float2)
-	vertexDesc->attributes()->object(0)->setOffset(0)
-	vertexDesc->attributes()->object(0)->setBufferIndex(1)
+	vertex_desc->attributes()->object(0)->setFormat(.Float2)
+	vertex_desc->attributes()->object(0)->setOffset(0)
+	vertex_desc->attributes()->object(0)->setBufferIndex(1)
 
 	// Attribute 1: pos1
-	vertexDesc->attributes()->object(1)->setFormat(.Float2)
-	vertexDesc->attributes()->object(1)->setOffset(2 * size_of(f32))
-	vertexDesc->attributes()->object(1)->setBufferIndex(1)
+	vertex_desc->attributes()->object(1)->setFormat(.Float2)
+	vertex_desc->attributes()->object(1)->setOffset(2 * size_of(f32))
+	vertex_desc->attributes()->object(1)->setBufferIndex(1)
 
 	// Attribute 2: uv0
-	vertexDesc->attributes()->object(2)->setFormat(.Float2)
-	vertexDesc->attributes()->object(2)->setOffset(4 * size_of(f32))
-	vertexDesc->attributes()->object(2)->setBufferIndex(1)
+	vertex_desc->attributes()->object(2)->setFormat(.Float2)
+	vertex_desc->attributes()->object(2)->setOffset(4 * size_of(f32))
+	vertex_desc->attributes()->object(2)->setBufferIndex(1)
 
 	// Attribute 3: uv1
-	vertexDesc->attributes()->object(3)->setFormat(.Float2)
-	vertexDesc->attributes()->object(3)->setOffset(6 * size_of(f32))
-	vertexDesc->attributes()->object(3)->setBufferIndex(1)
+	vertex_desc->attributes()->object(3)->setFormat(.Float2)
+	vertex_desc->attributes()->object(3)->setOffset(6 * size_of(f32))
+	vertex_desc->attributes()->object(3)->setBufferIndex(1)
 
 	// Attribute 4: color
-	vertexDesc->attributes()->object(4)->setFormat(.UChar4Normalized)
-	vertexDesc->attributes()->object(4)->setOffset(8 * size_of(f32))
-	vertexDesc->attributes()->object(4)->setBufferIndex(1)
+	vertex_desc->attributes()->object(4)->setFormat(.UChar4Normalized)
+	vertex_desc->attributes()->object(4)->setOffset(8 * size_of(f32))
+	vertex_desc->attributes()->object(4)->setBufferIndex(1)
 
-	// Attribute 5: borderColor
-	vertexDesc->attributes()->object(5)->setFormat(.UChar4Normalized)
-	vertexDesc->attributes()->object(5)->setOffset(8 * size_of(f32) + 4)
-	vertexDesc->attributes()->object(5)->setBufferIndex(1)
+	// Attribute 5: border_color
+	vertex_desc->attributes()->object(5)->setFormat(.UChar4Normalized)
+	vertex_desc->attributes()->object(5)->setOffset(8 * size_of(f32) + 4)
+	vertex_desc->attributes()->object(5)->setBufferIndex(1)
 
-	// Attribute 6: params - borderWidth, shapeParam, noTexture
-	vertexDesc->attributes()->object(6)->setFormat(.Float3)
-	vertexDesc->attributes()->object(6)->setOffset(10 * size_of(f32))
-	vertexDesc->attributes()->object(6)->setBufferIndex(1)
+	// Attribute 6: params - border_width, shape_param, no_texture
+	vertex_desc->attributes()->object(6)->setFormat(.Float3)
+	vertex_desc->attributes()->object(6)->setOffset(10 * size_of(f32))
+	vertex_desc->attributes()->object(6)->setBufferIndex(1)
 
 	// Attribute 7: mode - shape selector
-	vertexDesc->attributes()->object(7)->setFormat(.UInt)
-	vertexDesc->attributes()->object(7)->setOffset(13 * size_of(f32))
-	vertexDesc->attributes()->object(7)->setBufferIndex(1)
+	vertex_desc->attributes()->object(7)->setFormat(.UInt)
+	vertex_desc->attributes()->object(7)->setOffset(13 * size_of(f32))
+	vertex_desc->attributes()->object(7)->setBufferIndex(1)
 
 	// Attribute 8: extras - extra0, extra1
-	vertexDesc->attributes()->object(8)->setFormat(.Float2)
-	vertexDesc->attributes()->object(8)->setOffset(14 * size_of(f32))
-	vertexDesc->attributes()->object(8)->setBufferIndex(1)
+	vertex_desc->attributes()->object(8)->setFormat(.Float2)
+	vertex_desc->attributes()->object(8)->setOffset(14 * size_of(f32))
+	vertex_desc->attributes()->object(8)->setBufferIndex(1)
 
 	// Buffer layout - per instance
-	vertexDesc->layouts()->object(1)->setStride(size_of(bridge.DrawInstance))
-	vertexDesc->layouts()->object(1)->setStepFunction(.PerInstance)
-	vertexDesc->layouts()->object(1)->setStepRate(1)
+	vertex_desc->layouts()->object(1)->setStride(size_of(bridge.DrawInstance))
+	vertex_desc->layouts()->object(1)->setStepFunction(.PerInstance)
+	vertex_desc->layouts()->object(1)->setStepRate(1)
 
-	pipelineDesc := F.new(MTL.RenderPipelineDescriptor)
-	defer F.release(pipelineDesc)
+	pipeline_desc := F.new(MTL.RenderPipelineDescriptor)
+	defer F.release(pipeline_desc)
 
-	pipelineDesc->setVertexFunction(vertexFunc)
-	pipelineDesc->setFragmentFunction(fragmentFunc)
-	pipelineDesc->setVertexDescriptor(vertexDesc)
+	pipeline_desc->setVertexFunction(vertex_func)
+	pipeline_desc->setFragmentFunction(fragment_func)
+	pipeline_desc->setVertexDescriptor(vertex_desc)
 
 	// Color attachment with alpha blending
-	colorAttachment := pipelineDesc->colorAttachments()->object(0)
-	colorAttachment->setPixelFormat(.BGRA8Unorm)
-	colorAttachment->setBlendingEnabled(true)
-	colorAttachment->setSourceRGBBlendFactor(.SourceAlpha)
-	colorAttachment->setDestinationRGBBlendFactor(.OneMinusSourceAlpha)
-	colorAttachment->setRgbBlendOperation(.Add)
-	colorAttachment->setSourceAlphaBlendFactor(.One)
-	colorAttachment->setDestinationAlphaBlendFactor(.Zero)
-	colorAttachment->setAlphaBlendOperation(.Add)
+	color_attachment := pipeline_desc->colorAttachments()->object(0)
+	color_attachment->setPixelFormat(.BGRA8Unorm)
+	color_attachment->setBlendingEnabled(true)
+	color_attachment->setSourceRGBBlendFactor(.SourceAlpha)
+	color_attachment->setDestinationRGBBlendFactor(.OneMinusSourceAlpha)
+	color_attachment->setRgbBlendOperation(.Add)
+	color_attachment->setSourceAlphaBlendFactor(.One)
+	color_attachment->setDestinationAlphaBlendFactor(.Zero)
+	color_attachment->setAlphaBlendOperation(.Add)
 
-	pipeline, pipelineErr := renderer.device->newRenderPipelineState(pipelineDesc)
-	if pipelineErr != nil do return false
+	pipeline, pipeline_err := renderer.device->newRenderPipelineState(pipeline_desc)
+	if pipeline_err != nil do return false
 
 	renderer.pipeline = pipeline
 	return true

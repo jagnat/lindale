@@ -38,8 +38,8 @@ MouseState :: struct {
 	down: bit_set[MouseButton],
 	pressed: bit_set[MouseButton],
 	released: bit_set[MouseButton],
-	doubleClicked: bit_set[MouseButton],
-	scrollDelta: Vec2f,
+	double_clicked: bit_set[MouseButton],
+	scroll_delta: Vec2f,
 	modifiers: KeyModifierSet,
 }
 
@@ -59,10 +59,10 @@ DrawInstance :: struct #packed {
 	uv0: [2]f32, // Rect: tex UV0. Pill: p0. Arc: center.
 	uv1: [2]f32, // Rect: tex UV1. Pill: p1. Arc: {startAngle, endAngle} rads.
 	color: ColorU8,
-	borderColor: ColorU8,
-	borderWidth: f32,
-	shapeParam: f32, // Rect: cornerRad. Pill/Arc: thickness.
-	noTexture: f32,
+	border_color: ColorU8,
+	border_width: f32,
+	shape_param: f32, // Rect: corner_rad. Pill/Arc: thickness.
+	no_texture: f32,
 	mode: ShaderMode,
 	extra0: f32, // Arc: radius.
 	extra1: f32,
@@ -71,9 +71,9 @@ DrawInstance :: struct #packed {
 
 // Uniform data passed to shader
 UniformBuffer :: struct {
-	projMatrix: Mat4f,
+	proj_matrix: Mat4f,
 	dims: Vec2f,
-	singleChannelTexture: u32,
+	single_channel_texture: u32,
 	_pad: u32,
 }
 
@@ -89,10 +89,10 @@ PixelFormat :: enum {
 
 // Draw command for a batch of instances
 DrawCommand :: struct {
-	instanceOffset: u32,  // Offset into instance buffer
-	instanceCount: u32,   // Number of instances to draw
+	instance_offset: u32,  // Offset into instance buffer
+	instance_count: u32,   // Number of instances to draw
 	texture: TextureHandle,
-	singleChannelTexture: bool,
+	single_channel_texture: bool,
 	scissor: RectI32,     // {0,0,0,0} means no scissor
 }
 
@@ -105,11 +105,11 @@ Renderer :: distinct rawptr
 
 // Renderer size info - logical coordinates for UI, physical for actual rendering
 RendererSize :: struct {
-	logicalWidth: i32,   // Width in points (use this for UI layout)
-	logicalHeight: i32,  // Height in points (use this for UI layout)
-	scaleFactor: f32,    // DPI scale (1.0 = standard, 2.0 = retina)
-	physicalWidth: i32,  // Actual drawable pixels
-	physicalHeight: i32, // Actual drawable pixels
+	logical_width: i32,   // Width in points (use this for UI layout)
+	logical_height: i32,  // Height in points (use this for UI layout)
+	scale_factor: f32,    // DPI scale (1.0 = standard, 2.0 = retina)
+	physical_width: i32,  // Actual drawable pixels
+	physical_height: i32, // Actual drawable pixels
 }
 
 // Host-provided resources passed to the hot-loaded plugin.
@@ -117,7 +117,7 @@ RendererSize :: struct {
 HostContext :: struct {
 	params: ^ParamValues,
 	platform: ^PlatformApi,
-	hostApi: ^HostApi,
+	host_api: ^HostApi,
 	renderer: Renderer,
 	font_atlas: TextureHandle,
 
@@ -137,7 +137,7 @@ PlatformApi :: struct {
 	begin_frame:       proc(r: Renderer) -> bool,
 	end_frame:         proc(r: Renderer),
 	upload_instances:  proc(r: Renderer, instances: []DrawInstance),
-	begin_pass:        proc(r: Renderer, clearColor: ColorF32),
+	begin_pass:        proc(r: Renderer, clear_color: ColorF32),
 	end_pass:          proc(r: Renderer),
 	draw:              proc(r: Renderer, cmd: DrawCommand),
 }

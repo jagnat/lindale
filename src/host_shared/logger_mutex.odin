@@ -20,36 +20,36 @@ LOG_ENABLED :: #config(LINDALE_LOG, ODIN_DEBUG)
 
 mutex_log_init :: proc(log_folder: string, log_name: string) {
 	when !LOG_ENABLED do return
-	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) do return
+	if intrinsics.atomic_load_explicit(&ctx.logger_running, .Acquire) do return
 
 	// Timestamp file prefix
-	timestampBuf: [32]u8
+	timestamp_buf: [32]u8
 	now := time.now()
-	_ = time.to_string_yyyy_mm_dd(now, timestampBuf[:])
-	_ = time.to_string_hms(now, timestampBuf[11:])
-	timestampBuf[10] = '_' // Separator between date and time
-	timestampBuf[13] = '-'
-	timestampBuf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
-	tsStr := strings.string_from_ptr(&timestampBuf[0], 19)
+	_ = time.to_string_yyyy_mm_dd(now, timestamp_buf[:])
+	_ = time.to_string_hms(now, timestamp_buf[11:])
+	timestamp_buf[10] = '_' // Separator between date and time
+	timestamp_buf[13] = '-'
+	timestamp_buf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
+	ts_str := strings.string_from_ptr(&timestamp_buf[0], 19)
 
-	ctx.outputFilename = fmt.bprintf(
-		ctx.outputFilenameBuf[:], "%s%s_%s.log", log_folder, tsStr, log_name)
+	ctx.output_filename = fmt.bprintf(
+		ctx.output_filename_buf[:], "%s%s_%s.log", log_folder, ts_str, log_name)
 
 	t := thread.create(log_mutex_reader_thread_proc)
 	if t != nil {
 		t.init_context = context
-		ctx.readerThread = t
-		intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
+		ctx.reader_thread = t
+		intrinsics.atomic_store_explicit(&ctx.logger_running, true, .Release)
 		thread.start(t)
 	}
 }
 
 mutex_log_exit :: proc() {
-	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
-		intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
-		thread.join(ctx.readerThread)
-		thread.destroy(ctx.readerThread)
-		ctx.readerThread = nil
+	if intrinsics.atomic_load_explicit(&ctx.logger_running, .Acquire) {
+		intrinsics.atomic_store_explicit(&ctx.logger_running, false, .Release)
+		thread.join(ctx.reader_thread)
+		thread.destroy(ctx.reader_thread)
+		ctx.reader_thread = nil
 	}
 }
 
@@ -66,14 +66,14 @@ get_mutex_logger :: proc(source: LogSource) -> runtime.Logger {
 // Internal
 
 MutexLoggerContext :: struct {
-	logBuf: LogRingBuffer,
-	readerThread: ^thread.Thread,
+	log_buf: LogRingBuffer,
+	reader_thread: ^thread.Thread,
 	lock: sync.Atomic_Mutex,
-	outputFilenameBuf: [512]u8,
-	outputFilename: string,
-	loggerRunning : bool,
-	logWriteBuffer: [FILE_BUFFER_SIZE]u8,
-	logWritePos: int,
+	output_filename_buf: [512]u8,
+	output_filename: string,
+	logger_running : bool,
+	log_write_buffer: [FILE_BUFFER_SIZE]u8,
+	log_write_pos: int,
 }
 
 @(private="file")
@@ -82,29 +82,29 @@ ctx: MutexLoggerContext
 @(private)
 mutex_log_write :: proc(msg: string) {
 	if sync.atomic_mutex_guard(&ctx.lock) {
-		index := ctx.logBuf.writeIndex
-		nextIndex := (index + 1) % LOG_BUFFER_COUNT
-		if nextIndex == ctx.logBuf.readIndex do return // trash log if buf is full
+		index := ctx.log_buf.write_index
+		next_index := (index + 1) % LOG_BUFFER_COUNT
+		if next_index == ctx.log_buf.read_index do return // trash log if buf is full
 		loglen := len(msg)
 		if loglen > MAX_LOG_LENGTH do loglen = MAX_LOG_LENGTH
-		ctx.logBuf.buffers[index] = {}
-		copy(ctx.logBuf.buffers[index][:], msg[:loglen])
-		ctx.logBuf.writeIndex = nextIndex
+		ctx.log_buf.buffers[index] = {}
+		copy(ctx.log_buf.buffers[index][:], msg[:loglen])
+		ctx.log_buf.write_index = next_index
 	}
 }
 
 @(private)
 mutex_log_try_read :: proc(msg: ^Log) -> bool {
-	readIndex := ctx.logBuf.readIndex
-	writeIndex := 0
+	read_index := ctx.log_buf.read_index
+	write_index := 0
 	if sync.atomic_mutex_guard(&ctx.lock) {
-		writeIndex = ctx.logBuf.writeIndex
+		write_index = ctx.log_buf.write_index
 	}
 
-	if readIndex != writeIndex {
-		msg^ = ctx.logBuf.buffers[readIndex]
+	if read_index != write_index {
+		msg^ = ctx.log_buf.buffers[read_index]
 		if sync.atomic_mutex_guard(&ctx.lock) {
-			ctx.logBuf.readIndex = (readIndex + 1) % LOG_BUFFER_COUNT
+			ctx.log_buf.read_index = (read_index + 1) % LOG_BUFFER_COUNT
 		}
 		return true
 	}
@@ -114,42 +114,42 @@ mutex_log_try_read :: proc(msg: ^Log) -> bool {
 
 @(private)
 mutex_log_flush :: proc() {
-	if ctx.logWritePos == 0 do return
-	handle, err := os.open(ctx.outputFilename, {.Write, .Create, .Append})
+	if ctx.log_write_pos == 0 do return
+	handle, err := os.open(ctx.output_filename, {.Write, .Create, .Append})
 	if err == nil {
-		os.write(handle, ctx.logWriteBuffer[:ctx.logWritePos])
+		os.write(handle, ctx.log_write_buffer[:ctx.log_write_pos])
 		os.close(handle)
-		ctx.logWritePos = 0
+		ctx.log_write_pos = 0
 	}
 }
 
 @(private)
 log_mutex_reader_thread_proc :: proc(t: ^thread.Thread) {
-	lastFlush := time.now()
+	last_flush := time.now()
 
-	for intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
+	for intrinsics.atomic_load_explicit(&ctx.logger_running, .Acquire) {
 		msg: Log
 
-		shouldFlush := time.since(lastFlush) > LOG_FLUSH_TIME
+		should_flush := time.since(last_flush) > LOG_FLUSH_TIME
 
 		for mutex_log_try_read(&msg) {
-			shouldFlush = time.since(lastFlush) > LOG_FLUSH_TIME
-			logStr := strings.string_from_null_terminated_ptr(&msg[0], MAX_LOG_LENGTH)
+			should_flush = time.since(last_flush) > LOG_FLUSH_TIME
+			log_str := strings.string_from_null_terminated_ptr(&msg[0], MAX_LOG_LENGTH)
 
-			if len(logStr) + ctx.logWritePos >= FILE_BUFFER_SIZE || shouldFlush {
+			if len(log_str) + ctx.log_write_pos >= FILE_BUFFER_SIZE || should_flush {
 				mutex_log_flush()
 			}
 
-			fmt.print(logStr)
+			fmt.print(log_str)
 
 			// Write to buffer
-			copy(ctx.logWriteBuffer[ctx.logWritePos:], logStr)
-			ctx.logWritePos += len(logStr)
+			copy(ctx.log_write_buffer[ctx.log_write_pos:], log_str)
+			ctx.log_write_pos += len(log_str)
 		}
 
-		if shouldFlush && ctx.logWritePos > 0 {
+		if should_flush && ctx.log_write_pos > 0 {
 			mutex_log_flush()
-			lastFlush = time.now()
+			last_flush = time.now()
 		}
 
 		// TODO: Add a condition flag here to wake thread when a log is written
@@ -178,17 +178,17 @@ mutex_logger_proc :: proc(
 
 @(private)
 test_stop_mutex_thread :: proc() {
-	intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
-	thread.join(ctx.readerThread)
-	thread.destroy(ctx.readerThread)
-	ctx.readerThread = thread.create(log_mutex_reader_thread_proc)
-	ctx.readerThread.init_context = context
+	intrinsics.atomic_store_explicit(&ctx.logger_running, false, .Release)
+	thread.join(ctx.reader_thread)
+	thread.destroy(ctx.reader_thread)
+	ctx.reader_thread = thread.create(log_mutex_reader_thread_proc)
+	ctx.reader_thread.init_context = context
 }
 
 @(private)
 test_start_mutex_thread :: proc() {
-	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
-	thread.start(ctx.readerThread)
+	intrinsics.atomic_store_explicit(&ctx.logger_running, true, .Release)
+	thread.start(ctx.reader_thread)
 }
 
 @(test)
@@ -197,7 +197,7 @@ test_mutex_logger :: proc(t: ^testing.T) {
 	mutex_log_init("", "test")
 	defer {
 		mutex_log_exit()
-		os.remove(ctx.outputFilename)
+		os.remove(ctx.output_filename)
 		free_all(context.temp_allocator)
 	}
 
@@ -210,7 +210,7 @@ test_mutex_logger :: proc(t: ^testing.T) {
 
 		time.sleep(2 * LOG_FLUSH_TIME)
 
-		content, err := os.read_entire_file(ctx.outputFilename, allocator = context.temp_allocator)
+		content, err := os.read_entire_file(ctx.output_filename, allocator = context.temp_allocator)
 		testing.expect(t, err == nil, "Failed to read log file")
 		testing.expect(t, strings.contains(string(content), test_msg), "Log file does not contain expected message")
 	}
@@ -223,17 +223,17 @@ test_mutex_logger :: proc(t: ^testing.T) {
 			log.debug("Message", i)
 		}
 
-		droppedStr := "This should be dropped"
+		dropped_str := "This should be dropped"
 
-		log.error(droppedStr)
+		log.error(dropped_str)
 		test_start_mutex_thread()
 
 		time.sleep(2 * LOG_FLUSH_TIME)
 		log.info("This should not be dropped")
 
-		content, err := os.read_entire_file(ctx.outputFilename, allocator = context.temp_allocator)
+		content, err := os.read_entire_file(ctx.output_filename, allocator = context.temp_allocator)
 		testing.expect(t, err == nil, "Failed to read log file")
-		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
+		testing.expect(t, !strings.contains(string(content), dropped_str), "Dropped message found in file")
 		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
 		testing.expect(t, strings.contains(string(content), "This should not be dropped"), "Post-flushed log not present")
 	}
@@ -273,7 +273,7 @@ test_mutex_logger :: proc(t: ^testing.T) {
 
 		time.sleep(3 * LOG_FLUSH_TIME)
 
-		content_bytes, err := os.read_entire_file(ctx.outputFilename, allocator = context.temp_allocator)
+		content_bytes, err := os.read_entire_file(ctx.output_filename, allocator = context.temp_allocator)
 		testing.expect(t, err == nil, "Failed to read log file")
 		content := string(content_bytes)
 

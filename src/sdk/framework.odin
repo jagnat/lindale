@@ -18,7 +18,7 @@ plugin_api :: proc() -> PluginApi {
 ParamDescriptor :: b.ParamDescriptor
 
 ParameterChange :: struct {
-	sampleOffset: i32,
+	sample_offset: i32,
 	value: f64,
 }
 
@@ -51,20 +51,20 @@ TransportState :: struct {
 
 AudioProcessContext :: struct {
 	// Host-written fields (set by the VST layer before calling process)
-	sampleRate: f64,
-	maxBlockSize: i32,
-	projectTimeSamples: i64,
+	sample_rate: f64,
+	max_block_size: i32,
+	project_time_samples: i64,
 	outputs: [][]f32,
 	inputs: [][]f32,
-	numChannels: int,
-	numSamples: int,
-	paramChanges: [][]ParameterChange,
+	num_channels: int,
+	num_samples: int,
+	param_changes: [][]ParameterChange,
 	events: []b.Event,
 	transport: TransportState,
 
 	// Framework-managed fields (set during setup_processor)
 	smoothers: []dsp.Smoother,
-	changeIndices: []int,
+	change_indices: []int,
 }
 
 // Stable for the entire lifetime of a plugin instance
@@ -77,7 +77,7 @@ PluginProcessor :: struct {
 	// User code state allocated by plugin
 	// Will get reset (through setup_processor) on hotreload
 	state: rawptr,
-	audioProcessor: ^AudioProcessContext,
+	audio_processor: ^AudioProcessContext,
 }
 
 PluginController :: struct {
@@ -92,13 +92,13 @@ PluginController :: struct {
 	draw: ^DrawContext,
 	ui: ^UIContext,
 	mouse: b.MouseState,
-	viewBounds: RectI32,
-	inDraw: bool,
-	lastDrawTime: time.Tick,
-	frameDt: f32, // seconds since previous draw
+	view_bounds: RectI32,
+	in_draw: bool,
+	last_draw_time: time.Tick,
+	frame_dt: f32, // seconds since previous draw
 }
 
-fallbackApi :: PluginApi {
+FALLBACK_API :: PluginApi {
 	get_plugin_descriptor  = framework_get_plugin_descriptor,
 
 	setup_controller       = framework_setup_controller,
@@ -140,8 +140,8 @@ framework_view_attached :: proc(plug: ^PluginController) {
 	if plug.draw == nil {
 		plug.draw = new(DrawContext)
 		plug.draw.plugin = plug
-		plug.draw.clearColor = {0, 0, 0, 1}
-		font_init(&plug.draw.fontState)
+		plug.draw.clear_color = {0, 0, 0, 1}
+		font_init(&plug.draw.font_state)
 		plug.draw.initialized = true
 	}
 	if plug.ui == nil {
@@ -154,23 +154,23 @@ framework_view_attached :: proc(plug: ^PluginController) {
 
 framework_view_removed :: proc(plug: ^PluginController) {
 	if plug.draw != nil {
-		font_invalidate_texture(&plug.draw.fontState)
+		font_invalidate_texture(&plug.draw.font_state)
 	}
 	if plugin_api().view_removed != nil do plugin_api().view_removed(plug)
 }
 
 framework_view_resized :: proc(plug: ^PluginController, rect: RectI32) {
-	plug.viewBounds = rect
+	plug.view_bounds = rect
 	if plugin_api().view_resized != nil do plugin_api().view_resized(plug, rect)
 }
 
 framework_setup_processor :: proc(plug: ^PluginProcessor) -> rawptr {
-	actx := plug.audioProcessor
+	actx := plug.audio_processor
 	if actx == nil do return nil
 	if plug.host == nil do return nil
 
 	desc := plugin_api().get_plugin_descriptor()
-	sr := f32(actx.sampleRate)
+	sr := f32(actx.sample_rate)
 	alloc := plug.host.session_allocator
 
 	// Allocate smoothers based on param table
@@ -190,7 +190,7 @@ framework_setup_processor :: proc(plug: ^PluginProcessor) -> rawptr {
 	}
 
 	// Pre-allocate per-call arrays (resliced, not reallocated, each process call)
-	actx.changeIndices = make([]int, len(desc.params), alloc)
+	actx.change_indices = make([]int, len(desc.params), alloc)
 	actx.outputs = make([][]f32, desc.max_channels, alloc)
 	actx.inputs = make([][]f32, desc.max_channels, alloc)
 
@@ -209,8 +209,8 @@ framework_get_tail_samples :: proc(plug: ^PluginProcessor) -> u32 {
 framework_reset :: proc(plug: ^PluginProcessor) {
 	if plug.state == nil do return
 	if plugin_api().reset != nil do plugin_api().reset(plug)
-	if plug.audioProcessor != nil {
-		for &s in plug.audioProcessor.smoothers {
+	if plug.audio_processor != nil {
+		for &s in plug.audio_processor.smoothers {
 			dsp.smoother_reset(&s)
 		}
 	}
@@ -228,11 +228,11 @@ resolve_view_config :: proc(v: ViewConfig) -> (cfg: ViewConfig) {
 
 plugin_init_processor :: proc(plugin: ^PluginProcessor) {
 	desc := plugin_api().get_plugin_descriptor()
-	if plugin.audioProcessor == nil {
-		plugin.audioProcessor = new(AudioProcessContext)
+	if plugin.audio_processor == nil {
+		plugin.audio_processor = new(AudioProcessContext)
 	}
-	if plugin.audioProcessor.paramChanges == nil {
-		plugin.audioProcessor.paramChanges = make([][]ParameterChange, len(desc.params))
+	if plugin.audio_processor.param_changes == nil {
+		plugin.audio_processor.param_changes = make([][]ParameterChange, len(desc.params))
 	}
 }
 
@@ -298,10 +298,10 @@ next_block :: proc(it: ^BlockIterator) -> (BlockInfo, bool) {
 
 advance_smoothers :: proc(actx: ^AudioProcessContext, sample: int) {
 	for p in 0 ..< len(actx.smoothers) {
-		changes := actx.paramChanges[p]
-		for actx.changeIndices[p] < len(changes) && changes[actx.changeIndices[p]].sampleOffset <= i32(sample) {
-			dsp.smoother_set_target(&actx.smoothers[p], f32(changes[actx.changeIndices[p]].value))
-			actx.changeIndices[p] += 1
+		changes := actx.param_changes[p]
+		for actx.change_indices[p] < len(changes) && changes[actx.change_indices[p]].sample_offset <= i32(sample) {
+			dsp.smoother_set_target(&actx.smoothers[p], f32(changes[actx.change_indices[p]].value))
+			actx.change_indices[p] += 1
 		}
 	}
 	for &s in actx.smoothers {

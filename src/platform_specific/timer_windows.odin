@@ -13,12 +13,12 @@ TimerData :: struct {
 }
 
 @(private="file")
-timerDataList: [64]TimerData
+timer_data_list: [64]TimerData
 
-winTimerCallback :: proc "stdcall" (hwnd: win.HWND, umsg: u32, idEvent: uintptr, time: u32) {
-	for i in 0..<len(timerDataList) {
-		if timerDataList[i].id == idEvent {
-			timer := timerDataList[i].timer
+win_timer_callback :: proc "stdcall" (hwnd: win.HWND, umsg: u32, idEvent: uintptr, time: u32) {
+	for i in 0..<len(timer_data_list) {
+		if timer_data_list[i].id == idEvent {
+			timer := timer_data_list[i].timer
 			context = timer.ctx
 			timer->callback()
 			break
@@ -26,30 +26,30 @@ winTimerCallback :: proc "stdcall" (hwnd: win.HWND, umsg: u32, idEvent: uintptr,
 	}
 }
 
-timer_create :: proc (periodMs: u32, callback: proc (timer: ^Timer), data: rawptr) -> ^Timer {
+timer_create :: proc (period_ms: u32, callback: proc (timer: ^Timer), data: rawptr) -> ^Timer {
 	timer := new(Timer)
-	timer.timePeriodMs = periodMs
+	timer.time_period_ms = period_ms
 	timer.callback = callback
 	timer.data = data
 	timer.ctx = context
-	#assert(size_of(WinTimer) <= size_of(timer.platformTimerMem))
-	winTimer: ^WinTimer = cast(^WinTimer)&timer.platformTimerMem
-	winTimer.callback = winTimerCallback
+	#assert(size_of(WinTimer) <= size_of(timer.platform_timer_mem))
+	win_timer: ^WinTimer = cast(^WinTimer)&timer.platform_timer_mem
+	win_timer.callback = win_timer_callback
 	return timer
 }
 
 timer_start :: proc (timer: ^Timer) -> bool {
-	winTimer: ^WinTimer = cast(^WinTimer)&timer.platformTimerMem
+	win_timer: ^WinTimer = cast(^WinTimer)&timer.platform_timer_mem
 
-	if winTimer.timer != 0 do return false
+	if win_timer.timer != 0 do return false
 
-	winTimer.timer = win.SetTimer(nil, 0, timer.timePeriodMs, winTimer.callback)
-	if winTimer.timer != 0 {
+	win_timer.timer = win.SetTimer(nil, 0, timer.time_period_ms, win_timer.callback)
+	if win_timer.timer != 0 {
 		i := 0
-		for i = 0; i < len(timerDataList); i += 1 {
-			if timerDataList[i].id == 0 {
-				timerDataList[i].id = winTimer.timer
-				timerDataList[i].timer = timer
+		for i = 0; i < len(timer_data_list); i += 1 {
+			if timer_data_list[i].id == 0 {
+				timer_data_list[i].id = win_timer.timer
+				timer_data_list[i].timer = timer
 				break
 			}
 		}
@@ -61,20 +61,20 @@ timer_start :: proc (timer: ^Timer) -> bool {
 }
 
 timer_running :: proc (timer: ^Timer) -> bool {
-	winTimer: ^WinTimer = cast(^WinTimer)&timer.platformTimerMem
-	return winTimer.timer != 0
+	win_timer: ^WinTimer = cast(^WinTimer)&timer.platform_timer_mem
+	return win_timer.timer != 0
 }
 
 timer_stop :: proc (timer: ^Timer) {
-	winTimer: ^WinTimer = cast(^WinTimer)&timer.platformTimerMem
-	if winTimer.timer != 0 {
-		win.KillTimer(nil, winTimer.timer)
-		for i in 0..< len(timerDataList) {
-			if timerDataList[i].id == winTimer.timer {
-				timerDataList[i].id = 0
-				timerDataList[i].timer = nil
+	win_timer: ^WinTimer = cast(^WinTimer)&timer.platform_timer_mem
+	if win_timer.timer != 0 {
+		win.KillTimer(nil, win_timer.timer)
+		for i in 0..< len(timer_data_list) {
+			if timer_data_list[i].id == win_timer.timer {
+				timer_data_list[i].id = 0
+				timer_data_list[i].timer = nil
 			}
 		}
-		winTimer.timer = 0
+		win_timer.timer = 0
 	}
 }

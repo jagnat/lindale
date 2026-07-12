@@ -7,7 +7,7 @@ PLUGIN_NAME :: #config(PLUGIN_NAME, "")
 
 PlatformConfig :: struct {
 	initialized: bool,
-	runtimeFolderPath: string,
+	runtime_folder_path: string,
 }
 
 @(private)
@@ -17,7 +17,7 @@ get_config :: proc() -> ^PlatformConfig {
 	if !config.initialized {
 		config = PlatformConfig {
 			initialized = true,
-			runtimeFolderPath = plat.get_pref_path("jagi", PLUGIN_NAME),
+			runtime_folder_path = plat.get_pref_path("jagi", PLUGIN_NAME),
 		}
 	}
 	return &config

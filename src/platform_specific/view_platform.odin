@@ -24,6 +24,6 @@ Renderer :: bridge.Renderer
 //   renderer_begin_frame      :: proc(r: api.Renderer) -> bool
 //   renderer_end_frame        :: proc(r: api.Renderer)33
 //   renderer_upload_instances :: proc(r: api.Renderer, instances: []api.DrawInstance)
-//   renderer_begin_pass       :: proc(r: api.Renderer, clearColor: api.ColorF32)
+//   renderer_begin_pass       :: proc(r: api.Renderer, clear_color: api.ColorF32)
 //   renderer_end_pass         :: proc(r: api.Renderer)
 //   renderer_draw             :: proc(r: api.Renderer, cmd: api.DrawCommand)

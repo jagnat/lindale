@@ -13,8 +13,8 @@ import b "../../../src/bridge"
 import dsp "../../../src/dsp"
 
 @(export)
-GetPluginApi :: proc() -> sdk.PluginApi {
-	return sdk.fallbackApi
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return sdk.FALLBACK_API
 }
 @(init)
 _register :: proc "contextless" () {
@@ -61,7 +61,7 @@ SynthProcessState :: struct {
 	arp_active: bool, // is the arp currently triggering notes
 
 	// SPSC Queue for FFT
-	backingBuf: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
+	backing_buf: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
 	buffer: dsp.RingBuffer,
 }
 
@@ -156,7 +156,7 @@ synth_init_state :: proc(state: ^SynthProcessState, sample_rate: f32, alloc: mem
 		dsp.adsr_init(&v.env, sample_rate)
 	}
 	state.arp_synth_note_id = -1000
-	dsp.ring_init(&state.buffer, state.backingBuf[:])
+	dsp.ring_init(&state.buffer, state.backing_buf[:])
 }
 
 synth_reset_state :: proc(state: ^SynthProcessState) {
@@ -255,16 +255,16 @@ arp_gate_off_all :: proc(state: ^SynthProcessState) {
 // Audio
 
 synth_process_audio :: proc(plug: ^sdk.PluginProcessor) {
-	actx := plug.audioProcessor
+	actx := plug.audio_processor
 	if actx == nil do return
 	if plug.state == nil do return
-	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	if actx.num_channels == 0 || actx.num_samples == 0 do return
 
 	state := cast(^SynthProcessState)plug.state
-	num_samples := actx.numSamples
-	num_channels := actx.numChannels
+	num_samples := actx.num_samples
+	num_channels := actx.num_channels
 	transport := &actx.transport
-	sample_rate := actx.sampleRate
+	sample_rate := actx.sample_rate
 
 	tempo := transport.tempo if (.Tempo in transport.valid && transport.tempo > 0) else 120.0
 
@@ -427,14 +427,14 @@ synth_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 synth_draw :: proc(plug: ^sdk.PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
-	if plug.inDraw {
+	if plug.in_draw {
 		log.warn("Re-entrant draw detected!")
 		return
 	}
-	plug.inDraw = true
-	defer plug.inDraw = false
+	plug.in_draw = true
+	defer plug.in_draw = false
 
-	plug.lastDrawTime = time.tick_now()
+	plug.last_draw_time = time.tick_now()
 
 	// Read FFT buffer (TODO kinda hacky, not at all atomic)
 	dbs: [ANALYSIS_BUFFER_SIZE / 2]f32
@@ -442,16 +442,16 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 		pstate := cast(^SynthProcessState)plug.processor_peer.state
 		cstate := cast(^SynthControlState)plug.state
 		vec: [ANALYSIS_BUFFER_SIZE]complex64
-		tmpBuf : [ANALYSIS_BUFFER_SIZE]f32 = pstate.backingBuf
-		writeIdx := intrinsics.atomic_load_explicit(&pstate.buffer.write_pos, .Relaxed)
-		writeIdx %= ANALYSIS_BUFFER_SIZE
+		tmp_buf : [ANALYSIS_BUFFER_SIZE]f32 = pstate.backing_buf
+		write_idx := intrinsics.atomic_load_explicit(&pstate.buffer.write_pos, .Relaxed)
+		write_idx %= ANALYSIS_BUFFER_SIZE
 		// Re-linearize
-		tmpBuf2 : [ANALYSIS_BUFFER_SIZE]f32
-		firstLen := ANALYSIS_BUFFER_SIZE - writeIdx
-		copy(tmpBuf2[:firstLen], tmpBuf[writeIdx:])
-		copy(tmpBuf2[firstLen:], tmpBuf[:writeIdx])
-		tmpBuf2 = tmpBuf2 * cstate.fft_window
-		for val, i in tmpBuf2 do vec[i] = complex64(val)
+		tmp_buf2 : [ANALYSIS_BUFFER_SIZE]f32
+		first_len := ANALYSIS_BUFFER_SIZE - write_idx
+		copy(tmp_buf2[:first_len], tmp_buf[write_idx:])
+		copy(tmp_buf2[first_len:], tmp_buf[:write_idx])
+		tmp_buf2 = tmp_buf2 * cstate.fft_window
+		for val, i in tmp_buf2 do vec[i] = complex64(val)
 		dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
 
 		for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
@@ -461,7 +461,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 		}
 	}
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
+	sdk.draw_set_clear_color(plug.draw, sdk.color_f32_from_color_u8(plug.ui.theme.bg_color))
 	sdk.draw_clear(plug.draw)
 
 	osc_enum_to_string :: proc(val: f64) -> string {
@@ -493,8 +493,8 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	fft_data := FftData {
 		vals = dbs[:],
 	}
-	if plug.processor_peer != nil && plug.processor_peer.audioProcessor != nil {
-		fft_data.sample_rate = f32(plug.processor_peer.audioProcessor.sampleRate)
+	if plug.processor_peer != nil && plug.processor_peer.audio_processor != nil {
+		fft_data.sample_rate = f32(plug.processor_peer.audio_processor.sample_rate)
 	}
 
 	scope_draw :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
@@ -529,9 +529,9 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	}
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 40, padding = 10) {
+		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 40, padding = 10) {
 			// Envelope params
-			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .FIT}, child_gaps = 6, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_DECAY)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
@@ -539,7 +539,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_GAIN)
 			}
 			// Oscillator param
-			if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 0, skip_draw = true) {
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
@@ -548,7 +548,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 			sdk.ui_canvas(plug.ui, scope_draw, &fft_data)
 			
 			// Arp controls
-			if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .FIT}, child_gaps = 6, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
 				sdk.ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
 				sdk.ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
 			}
@@ -562,7 +562,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 
 synth_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 	state := new(SynthProcessState, allocator = plug.host.session_allocator)
-	synth_init_state(state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+	synth_init_state(state, f32(plug.audio_processor.sample_rate), plug.host.session_allocator)
 	return state
 }
 

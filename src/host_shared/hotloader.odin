@@ -25,15 +25,15 @@ HotloadState :: struct {
 	libs: [NUM_DLLS]dynlib.Library,
 	suffixes: [NUM_DLLS]int,
 	idx: int,
-	dllLastModTime: time.Time,
+	dll_last_mod_time: time.Time,
 	hotload_thread: ^thread.Thread,
 	initialized: bool,
 	running: bool,
-	dllSuffix: int,
-	lindaleHotDllBuf: [512]u8,
-	lindaleHotDll: string,
-	hotloadedDllFmtBuf: [512]u8,
-	hotloadedDllFmt: string,
+	dll_suffix: int,
+	lindale_hot_dll_buf: [512]u8,
+	lindale_hot_dll: string,
+	hotloaded_dll_fmt_buf: [512]u8,
+	hotloaded_dll_fmt: string,
 	generation: u64,
 }
 @(private="file")
@@ -47,24 +47,24 @@ hotload_init :: proc() {
 
 	if ctx.initialized do return
 
-	ctx.lindaleHotDll = fmt.bprint(
-		ctx.lindaleHotDllBuf[:],
-		get_config().runtimeFolderPath,
+	ctx.lindale_hot_dll = fmt.bprint(
+		ctx.lindale_hot_dll_buf[:],
+		get_config().runtime_folder_path,
 		"hot",
 		filepath.SEPARATOR,
 		PLUGIN_NAME, "Hot.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
-	log.info("hotload dll:", ctx.lindaleHotDll)
+	log.info("hotload dll:", ctx.lindale_hot_dll)
 
-	ctx.hotloadedDllFmt = fmt.bprint(
-		ctx.hotloadedDllFmtBuf[:],
-		get_config().runtimeFolderPath,
+	ctx.hotloaded_dll_fmt = fmt.bprint(
+		ctx.hotloaded_dll_fmt_buf[:],
+		get_config().runtime_folder_path,
 		"hot",
 		filepath.SEPARATOR,
 		PLUGIN_NAME, "Hot%03d.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
-	ctx.dllSuffix = 1
+	ctx.dll_suffix = 1
 	ctx.generation = 1
 
 	// if !_load_api() do return
@@ -104,11 +104,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 
 	buffer_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 		when !HOT_DLL {
-			return sdk.fallbackApi.get_plugin_descriptor()
+			return sdk.FALLBACK_API.get_plugin_descriptor()
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_plugin_descriptor == nil {
-				return sdk.fallbackApi.get_plugin_descriptor()
+				return sdk.FALLBACK_API.get_plugin_descriptor()
 			} else {
 				return ctx.apis[idx].get_plugin_descriptor()
 			}
@@ -117,11 +117,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 
 	buffer_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr{
 		when !HOT_DLL {
-			return sdk.fallbackApi.setup_controller(plug)
+			return sdk.FALLBACK_API.setup_controller(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_controller == nil {
-				return sdk.fallbackApi.setup_controller(plug)
+				return sdk.FALLBACK_API.setup_controller(plug)
 			} else {
 				return ctx.apis[idx].setup_controller(plug)
 			}
@@ -129,11 +129,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_draw :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			sdk.fallbackApi.draw(plug)
+			sdk.FALLBACK_API.draw(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].draw == nil {
-				sdk.fallbackApi.draw(plug)
+				sdk.FALLBACK_API.draw(plug)
 			} else {
 				ctx.apis[idx].draw(plug)
 			}
@@ -141,11 +141,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_view_attached :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			sdk.fallbackApi.view_attached(plug)
+			sdk.FALLBACK_API.view_attached(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_attached == nil {
-				sdk.fallbackApi.view_attached(plug)
+				sdk.FALLBACK_API.view_attached(plug)
 			} else {
 				ctx.apis[idx].view_attached(plug)
 			}
@@ -153,11 +153,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_view_removed :: proc(plug: ^sdk.PluginController) {
 		when !HOT_DLL {
-			sdk.fallbackApi.view_removed(plug)
+			sdk.FALLBACK_API.view_removed(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_removed == nil {
-				sdk.fallbackApi.view_removed(plug)
+				sdk.FALLBACK_API.view_removed(plug)
 			} else {
 				ctx.apis[idx].view_removed(plug)
 			}
@@ -165,11 +165,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_view_resized :: proc(plug: ^sdk.PluginController, rect: sdk.RectI32) {
 		when !HOT_DLL {
-			sdk.fallbackApi.view_resized(plug, rect)
+			sdk.FALLBACK_API.view_resized(plug, rect)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].view_resized == nil {
-				sdk.fallbackApi.view_resized(plug, rect)
+				sdk.FALLBACK_API.view_resized(plug, rect)
 			} else {
 				ctx.apis[idx].view_resized(plug, rect)
 			}
@@ -178,11 +178,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 
 	buffer_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 		when !HOT_DLL {
-			return sdk.fallbackApi.setup_processor(plug)
+			return sdk.FALLBACK_API.setup_processor(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].setup_processor == nil {
-				return sdk.fallbackApi.setup_processor(plug)
+				return sdk.FALLBACK_API.setup_processor(plug)
 			} else {
 				return ctx.apis[idx].setup_processor(plug)
 			}
@@ -190,11 +190,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 		when !HOT_DLL {
-			sdk.fallbackApi.process_audio(plug)
+			sdk.FALLBACK_API.process_audio(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].process_audio == nil {
-				sdk.fallbackApi.process_audio(plug)
+				sdk.FALLBACK_API.process_audio(plug)
 			} else {
 				ctx.apis[idx].process_audio(plug)
 			}
@@ -202,11 +202,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_get_latency_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 		when !HOT_DLL {
-			return sdk.fallbackApi.get_latency_samples(plug)
+			return sdk.FALLBACK_API.get_latency_samples(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_latency_samples == nil {
-				return sdk.fallbackApi.get_latency_samples(plug)
+				return sdk.FALLBACK_API.get_latency_samples(plug)
 			} else {
 				return ctx.apis[idx].get_latency_samples(plug)
 			}
@@ -214,11 +214,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
 		when !HOT_DLL {
-			return sdk.fallbackApi.get_tail_samples(plug)
+			return sdk.FALLBACK_API.get_tail_samples(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].get_tail_samples == nil {
-				return sdk.fallbackApi.get_tail_samples(plug)
+				return sdk.FALLBACK_API.get_tail_samples(plug)
 			} else {
 				return ctx.apis[idx].get_tail_samples(plug)
 			}
@@ -226,11 +226,11 @@ hotload_api :: proc() -> sdk.PluginApi {
 	}
 	buffer_reset :: proc(plug: ^sdk.PluginProcessor) {
 		when !HOT_DLL {
-			sdk.fallbackApi.reset(plug)
+			sdk.FALLBACK_API.reset(plug)
 		} else {
 			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
 			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].reset == nil {
-				sdk.fallbackApi.reset(plug)
+				sdk.FALLBACK_API.reset(plug)
 			} else {
 				ctx.apis[idx].reset(plug)
 			}
@@ -255,12 +255,12 @@ hotload_deinit :: proc() {
 	buf: [512]u8
 	for i in ctx.suffixes {
 		if i == 0 do continue
-		oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, i)
-		fail := os.remove(oldSlotFilename)
+		old_slot_filename := fmt.bprintf(buf[:], ctx.hotloaded_dll_fmt, i)
+		fail := os.remove(old_slot_filename)
 		if fail != nil && fail != .Not_Exist {
-			log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
+			log.error("Failed to remove old hotloaded dll", old_slot_filename, "err:", fail)
 		}
-		when ODIN_DEBUG do _remove_debug_info(oldSlotFilename)
+		when ODIN_DEBUG do _remove_debug_info(old_slot_filename)
 	}
 
 	ctx.initialized = false
@@ -270,38 +270,38 @@ hotload_deinit :: proc() {
 // internal //
 //////////////
 
-_close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
+_close_and_copy_dll :: proc(to_idx: int, new_dll_path: string) -> bool {
 	buf: [512]u8
 
-	ctx.apis[toIdx] = sdk.PluginApi{}
+	ctx.apis[to_idx] = sdk.PluginApi{}
 	defer free_all(context.temp_allocator)
 
-	if ctx.libs[toIdx] != nil {
-		if !dynlib.unload_library(ctx.libs[toIdx]) {
+	if ctx.libs[to_idx] != nil {
+		if !dynlib.unload_library(ctx.libs[to_idx]) {
 			log.error("Failed to unload hotloaded library")
 		} else {
 			log.info("Unloaded hotloaded library")
-			ctx.libs[toIdx] = nil
+			ctx.libs[to_idx] = nil
 		}
 	} else {
 		log.info("No hotloaded library to unload")
 	}
 
-	oldSlotFilename := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, ctx.suffixes[toIdx])
+	old_slot_filename := fmt.bprintf(buf[:], ctx.hotloaded_dll_fmt, ctx.suffixes[to_idx])
 
-	fail := os.remove(oldSlotFilename)
+	fail := os.remove(old_slot_filename)
 	if fail != nil && fail != .Not_Exist {
-		log.error("Failed to remove old hotloaded dll", oldSlotFilename, "err:", fail)
+		log.error("Failed to remove old hotloaded dll", old_slot_filename, "err:", fail)
 	}
-	when ODIN_DEBUG do _remove_debug_info(oldSlotFilename)
+	when ODIN_DEBUG do _remove_debug_info(old_slot_filename)
 
-	err := os.copy_file(newDllPath, ctx.lindaleHotDll)
+	err := os.copy_file(new_dll_path, ctx.lindale_hot_dll)
 	if err == nil {
-		log.info("Copied hotloaded dll to", newDllPath)
-		when ODIN_DEBUG do _copy_debug_info(ctx.lindaleHotDll, newDllPath)
+		log.info("Copied hotloaded dll to", new_dll_path)
+		when ODIN_DEBUG do _copy_debug_info(ctx.lindale_hot_dll, new_dll_path)
 		return true
 	} else {
-		log.error("Failed to copy hotloaded dll", newDllPath, err)
+		log.error("Failed to copy hotloaded dll", new_dll_path, err)
 		return false
 	}
 }
@@ -309,28 +309,28 @@ _close_and_copy_dll :: proc(toIdx: int, newDllPath: string) -> bool {
 // Mac only required for now.
 // Copies a dSYM bundle alongside a renamed dylib. The DWARF file inside the
 // bundle must be renamed to match the new binary or LLDB won't associate it.
-_copy_debug_info :: proc(srcDll, dstDll: string) {
+_copy_debug_info :: proc(src_dll, dst_dll: string) {
 	when ODIN_OS == .Darwin {
-		srcDsym := fmt.tprintf("%s.dSYM", srcDll)
-		if !os.exists(srcDsym) do return
+		src_dsym := fmt.tprintf("%s.dSYM", src_dll)
+		if !os.exists(src_dsym) do return
 
-		dstDsym := fmt.tprintf("%s.dSYM", dstDll)
+		dst_dsym := fmt.tprintf("%s.dSYM", dst_dll)
 		cmd := fmt.ctprintf(
 			"rm -rf '%s' && cp -R '%s' '%s' && mv '%s/Contents/Resources/DWARF/%s' '%s/Contents/Resources/DWARF/%s'",
-			dstDsym, srcDsym, dstDsym,
-			dstDsym, filepath.base(srcDll),
-			dstDsym, filepath.base(dstDll))
+			dst_dsym, src_dsym, dst_dsym,
+			dst_dsym, filepath.base(src_dll),
+			dst_dsym, filepath.base(dst_dll))
 		if libc.system(cmd) != 0 {
-			log.error("Failed to copy dSYM for", dstDll)
+			log.error("Failed to copy dSYM for", dst_dll)
 		} else {
-			log.info("Copied dSYM for", dstDll)
+			log.info("Copied dSYM for", dst_dll)
 		}
 	}
 }
 
-_remove_debug_info :: proc(dllPath: string) {
+_remove_debug_info :: proc(dll_path: string) {
 	when ODIN_OS == .Darwin {
-		libc.system(fmt.ctprintf("rm -rf '%s.dSYM'", dllPath))
+		libc.system(fmt.ctprintf("rm -rf '%s.dSYM'", dll_path))
 	}
 }
 
@@ -340,14 +340,14 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 	if !_load_api() do log.error("FAILED to load hotloaded dll on startup")
 
 	for intrinsics.atomic_load_explicit(&ctx.running, .Acquire) {
-		modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)
+		modification_time, err := os.last_write_time_by_name(ctx.lindale_hot_dll)
 		if err != nil {
 			log.error("Failed to get modification time of hotloaded dll", err)
 			time.sleep(200 * time.Millisecond)
 			continue
 		}
 
-		if time.diff(ctx.dllLastModTime, modificationTime) > 0 {
+		if time.diff(ctx.dll_last_mod_time, modification_time) > 0 {
 			time.sleep(100 * time.Millisecond)
 			if !_load_api() {
 				log.error("Failed to load hotloaded API")
@@ -362,38 +362,38 @@ _hotreload_thread_proc :: proc(t: ^thread.Thread) {
 }
 
 _load_api :: proc() -> bool {
-	modificationTime, err := os.last_write_time_by_name(ctx.lindaleHotDll)
+	modification_time, err := os.last_write_time_by_name(ctx.lindale_hot_dll)
 	if err != nil {
 		log.error("Failed to get modification time of hotloaded dll", err)
 		return false
 	}
 
 	buf:[512]u8
-	nextDll := fmt.bprintf(buf[:], ctx.hotloadedDllFmt, ctx.dllSuffix)
-	log.info("next dll:", nextDll)
+	next_dll := fmt.bprintf(buf[:], ctx.hotloaded_dll_fmt, ctx.dll_suffix)
+	log.info("next dll:", next_dll)
 
-	nextIdx := (ctx.idx + 1) % NUM_DLLS
+	next_idx := (ctx.idx + 1) % NUM_DLLS
 
-	if !_close_and_copy_dll(nextIdx, nextDll) {
+	if !_close_and_copy_dll(next_idx, next_dll) {
 		log.error("Failed to copy hotloaded dll")
 		return false
 	}
 
-	lib, ok := dynlib.load_library(nextDll)
+	lib, ok := dynlib.load_library(next_dll)
 	if ok && lib != nil {
 		log.info("Loaded hotload library")
-		ptr, found := dynlib.symbol_address(lib, "GetPluginApi")
+		ptr, found := dynlib.symbol_address(lib, "get_plugin_api")
 		if found {
-			log.info("Loaded GetPluginApi symbol")
-			GetPluginApi := cast(proc() -> sdk.PluginApi)ptr
-			ctx.apis[nextIdx] = GetPluginApi()
-			ctx.libs[nextIdx] = lib
-			ctx.suffixes[nextIdx] = ctx.dllSuffix
-			ctx.dllSuffix += 1
-			intrinsics.atomic_store_explicit(&ctx.idx, nextIdx, .Release)
+			log.info("Loaded get_plugin_api symbol")
+			get_plugin_api := cast(proc() -> sdk.PluginApi)ptr
+			ctx.apis[next_idx] = get_plugin_api()
+			ctx.libs[next_idx] = lib
+			ctx.suffixes[next_idx] = ctx.dll_suffix
+			ctx.dll_suffix += 1
+			intrinsics.atomic_store_explicit(&ctx.idx, next_idx, .Release)
 			intrinsics.atomic_store_explicit(&ctx.generation, ctx.generation + 1, .Release)
 			// no atomic needed, only called from hotload thread besides first load
-			ctx.dllLastModTime = modificationTime
+			ctx.dll_last_mod_time = modification_time
 			return true
 		}
 	}

@@ -4,10 +4,10 @@ import "base:runtime"
 
 Timer :: struct {
 	callback: proc (timer: ^Timer),
-	timePeriodMs: u32,
+	time_period_ms: u32,
 	ctx: runtime.Context,
 	data: rawptr,
-	platformTimerMem: [16]int,
+	platform_timer_mem: [16]int,
 }
 
 // Timer procs are system-dependent

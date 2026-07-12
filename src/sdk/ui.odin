@@ -141,29 +141,29 @@ ui_set_theme :: proc(ctx: ^UIContext, theme: UITheme) {
 	ctx.theme = theme
 }
 
-LayoutDirection :: enum { VERTICAL, HORIZONTAL, }
-SliderOrientation :: enum { VERTICAL, HORIZONTAL }
+LayoutDirection :: enum { Vertical, Horizontal, }
+SliderOrientation :: enum { Vertical, Horizontal }
 
-AlignX :: enum { LEFT, CENTER, RIGHT, }
-AlignY :: enum { TOP, CENTER, BOTTOM, }
-SizingType :: enum { FIXED, FIT, GROW, PERCENT }
+AlignX :: enum { Left, Center, Right, }
+AlignY :: enum { Top, Center, Bottom, }
+SizingType :: enum { Fixed, Fit, Grow, Percent }
 
 AxisSizing :: struct {
 	type: SizingType,
-	value: f32, // FIXED: pixels; PERCENT: 0..1 fraction of parent content box
+	value: f32, // Fixed: pixels; Percent: 0..1 fraction of parent content box
 	min, max: f32, // for grow/fit/percent
 	weight: f32, // grow share relative to sibling grow children, 0 means 1
 	padding: f32,
 }
 
 ComponentType :: enum {
-	PANEL,
-	LABEL,
-	BUTTON,
-	SLIDER,
-	TOGGLE,
-	KNOB,
-	CANVAS,
+	Panel,
+	Label,
+	Button,
+	Slider,
+	Toggle,
+	Knob,
+	Canvas,
 }
 
 PanelData :: struct {
@@ -366,7 +366,7 @@ ui_animate :: proc(ctx: ^UIContext, id: u32, target: f32, rate: f32 = 14) -> f32
 		slot^ = {id = id, value = target}
 	}
 	slot.last_frame_touched = ctx.frame_counter
-	slot.value += (target - slot.value) * (1 - math.exp(-rate * ctx.plugin.frameDt))
+	slot.value += (target - slot.value) * (1 - math.exp(-rate * ctx.plugin.frame_dt))
 	return slot.value
 }
 
@@ -378,14 +378,14 @@ ui_frame_scoped :: proc(ctx: ^UIContext) -> bool {
 
 @(deferred_in = _ui_panel_close)
 ui_panel :: proc(ctx: ^UIContext,
-	dir: LayoutDirection = .HORIZONTAL,
+	dir: LayoutDirection = .Horizontal,
 	child_gaps: f32 = 10,
 	padding: f32 = 10,
-	sizing_horiz: AxisSizing = {type = .FIT},
-	sizing_vert: AxisSizing = {type = .FIT},
+	sizing_horiz: AxisSizing = {type = .Fit},
+	sizing_vert: AxisSizing = {type = .Fit},
 	skip_draw: bool = false,
-	align_x: AlignX = .LEFT,
-	align_y: AlignY = .TOP,
+	align_x: AlignX = .Left,
+	align_y: AlignY = .Top,
 	floating: bool = false,
 	float_offset: Vec2f = {}) -> bool {
 	comp := ui_open_component(ctx)
@@ -403,14 +403,14 @@ ui_panel :: proc(ctx: ^UIContext,
 	return true
 }
 _ui_panel_close :: proc(ctx: ^UIContext,
-	dir: LayoutDirection = .HORIZONTAL,
+	dir: LayoutDirection = .Horizontal,
 	child_gaps: f32 = 10,
 	padding: f32 = 10,
-	sizing_horiz: AxisSizing = {type = .FIT},
-	sizing_vert: AxisSizing = {type = .FIT},
+	sizing_horiz: AxisSizing = {type = .Fit},
+	sizing_vert: AxisSizing = {type = .Fit},
 	skip_draw: bool = false,
-	align_x: AlignX = .LEFT,
-	align_y: AlignY = .TOP,
+	align_x: AlignX = .Left,
+	align_y: AlignY = .Top,
 	floating: bool = false,
 	float_offset: Vec2f = {}) {
 	ui_close_component(ctx)
@@ -419,25 +419,25 @@ _ui_panel_close :: proc(ctx: ^UIContext,
 ui_canvas :: proc(ctx: ^UIContext,
 	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
 	data: rawptr,
-	sizing_horiz: AxisSizing = {type = .GROW},
-	sizing_vert: AxisSizing = {type = .GROW},)
+	sizing_horiz: AxisSizing = {type = .Grow},
+	sizing_vert: AxisSizing = {type = .Grow},)
 {
 	comp := ui_open_component(ctx)
-	comp.type = .CANVAS
+	comp.type = .Canvas
 	comp.data = CanvasData{draw_proc, data}
 	comp.sizing_horiz = sizing_horiz
 	comp.sizing_vert = sizing_vert
 	ui_close_component(ctx)
 }
 
-ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .LEFT, min_width: f32 = 0, size: f32 = 0) {
+ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .Left, min_width: f32 = 0, size: f32 = 0) {
 	comp := ui_open_component(ctx)
-	comp.type = .LABEL
+	comp.type = .Label
 	comp.align_x = align_x
 	resolved_size := size if size > 0 else ctx.theme.font_size
 	text_size := draw_measure_text(ctx.plugin.draw, text, resolved_size)
-	comp.sizing_horiz = {type = .FIXED, value = math.max(text_size.x, min_width)}
-	comp.sizing_vert = {type = .FIXED, value = text_size.y}
+	comp.sizing_horiz = {type = .Fixed, value = math.max(text_size.x, min_width)}
+	comp.sizing_vert = {type = .Fixed, value = text_size.y}
 	comp.data = LabelData{text = text, size = resolved_size}
 	ui_close_component(ctx)
 }
@@ -448,28 +448,28 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	if clicked do ctx.last_clicked_id = 0
 
 	comp := ui_open_component(ctx)
-	comp.type = .BUTTON
+	comp.type = .Button
 	text_size := draw_measure_text(ctx.plugin.draw, label, ctx.theme.font_size)
-	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.fontState, ctx.theme.font_size)
-	comp.sizing_horiz = {type = .FIXED, value = text_size.x + ctx.theme.padding * 2}
-	comp.sizing_vert = {type = .FIXED, value = (ascent - descent) + ctx.theme.padding * 2}
+	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.font_state, ctx.theme.font_size)
+	comp.sizing_horiz = {type = .Fixed, value = text_size.x + ctx.theme.padding * 2}
+	comp.sizing_vert = {type = .Fixed, value = (ascent - descent) + ctx.theme.padding * 2}
 	comp.data = ButtonData{label = label, id = id}
 	ui_close_component(ctx)
 	return clicked
 }
 
-ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .VERTICAL, align_x: AlignX = .CENTER, align_y: AlignY = .CENTER) {
+ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .Vertical, align_x: AlignX = .Center, align_y: AlignY = .Center) {
 	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
-	comp.type = .SLIDER
-	if orientation == .VERTICAL {
+	comp.type = .Slider
+	if orientation == .Vertical {
 		comp.align_x = align_x
-		comp.sizing_horiz = {type = .FIXED, value = ctx.theme.slider_width}
-		comp.sizing_vert = {type = .GROW, value = 200, min = 200, max = 500}
+		comp.sizing_horiz = {type = .Fixed, value = ctx.theme.slider_width}
+		comp.sizing_vert = {type = .Grow, value = 200, min = 200, max = 500}
 	} else {
 		comp.align_y = align_y
-		comp.sizing_horiz = {type = .GROW, min = 100, max = 500}
-		comp.sizing_vert = {type = .FIXED, value = ctx.theme.slider_width}
+		comp.sizing_horiz = {type = .Grow, min = 100, max = 500}
+		comp.sizing_vert = {type = .Fixed, value = ctx.theme.slider_width}
 	}
 	comp.data = SliderData{id, orientation, binding}
 	ui_close_component(ctx)
@@ -479,13 +479,13 @@ ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
-	comp.direction = .VERTICAL
+	comp.direction = .Vertical
 	comp.child_gaps = 5
-	comp.sizing_horiz = {type = .FIT}
-	comp.sizing_vert = {type = .GROW}
+	comp.sizing_horiz = {type = .Fit}
+	comp.sizing_vert = {type = .Grow}
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_slider(ctx, desc.name, ParamBinding{param_idx})
-	ui_label(ctx, desc.name, align_x = .CENTER)
+	ui_label(ctx, desc.name, align_x = .Center)
 	ui_close_component(ctx)
 }
 
@@ -493,22 +493,22 @@ ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_t
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
-	comp.direction = .HORIZONTAL
+	comp.direction = .Horizontal
 	comp.child_gaps = 5
-	comp.sizing_horiz = {type = .GROW}
-	comp.sizing_vert = {type = .FIT}
+	comp.sizing_horiz = {type = .Grow}
+	comp.sizing_vert = {type = .Fit}
 	ui_label(ctx, desc.name)
-	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .HORIZONTAL)
-	ui_param_value_label(ctx, param_idx, enum_to_string, align_x = .RIGHT)
+	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .Horizontal)
+	ui_param_value_label(ctx, param_idx, enum_to_string, align_x = .Right)
 	ui_close_component(ctx)
 }
 
 ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
 	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
-	comp.type = .TOGGLE
-	comp.sizing_horiz = {type = .FIXED, value = ctx.theme.toggle_width}
-	comp.sizing_vert = {type = .FIXED, value = ctx.theme.toggle_height}
+	comp.type = .Toggle
+	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.toggle_width}
+	comp.sizing_vert = {type = .Fixed, value = ctx.theme.toggle_height}
 	comp.data = ToggleData{id = id, binding = binding}
 	ui_close_component(ctx)
 }
@@ -517,22 +517,22 @@ ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
-	comp.direction = .HORIZONTAL
+	comp.direction = .Horizontal
 	comp.child_gaps = 6
-	comp.sizing_horiz = {type = .FIT}
-	comp.sizing_vert = {type = .FIT}
+	comp.sizing_horiz = {type = .Fit}
+	comp.sizing_vert = {type = .Fit}
 	ui_toggle(ctx, desc.name, ParamBinding{param_idx})
 	ui_label(ctx, desc.name)
 	ui_close_component(ctx)
 }
 
-ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .CENTER) {
+ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .Center) {
 	id := ui_make_id(ctx, label)
 	comp := ui_open_component(ctx)
-	comp.type = .KNOB
+	comp.type = .Knob
 	comp.align_x = align_x
-	comp.sizing_horiz = {type = .FIXED, value = ctx.theme.knob_size}
-	comp.sizing_vert = {type = .FIXED, value = ctx.theme.knob_size}
+	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.knob_size}
+	comp.sizing_vert = {type = .Fixed, value = ctx.theme.knob_size}
 	comp.data = KnobData{id, binding}
 	ui_close_component(ctx)
 }
@@ -541,11 +541,11 @@ ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_st
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
-	comp.direction = .VERTICAL
+	comp.direction = .Vertical
 	comp.child_gaps = 4
-	comp.sizing_horiz = {type = .FIT}
-	comp.sizing_vert = {type = .FIT}
-	ui_label(ctx, desc.name, align_x = .CENTER)
+	comp.sizing_horiz = {type = .Fit}
+	comp.sizing_vert = {type = .Fit}
+	ui_label(ctx, desc.name, align_x = .Center)
 	ui_knob(ctx, desc.name, ParamBinding{param_idx})
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_close_component(ctx)
@@ -578,7 +578,7 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 @(private="file")
 ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
                              enum_to_string: proc(val: f64) -> string = nil,
-                             align_x: AlignX = .CENTER) {
+                             align_x: AlignX = .Center) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	max_w := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
@@ -599,24 +599,24 @@ ui_param_set_normalized :: proc(ctx: ^UIContext, idx: ParamIndex, norm: f32) {
 	if inst != nil && inst.params != nil {
 		inst.params.values[idx] = b.normalized_to_param(f64(norm), plugin_api().get_plugin_descriptor().params[idx])
 	}
-	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_change != nil {
-		inst.hostApi.param_edit_change(inst.hostApi.ctx, i32(idx), f64(norm))
+	if inst != nil && inst.host_api != nil && inst.host_api.param_edit_change != nil {
+		inst.host_api.param_edit_change(inst.host_api.ctx, i32(idx), f64(norm))
 	}
 }
 
 @(private="file")
 ui_param_begin_edit :: proc(ctx: ^UIContext, idx: ParamIndex) {
 	inst := ctx.plugin.host
-	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_start != nil {
-		inst.hostApi.param_edit_start(inst.hostApi.ctx, i32(idx))
+	if inst != nil && inst.host_api != nil && inst.host_api.param_edit_start != nil {
+		inst.host_api.param_edit_start(inst.host_api.ctx, i32(idx))
 	}
 }
 
 @(private="file")
 ui_param_end_edit :: proc(ctx: ^UIContext, idx: ParamIndex) {
 	inst := ctx.plugin.host
-	if inst != nil && inst.hostApi != nil && inst.hostApi.param_edit_end != nil {
-		inst.hostApi.param_edit_end(inst.hostApi.ctx, i32(idx))
+	if inst != nil && inst.host_api != nil && inst.host_api.param_edit_end != nil {
+		inst.host_api.param_edit_end(inst.host_api.ctx, i32(idx))
 	}
 }
 
@@ -692,12 +692,12 @@ ui_open_component :: proc(ctx: ^UIContext) -> ^Component {
 ui_close_component :: proc(ctx: ^UIContext) {
 	current_comp := ctx.current_component
 	#partial switch current_comp.sizing_horiz.type {
-		case .FIXED: current_comp.calc_bounds.w = current_comp.sizing_horiz.value
-		case .FIT: ui_size_fit_on_axis(ctx, true)
+		case .Fixed: current_comp.calc_bounds.w = current_comp.sizing_horiz.value
+		case .Fit: ui_size_fit_on_axis(ctx, true)
 	}
 	#partial switch current_comp.sizing_vert.type {
-		case .FIXED: current_comp.calc_bounds.h = current_comp.sizing_vert.value
-		case .FIT: ui_size_fit_on_axis(ctx, false)
+		case .Fixed: current_comp.calc_bounds.h = current_comp.sizing_vert.value
+		case .Fit: ui_size_fit_on_axis(ctx, false)
 	}
 	ctx.current_component = current_comp.parent
 }
@@ -706,8 +706,8 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.mouse = ctx.plugin.mouse
 	ctx.plugin.mouse.pressed = {}
 	ctx.plugin.mouse.released = {}
-	ctx.plugin.mouse.doubleClicked = {}
-	ctx.plugin.mouse.scrollDelta = {}
+	ctx.plugin.mouse.double_clicked = {}
+	ctx.plugin.mouse.scroll_delta = {}
 	ctx.hovered_id = 0
 	ctx.component_count = 0
 	ctx.id_seed_count = 0
@@ -715,7 +715,7 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.root = ui_alloc_component(ctx)
 	ctx.root^ = Component{}
 	size := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer)
-	ctx.root.calc_bounds = RectF32 {0, 0, f32(size.logicalWidth), f32(size.logicalHeight)}
+	ctx.root.calc_bounds = RectF32 {0, 0, f32(size.logical_width), f32(size.logical_height)}
 	ctx.current_component = ctx.root
 }
 
@@ -744,9 +744,9 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 	for c in ui_next_draw_order(&it) {
 		if c == ctx.root do continue
 		switch c.type {
-			case .PANEL, .LABEL: break
-			case .CANVAS: break // TODO: Canvas interact callback?
-			case .BUTTON: {
+			case .Panel, .Label: break
+			case .Canvas: break // TODO: Canvas interact callback?
+			case .Button: {
 				d := c.data.(ButtonData) or_continue
 				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
 				if mouse_over do ctx.hovered_id = d.id
@@ -759,14 +759,14 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 					ctx.active_id = d.id
 				}
 			}
-			case .SLIDER: {
+			case .Slider: {
 				d := c.data.(SliderData) or_continue
 				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
 				if mouse_over do ctx.hovered_id = d.id
 				if d.id == ctx.active_id {
 					thumb_r := ctx.theme.slider_width / 2
 					norm: f32
-					if d.orientation == .VERTICAL {
+					if d.orientation == .Vertical {
 						track_range := c.calc_bounds.h - ctx.theme.slider_width
 						mouse_p := clamp(ctx.mouse.pos.y, c.calc_bounds.y + thumb_r, c.calc_bounds.y + c.calc_bounds.h - thumb_r)
 						norm = clamp(1.0 - (mouse_p - c.calc_bounds.y - thumb_r) / track_range, 0, 1)
@@ -780,7 +780,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						binding_end_edit(ctx, d.binding)
 						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.doubleClicked {
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
 					// Reset param to default on double click
 					binding_reset_to_default(ctx, d.binding)
 				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
@@ -788,7 +788,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 					binding_begin_edit(ctx, d.binding)
 				}
 			}
-			case .TOGGLE: {
+			case .Toggle: {
 				d := c.data.(ToggleData) or_continue
 				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
 				if mouse_over do ctx.hovered_id = d.id
@@ -813,7 +813,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 					ctx.active_id = d.id
 				}
 			}
-			case .KNOB: {
+			case .Knob: {
 				d := c.data.(KnobData) or_continue
 				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
 				if mouse_over do ctx.hovered_id = d.id
@@ -824,7 +824,7 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						binding_end_edit(ctx, d.binding)
 						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.doubleClicked {
+				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
 					// Reset param to default on double click
 					binding_reset_to_default(ctx, d.binding)
 				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
@@ -848,7 +848,7 @@ ui_size_grow_components :: proc(ctx: ^UIContext) {
 }
 
 ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
-	sizing_along_axis := (comp.direction == .HORIZONTAL) == horiz
+	sizing_along_axis := (comp.direction == .Horizontal) == horiz
 	padding := comp.sizing_horiz.padding if horiz else comp.sizing_vert.padding
 	parent_size := comp.calc_bounds.w if horiz else comp.calc_bounds.h
 	content_size := parent_size - padding * 2
@@ -857,9 +857,9 @@ ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
 	for c in ui_next_child(&child_iter) {
 		sizing := c.sizing_horiz if horiz else c.sizing_vert
 		size: f32
-		if sizing.type == .PERCENT {
+		if sizing.type == .Percent {
 			size = sizing.value * content_size
-		} else if sizing.type == .GROW && (c.floating || !sizing_along_axis) {
+		} else if sizing.type == .Grow && (c.floating || !sizing_along_axis) {
 			size = content_size
 		} else {
 			continue
@@ -886,7 +886,7 @@ ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
 		if c.floating do continue
 		child_count += 1
 		sizing := c.sizing_horiz if horiz else c.sizing_vert
-		if sizing.type == .GROW {
+		if sizing.type == .Grow {
 			weight_sum += sizing.weight if sizing.weight > 0 else 1
 		} else {
 			used += c.calc_bounds.w if horiz else c.calc_bounds.h
@@ -906,7 +906,7 @@ ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
 	for c in ui_next_child(&child_iter) {
 		if c.floating do continue
 		sizing := &c.sizing_horiz if horiz else &c.sizing_vert
-		if sizing.type != .GROW do continue
+		if sizing.type != .Grow do continue
 		weight := sizing.weight if sizing.weight > 0 else 1
 		size := grow_space * weight / weight_sum
 		if sizing.min > 0 do size = math.max(size, sizing.min)
@@ -931,31 +931,31 @@ ui_position_components :: proc(ctx: ^UIContext) {
 
 		if c.floating {
 			switch c.align_x {
-			case .LEFT:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
-			case .CENTER: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
-			case .RIGHT:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
+			case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
+			case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
+			case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
 			}
 			switch c.align_y {
-			case .TOP:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
-			case .CENTER: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
-			case .BOTTOM: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+			case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
+			case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
+			case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
 			}
 			c.calc_bounds.x += c.float_offset.x
 			c.calc_bounds.y += c.float_offset.y
-		} else if parent.direction == .HORIZONTAL {
+		} else if parent.direction == .Horizontal {
 			c.calc_bounds.x = parent.cursor.x
 			switch c.align_y {
-			case .TOP:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
-			case .CENTER: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
-			case .BOTTOM: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+			case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
+			case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
+			case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
 			}
 			parent.cursor.x += c.calc_bounds.w + parent.child_gaps
 		} else {
 			c.calc_bounds.y = parent.cursor.y
 			switch c.align_x {
-			case .LEFT:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
-			case .CENTER: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
-			case .RIGHT:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
+			case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
+			case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
+			case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
 			}
 			parent.cursor.y += c.calc_bounds.h + parent.child_gaps
 		}
@@ -970,7 +970,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 	for c in ui_next_draw_order(&it) {
 		if c == ctx.root do continue // Skip root node
 		switch c.type {
-			case .PANEL: {
+			case .Panel: {
 				d := c.data.(PanelData) or_continue
 				if d.skip_draw do continue
 				rect := SimpleUIRect{}
@@ -979,34 +979,34 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				rect.width = c.calc_bounds.w
 				rect.height = c.calc_bounds.h
 				rect.color = ctx.theme.panel_bg_color
-				rect.cornerRad = ctx.theme.corner_radius
-				rect.borderWidth = ctx.theme.panel_border_width
-				rect.borderColor = ctx.theme.panel_border_color
+				rect.corner_rad = ctx.theme.corner_radius
+				rect.border_width = ctx.theme.panel_border_width
+				rect.border_color = ctx.theme.panel_border_color
 				draw_push_rect(ctx.plugin.draw, rect)
 			}
-			case .LABEL: {
+			case .Label: {
 				d := c.data.(LabelData) or_continue
 				text_size := draw_measure_text(ctx.plugin.draw, d.text, d.size)
 				text_x := c.calc_bounds.x
 				switch c.align_x {
-				case .LEFT:
-				case .CENTER: text_x = c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5
-				case .RIGHT:  text_x = c.calc_bounds.x + c.calc_bounds.w - text_size.x
+				case .Left:
+				case .Center: text_x = c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5
+				case .Right:  text_x = c.calc_bounds.x + c.calc_bounds.w - text_size.x
 				}
 				draw_text(ctx.plugin.draw, d.text, text_x, c.calc_bounds.y, ctx.theme.text_color, d.size)
 			}
-			case .BUTTON: {
+			case .Button: {
 				d := c.data.(ButtonData) or_continue
 				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
-				bg_color := ColorU8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
+				bg_color := color_u8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
 				if d.id == ctx.active_id do bg_color = ctx.theme.button_active_color
 				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = c.calc_bounds.x, y = c.calc_bounds.y,
 					width = c.calc_bounds.w, height = c.calc_bounds.h,
 					color = bg_color,
-					cornerRad = ctx.theme.corner_radius,
-					borderColor = ctx.theme.border_color,
-					borderWidth = ctx.theme.border_width,
+					corner_rad = ctx.theme.corner_radius,
+					border_color = ctx.theme.border_color,
+					border_width = ctx.theme.border_width,
 				})
 				text_size := draw_measure_text(ctx.plugin.draw, d.label, ctx.theme.font_size)
 				draw_text(ctx.plugin.draw, d.label,
@@ -1014,7 +1014,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 					c.calc_bounds.y + (c.calc_bounds.h - text_size.y) * 0.5,
 					ctx.theme.text_color, ctx.theme.font_size)
 			}
-			case .SLIDER: {
+			case .Slider: {
 				bounds := c.calc_bounds
 				d := c.data.(SliderData) or_continue
 				thumb_r := ctx.theme.slider_width / 2
@@ -1022,10 +1022,10 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				norm := binding_get_norm(ctx, d.binding)
 
 				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
-				thumb_color := ColorU8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
+				thumb_color := color_u8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
 				if d.id == ctx.active_id do thumb_color = ctx.theme.slider_active_color
 
-				if d.orientation == .VERTICAL {
+				if d.orientation == .Vertical {
 					track_range := bounds.h - ctx.theme.slider_width
 					slider_y := norm * track_range
 
@@ -1036,9 +1036,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = ctx.theme.slider_rail_width,
 						height = track_range,
 						color = ctx.theme.slider_track_color,
-						cornerRad = ctx.theme.slider_rail_width / 2,
-						borderColor = ctx.theme.border_color,
-						borderWidth = ctx.theme.slider_rail_border_width,
+						corner_rad = ctx.theme.slider_rail_width / 2,
+						border_color = ctx.theme.border_color,
+						border_width = ctx.theme.slider_rail_border_width,
 					})
 					// Filled portion
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
@@ -1047,7 +1047,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = ctx.theme.slider_rail_width,
 						height = slider_y,
 						color = ctx.theme.slider_color,
-						cornerRad = ctx.theme.slider_rail_width / 2,
+						corner_rad = ctx.theme.slider_rail_width / 2,
 					})
 					// Thumb circle
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
@@ -1056,9 +1056,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = ctx.theme.slider_width,
 						height = ctx.theme.slider_width,
 						color = thumb_color,
-						cornerRad = ctx.theme.slider_width / 2,
-						borderColor = ctx.theme.slider_active_color,
-						borderWidth = ctx.theme.slider_thumb_border_width,
+						corner_rad = ctx.theme.slider_width / 2,
+						border_color = ctx.theme.slider_active_color,
+						border_width = ctx.theme.slider_thumb_border_width,
 					})
 				} else {
 					track_range := bounds.w - ctx.theme.slider_width
@@ -1071,9 +1071,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = track_range,
 						height = ctx.theme.slider_rail_width,
 						color = ctx.theme.slider_track_color,
-						cornerRad = ctx.theme.slider_rail_width / 2,
-						borderColor = ctx.theme.border_color,
-						borderWidth = ctx.theme.slider_rail_border_width,
+						corner_rad = ctx.theme.slider_rail_width / 2,
+						border_color = ctx.theme.border_color,
+						border_width = ctx.theme.slider_rail_border_width,
 					})
 					// Filled portion
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
@@ -1082,7 +1082,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = slider_x,
 						height = ctx.theme.slider_rail_width,
 						color = ctx.theme.slider_color,
-						cornerRad = ctx.theme.slider_rail_width / 2,
+						corner_rad = ctx.theme.slider_rail_width / 2,
 					})
 					// Thumb circle
 					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
@@ -1091,13 +1091,13 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 						width = ctx.theme.slider_width,
 						height = ctx.theme.slider_width,
 						color = thumb_color,
-						cornerRad = ctx.theme.slider_width / 2,
-						borderColor = ctx.theme.slider_active_color,
-						borderWidth = ctx.theme.slider_thumb_border_width,
+						corner_rad = ctx.theme.slider_width / 2,
+						border_color = ctx.theme.slider_active_color,
+						border_width = ctx.theme.slider_thumb_border_width,
 					})
 				}
 			}
-			case .TOGGLE: {
+			case .Toggle: {
 				bounds := c.calc_bounds
 				d := c.data.(ToggleData) or_continue
 
@@ -1110,14 +1110,14 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				}
 
 				t := ui_animate(ctx, d.id, f32(1) if on else f32(0), 18)
-				bg_color := ColorU8_lerp(ctx.theme.toggle_off_color, ctx.theme.toggle_on_color, t)
+				bg_color := color_u8_lerp(ctx.theme.toggle_off_color, ctx.theme.toggle_on_color, t)
 				pill_rad := bounds.h / 2
 				// Pill background
 				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = bounds.x, y = bounds.y,
 					width = bounds.w, height = bounds.h,
 					color = bg_color,
-					cornerRad = pill_rad,
+					corner_rad = pill_rad,
 				})
 				// Thumb circle
 				margin := ctx.theme.toggle_thumb_margin
@@ -1126,14 +1126,14 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				thumb_y := bounds.y + pill_rad
 				draw_circle(ctx.plugin.draw, thumb_x, thumb_y, thumb_r, ctx.theme.toggle_thumb_color)
 			}
-			case .KNOB: {
+			case .Knob: {
 				bounds := c.calc_bounds
 				d := c.data.(KnobData) or_continue
 
 				norm := binding_get_norm(ctx, d.binding)
 
 				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
-				arc_color := ColorU8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
+				arc_color := color_u8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
 				if d.id == ctx.active_id do arc_color = ctx.theme.slider_active_color
 
 				center := Vec2f{bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.5}
@@ -1157,7 +1157,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				outer := Vec2f{center.x + dir.x * (radius - ctx.theme.knob_arc_thickness - 4), center.y + dir.y * (radius - ctx.theme.knob_arc_thickness - 4)}
 				draw_push_pill(ctx.plugin.draw, inner, outer, ctx.theme.knob_track_thickness, arc_color)
 			}
-			case .CANVAS: {
+			case .Canvas: {
 				d := c.data.(CanvasData) or_continue
 				cb := c.calc_bounds
 				draw_set_scissor(ctx.plugin.draw, RectI32{i32(cb.x), i32(cb.y), i32(cb.w), i32(cb.h)})
@@ -1171,7 +1171,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
 	comp := ctx.current_component
 	child_iter := ui_iterate_children(comp)
-	sizing_along_axis := (comp.direction == .HORIZONTAL) == horiz
+	sizing_along_axis := (comp.direction == .Horizontal) == horiz
 	size: f32
 	child_count: int
 
@@ -1179,9 +1179,9 @@ ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
 		if c.floating do continue
 		child_count += 1
 		child_sizing := c.sizing_horiz if horiz else c.sizing_vert
-		// GROW and PERCENT children contribute their min to FIT calculation
+		// Grow and Percent children contribute their min to Fit calculation
 		child_size := c.calc_bounds.w if horiz else c.calc_bounds.h
-		if child_sizing.type == .GROW || child_sizing.type == .PERCENT {
+		if child_sizing.type == .Grow || child_sizing.type == .Percent {
 			child_size = child_sizing.min
 		}
 		if sizing_along_axis {
@@ -1196,7 +1196,7 @@ ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
 	}
 	size += 2 * (horiz ? comp.sizing_horiz.padding : comp.sizing_vert.padding)
 
-	// Clamp to FIT min/max
+	// Clamp to Fit min/max
 	fit_sizing := comp.sizing_horiz if horiz else comp.sizing_vert
 	if fit_sizing.max > 0 do size = math.min(size, fit_sizing.max)
 	if fit_sizing.min > 0 do size = math.max(size, fit_sizing.min)
@@ -1311,7 +1311,7 @@ test_init_ctx :: proc(ctx: ^UIContext) {
 }
 
 @(private = "file")
-test_open_comp :: proc(ctx: ^UIContext, sizing_h, sizing_v: AxisSizing, dir: LayoutDirection = .HORIZONTAL, child_gaps: f32 = 0) -> ^Component {
+test_open_comp :: proc(ctx: ^UIContext, sizing_h, sizing_v: AxisSizing, dir: LayoutDirection = .Horizontal, child_gaps: f32 = 0) -> ^Component {
 	comp := ui_open_component(ctx)
 	comp.sizing_horiz = sizing_h
 	comp.sizing_vert = sizing_v
@@ -1342,15 +1342,15 @@ test_fixed_children_horizontal :: proc(t: ^testing.T) {
 	// Two fixed-size children in a horizontal parent
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	parent := test_open_comp(&ctx, {type = .FIT}, {type = .FIT}, .HORIZONTAL, child_gaps = 10)
-	a := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 50})
-	b := test_leaf(&ctx, {type = .FIXED, value = 80}, {type = .FIXED, value = 50})
+	parent := test_open_comp(&ctx, {type = .Fit}, {type = .Fit}, .Horizontal, child_gaps = 10)
+	a := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
+	b := test_leaf(&ctx, {type = .Fixed, value = 80}, {type = .Fixed, value = 50})
 	test_close_comp(&ctx)
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
 
-	// FIT parent should wrap children: 100 + 10 gap + 80 = 190
+	// Fit parent should wrap children: 100 + 10 gap + 80 = 190
 	testing.expect(t, approx(parent.calc_bounds.w, 190), "parent width")
 	testing.expect(t, approx(parent.calc_bounds.h, 50), "parent height")
 
@@ -1361,10 +1361,10 @@ test_fixed_children_horizontal :: proc(t: ^testing.T) {
 
 @(test)
 test_grow_fills_parent :: proc(t: ^testing.T) {
-	// One GROW child should fill the parent
+	// One Grow child should fill the parent
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	child := test_leaf(&ctx, {type = .GROW}, {type = .GROW})
+	child := test_leaf(&ctx, {type = .Grow}, {type = .Grow})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1375,12 +1375,12 @@ test_grow_fills_parent :: proc(t: ^testing.T) {
 
 @(test)
 test_grow_distributes_evenly :: proc(t: ^testing.T) {
-	// Two GROW children split parent evenly
+	// Two Grow children split parent evenly
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .HORIZONTAL
-	a := test_leaf(&ctx, {type = .GROW}, {type = .FIXED, value = 50})
-	b := test_leaf(&ctx, {type = .GROW}, {type = .FIXED, value = 50})
+	ctx.root.direction = .Horizontal
+	a := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
+	b := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1393,13 +1393,13 @@ test_grow_distributes_evenly :: proc(t: ^testing.T) {
 
 @(test)
 test_grow_with_fixed_sibling :: proc(t: ^testing.T) {
-	// Fixed child + GROW child, GROW takes remaining space
+	// Fixed child + Grow child, Grow takes remaining space
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .HORIZONTAL
+	ctx.root.direction = .Horizontal
 	ctx.root.child_gaps = 10
-	fixed := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 50})
-	grow := test_leaf(&ctx, {type = .GROW}, {type = .FIXED, value = 50})
+	fixed := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
+	grow := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1415,16 +1415,16 @@ test_padding :: proc(t: ^testing.T) {
 	ctx: UIContext
 	test_init_ctx(&ctx)
 	parent := test_open_comp(&ctx,
-		{type = .FIT, padding = 15},
-		{type = .FIT, padding = 15},
-		.HORIZONTAL)
-	child := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 50})
+		{type = .Fit, padding = 15},
+		{type = .Fit, padding = 15},
+		.Horizontal)
+	child := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
 	test_close_comp(&ctx)
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
 
-	// FIT + padding: 100 + 30 = 130
+	// Fit + padding: 100 + 30 = 130
 	testing.expect(t, approx(parent.calc_bounds.w, 130), "parent width with padding")
 	testing.expect(t, approx(parent.calc_bounds.h, 80), "parent height with padding")
 	// Child offset by padding
@@ -1436,10 +1436,10 @@ test_padding :: proc(t: ^testing.T) {
 test_vertical_layout :: proc(t: ^testing.T) {
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .VERTICAL
+	ctx.root.direction = .Vertical
 	ctx.root.child_gaps = 5
-	a := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 30})
-	b := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 40})
+	a := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 30})
+	b := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 40})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1450,11 +1450,11 @@ test_vertical_layout :: proc(t: ^testing.T) {
 
 @(test)
 test_grow_min_max_clamp :: proc(t: ^testing.T) {
-	// GROW with min/max clamping
+	// Grow with min/max clamping
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .HORIZONTAL
-	child := test_leaf(&ctx, {type = .GROW, min = 50, max = 150}, {type = .FIXED, value = 50})
+	ctx.root.direction = .Horizontal
+	child := test_leaf(&ctx, {type = .Grow, min = 50, max = 150}, {type = .Fixed, value = 50})
 
 	ui_size_grow_components(&ctx)
 
@@ -1466,8 +1466,8 @@ test_grow_min_max_clamp :: proc(t: ^testing.T) {
 test_percent_of_parent :: proc(t: ^testing.T) {
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .HORIZONTAL
-	a := test_leaf(&ctx, {type = .PERCENT, value = 0.5}, {type = .PERCENT, value = 0.25})
+	ctx.root.direction = .Horizontal
+	a := test_leaf(&ctx, {type = .Percent, value = 0.5}, {type = .Percent, value = 0.25})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1478,12 +1478,12 @@ test_percent_of_parent :: proc(t: ^testing.T) {
 
 @(test)
 test_grow_weights :: proc(t: ^testing.T) {
-	// Weighted GROW children split 1:3
+	// Weighted Grow children split 1:3
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .HORIZONTAL
-	a := test_leaf(&ctx, {type = .GROW, weight = 1}, {type = .FIXED, value = 50})
-	b := test_leaf(&ctx, {type = .GROW, weight = 3}, {type = .FIXED, value = 50})
+	ctx.root.direction = .Horizontal
+	a := test_leaf(&ctx, {type = .Grow, weight = 1}, {type = .Fixed, value = 50})
+	b := test_leaf(&ctx, {type = .Grow, weight = 3}, {type = .Fixed, value = 50})
 
 	ui_size_grow_components(&ctx)
 	ui_position_components(&ctx)
@@ -1494,12 +1494,12 @@ test_grow_weights :: proc(t: ^testing.T) {
 
 @(test)
 test_floating_skips_flow :: proc(t: ^testing.T) {
-	// Floating child doesn't affect FIT sizing or flow, positions from parent origin
+	// Floating child doesn't affect Fit sizing or flow, positions from parent origin
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	parent := test_open_comp(&ctx, {type = .FIT}, {type = .FIT}, .HORIZONTAL, child_gaps = 10)
-	a := test_leaf(&ctx, {type = .FIXED, value = 100}, {type = .FIXED, value = 50})
-	f := test_open_comp(&ctx, {type = .FIXED, value = 30}, {type = .FIXED, value = 30})
+	parent := test_open_comp(&ctx, {type = .Fit}, {type = .Fit}, .Horizontal, child_gaps = 10)
+	a := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
+	f := test_open_comp(&ctx, {type = .Fixed, value = 30}, {type = .Fixed, value = 30})
 	f.floating = true
 	f.float_offset = {5, 6}
 	test_close_comp(&ctx)

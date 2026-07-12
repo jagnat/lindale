@@ -9,8 +9,8 @@ import b "../../../src/bridge"
 import dsp "../../../src/dsp"
 
 @(export)
-GetPluginApi :: proc() -> sdk.PluginApi {
-	return sdk.fallbackApi
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return sdk.FALLBACK_API
 }
 @(init)
 _register :: proc "contextless" () {
@@ -97,16 +97,16 @@ delay_reset_state :: proc(state: ^DelayProcessState) {
 // Audio
 
 delay_process_audio :: proc(plug: ^sdk.PluginProcessor) {
-	actx := plug.audioProcessor
+	actx := plug.audio_processor
 	if actx == nil do return
 	if plug.state == nil do return
-	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	if actx.num_channels == 0 || actx.num_samples == 0 do return
 	if actx.inputs[0] == nil do return
 
 	state := cast(^DelayProcessState)plug.state
-	num_samples := actx.numSamples
-	num_channels := actx.numChannels
-	sample_rate := f32(actx.sampleRate)
+	num_samples := actx.num_samples
+	num_channels := actx.num_channels
+	sample_rate := f32(actx.sample_rate)
 
 	dry := sdk.capture_dry(actx.inputs[:num_channels], num_samples, plug.host.frame_allocator)
 
@@ -133,20 +133,20 @@ delay_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 delay_draw :: proc(plug: ^sdk.PluginController) {
 	if plug.draw == nil || plug.ui == nil do return
 
-	if plug.inDraw {
+	if plug.in_draw {
 		log.warn("Re-entrant draw detected!")
 		return
 	}
-	plug.inDraw = true
-	defer plug.inDraw = false
+	plug.in_draw = true
+	defer plug.in_draw = false
 
-	plug.lastDrawTime = time.tick_now()
+	plug.last_draw_time = time.tick_now()
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
+	sdk.draw_set_clear_color(plug.draw, sdk.color_f32_from_color_u8(plug.ui.theme.bg_color))
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .HORIZONTAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 10) {
+		if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10) {
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_DELAY_TIME)
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_FEEDBACK)
 			sdk.ui_knob_param_labeled(plug.ui, PARAM_MIX)
@@ -161,7 +161,7 @@ delay_draw :: proc(plug: ^sdk.PluginController) {
 
 delay_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 	state := new(DelayProcessState, allocator = plug.host.session_allocator)
-	delay_init_state(state, f32(plug.audioProcessor.sampleRate), plug.host.session_allocator)
+	delay_init_state(state, f32(plug.audio_processor.sample_rate), plug.host.session_allocator)
 	return state
 }
 
@@ -170,8 +170,8 @@ delay_reset :: proc(plug: ^sdk.PluginProcessor) {
 }
 
 delay_get_tail_samples :: proc(plug: ^sdk.PluginProcessor) -> u32 {
-	if plug.audioProcessor == nil do return 0
-	return u32(MAX_DELAY_MS * plug.audioProcessor.sampleRate / 1000.0)
+	if plug.audio_processor == nil do return 0
+	return u32(MAX_DELAY_MS * plug.audio_processor.sample_rate / 1000.0)
 }
 
 delay_api :: sdk.PluginApi {

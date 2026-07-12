@@ -7,8 +7,8 @@ import b "../../../src/bridge"
 import "../../../src/dsp"
 
 @(export)
-GetPluginApi :: proc() -> sdk.PluginApi {
-	return sdk.fallbackApi
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return sdk.FALLBACK_API
 }
 @(init)
 _register :: proc "contextless" () {
@@ -366,14 +366,14 @@ pokey_note_off :: proc(state: ^PokeyProcessState, actx: ^sdk.AudioProcessContext
 }
 
 pokey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
-	actx := plug.audioProcessor
+	actx := plug.audio_processor
 	if actx == nil do return
 	if plug.state == nil do return
-	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	if actx.num_channels == 0 || actx.num_samples == 0 do return
 
 	state := cast(^PokeyProcessState)plug.state
-	sample_rate := f64(actx.sampleRate)
-	num_channels := min(actx.numChannels, MAX_CHANNELS)
+	sample_rate := f64(actx.sample_rate)
+	num_channels := min(actx.num_channels, MAX_CHANNELS)
 
 	machine := sdk.smoothed_read(actx, PARAM_MACHINE) < 0.5 ? dsp.PokeyMachine.NTSC : dsp.PokeyMachine.PAL
 	if machine != state.chip[0].machine {
@@ -384,7 +384,7 @@ pokey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 
 	frame_len := sample_rate * pokey_frame_cycles(&state.chip[0]) / state.chip[0].main_clock
 
-	it := sdk.make_block_iterator(actx.events, actx.numSamples)
+	it := sdk.make_block_iterator(actx.events, actx.num_samples)
 	for block in sdk.next_block(&it) {
 		sdk.advance_smoothers(actx, block.sample_offset)
 		for &evt in block.events {
@@ -439,15 +439,15 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 
 	ui := plug.ui
 	if sdk.ui_frame_scoped(ui) {
-		if sdk.ui_panel(ui, skip_draw = true, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 14, padding = 14) {
-			if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
-				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+		if sdk.ui_panel(ui, skip_draw = true, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 14, padding = 14) {
+			if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 14, padding = 0) {
+				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Timbre")
 					sdk.ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = pokey_timbre_to_string)
 				}
-				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Envelope")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_ATTACK)
 						sdk.ui_knob_param_labeled(ui, PARAM_DECAY)
 						sdk.ui_knob_param_labeled(ui, PARAM_SUSTAIN)
@@ -455,26 +455,26 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 					}
 				}
 			}
-			if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 14, padding = 0) {
-				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+			if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 14, padding = 0) {
+				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Arpeggio")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_RATE)
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP1)
 						sdk.ui_knob_param_labeled(ui, PARAM_ARP_STEP2)
 					}
 				}
-				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Vibrato")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DEPTH)
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_SPEED)
 						sdk.ui_knob_param_labeled(ui, PARAM_VIB_DELAY)
 					}
 				}
-				if sdk.ui_panel(ui, dir = .VERTICAL, child_gaps = 8, padding = 12) {
+				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Tune")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .HORIZONTAL, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_DETUNE)
 						sdk.ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = pokey_machine_to_string)
 					}

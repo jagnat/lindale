@@ -3,8 +3,8 @@ package template
 import "../../../src/sdk"
 
 @(export)
-GetPluginApi :: proc() -> sdk.PluginApi {
-	return sdk.fallbackApi
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return sdk.FALLBACK_API
 }
 @(init)
 _register :: proc "contextless" () {

@@ -102,7 +102,7 @@ build_plugin :: proc () {
 		}
 		// Generate bundle Info.plist
 		// Todo: Make some more data here be dynamic (version no.?)
-bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
+BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -122,7 +122,7 @@ bundle_info :: `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 		err := os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", plugin),
-			fmt.tprintf(bundle_info, plugin, plugin, plugin, plugin))
+			fmt.tprintf(BUNDLE_INFO, plugin, plugin, plugin, plugin))
 		if err != nil {
 			fmt.println("Failed to write info.plist!")
 			os.exit(1)

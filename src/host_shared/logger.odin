@@ -16,47 +16,47 @@ import "core:testing"
 @(private="file") // temp disable
 log_init :: proc(log_folder: string) {
 	// automatically zeroed
-	ringBufs := make([]LogRingBuffer, len(LogSource))
-	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
+	ring_bufs := make([]LogRingBuffer, len(LogSource))
+	intrinsics.atomic_store_explicit(&ctx.logger_running, true, .Release)
 
 	// Timestamp file prefix
-	timestampBuf: [32]u8
+	timestamp_buf: [32]u8
 	now := time.now()
-	_ = time.to_string_yyyy_mm_dd(now, timestampBuf[:])
-	_ = time.to_string_hms(now, timestampBuf[11:])
-	timestampBuf[10] = '_' // Separator between date and time
-	timestampBuf[13] = '-'
-	timestampBuf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
-	tsStr := strings.string_from_ptr(&timestampBuf[0], 19)
+	_ = time.to_string_yyyy_mm_dd(now, timestamp_buf[:])
+	_ = time.to_string_hms(now, timestamp_buf[11:])
+	timestamp_buf[10] = '_' // Separator between date and time
+	timestamp_buf[13] = '-'
+	timestamp_buf[16] = '-' // Replace hh:mm:ss with hh-mm-ss
+	ts_str := strings.string_from_ptr(&timestamp_buf[0], 19)
 
-	logFolderLen := len(log_folder)
+	log_folder_len := len(log_folder)
 
-	for &logData, source in ctx.logPools {
-		copy(logData.outputFilenameBuf[:], log_folder)
-		copy(logData.outputFilenameBuf[logFolderLen:], tsStr)
-		copy(logData.outputFilenameBuf[logFolderLen + len(tsStr):], "_"[:])
-		copy(logData.outputFilenameBuf[logFolderLen + len(tsStr)+1:], log_filename_from_source(source))
+	for &log_data, source in ctx.log_pools {
+		copy(log_data.output_filename_buf[:], log_folder)
+		copy(log_data.output_filename_buf[log_folder_len:], ts_str)
+		copy(log_data.output_filename_buf[log_folder_len + len(ts_str):], "_"[:])
+		copy(log_data.output_filename_buf[log_folder_len + len(ts_str)+1:], log_filename_from_source(source))
 
-		logData.outputFilename = strings.string_from_null_terminated_ptr(
-			&logData.outputFilenameBuf[0],
-			len(logData.outputFilenameBuf))
-		logData.ringBuffer = &ringBufs[source]
+		log_data.output_filename = strings.string_from_null_terminated_ptr(
+			&log_data.output_filename_buf[0],
+			len(log_data.output_filename_buf))
+		log_data.ring_buffer = &ring_bufs[source]
 	}
 
 	t := thread.create(log_reader_thread_proc)
 	if t != nil {
 		t.init_context = context
-		ctx.readerThread = t
+		ctx.reader_thread = t
 		thread.start(t)
 	}
 }
 
 @(private="file") // temp disable
 log_exit :: proc() {
-	if intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
-		intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
-		thread.join(ctx.readerThread)
-		thread.destroy(ctx.readerThread)
+	if intrinsics.atomic_load_explicit(&ctx.logger_running, .Acquire) {
+		intrinsics.atomic_store_explicit(&ctx.logger_running, false, .Release)
+		thread.join(ctx.reader_thread)
+		thread.destroy(ctx.reader_thread)
 	}
 }
 
@@ -64,7 +64,7 @@ log_exit :: proc() {
 get_logger :: proc(source: LogSource) -> runtime.Logger {
 	return runtime.Logger{
 		logger_proc,
-		&ctx.logPools[source],
+		&ctx.log_pools[source],
 		runtime.Logger_Level.Debug,
 		nil,
 	}
@@ -88,17 +88,17 @@ LogSource :: enum int {
 
 // One per thread
 LoggerData :: struct {
-	ringBuffer: ^LogRingBuffer,
-	outputFilenameBuf: [128]u8,
-	outputFilename: string,
-	logWriteBuffer: [FILE_BUFFER_SIZE]u8,
-	logWritePos: int,
+	ring_buffer: ^LogRingBuffer,
+	output_filename_buf: [128]u8,
+	output_filename: string,
+	log_write_buffer: [FILE_BUFFER_SIZE]u8,
+	log_write_pos: int,
 }
 
 LoggerContext :: struct {
-	readerThread: ^thread.Thread,
-	logPools: [LogSource]LoggerData,
-	loggerRunning : bool,
+	reader_thread: ^thread.Thread,
+	log_pools: [LogSource]LoggerData,
+	logger_running : bool,
 }
 
 @(private="file")
@@ -107,8 +107,8 @@ ctx: LoggerContext
 // Single producer, single consumer ring buffer
 LogRingBuffer :: struct {
 	// prevent false sharing by aligning to cache boundaries
-	using _: struct #align(64) { writeIndex: int, }, // index of next write
-	using _: struct #align(64) { readIndex: int, }, // index of next read
+	using _: struct #align(64) { write_index: int, }, // index of next write
+	using _: struct #align(64) { read_index: int, }, // index of next read
 	buffers: [LOG_BUFFER_COUNT]Log,
 }
 
@@ -129,12 +129,12 @@ log_filename_from_source :: proc(source: LogSource) -> string {
 }
 
 @(private)
-log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
-	if ringBuffer == nil do return
+log_write :: proc(ring_buffer: ^LogRingBuffer, msg: string) {
+	if ring_buffer == nil do return
 
-	index := ringBuffer.writeIndex
-	nextIndex := (index + 1) % LOG_BUFFER_COUNT
-	if nextIndex == intrinsics.atomic_load_explicit(&ringBuffer.readIndex, .Acquire) {
+	index := ring_buffer.write_index
+	next_index := (index + 1) % LOG_BUFFER_COUNT
+	if next_index == intrinsics.atomic_load_explicit(&ring_buffer.read_index, .Acquire) {
 		// Buffer is full, trash log
 		return
 	}
@@ -142,21 +142,21 @@ log_write :: proc(ringBuffer: ^LogRingBuffer, msg: string) {
 	loglen := len(msg)
 	if loglen > MAX_LOG_LENGTH do loglen = MAX_LOG_LENGTH
 
-	ringBuffer.buffers[index] = {}
-	copy(ringBuffer.buffers[index][:], msg[:loglen])
+	ring_buffer.buffers[index] = {}
+	copy(ring_buffer.buffers[index][:], msg[:loglen])
 
-	intrinsics.atomic_store_explicit(&ringBuffer.writeIndex, nextIndex, .Release)
+	intrinsics.atomic_store_explicit(&ring_buffer.write_index, next_index, .Release)
 }
 
 @(private)
-log_try_read :: proc(ringBuffer: ^LogRingBuffer, msg: ^Log) -> bool {
-	if ringBuffer == nil do return false
+log_try_read :: proc(ring_buffer: ^LogRingBuffer, msg: ^Log) -> bool {
+	if ring_buffer == nil do return false
 
-	if ringBuffer.readIndex != intrinsics.atomic_load_explicit(&ringBuffer.writeIndex, .Acquire) {
-		index := ringBuffer.readIndex
-		msg^ = ringBuffer.buffers[index]
+	if ring_buffer.read_index != intrinsics.atomic_load_explicit(&ring_buffer.write_index, .Acquire) {
+		index := ring_buffer.read_index
+		msg^ = ring_buffer.buffers[index]
 
-		intrinsics.atomic_store_explicit(&ringBuffer.readIndex, (index + 1) % LOG_BUFFER_COUNT, .Release)
+		intrinsics.atomic_store_explicit(&ring_buffer.read_index, (index + 1) % LOG_BUFFER_COUNT, .Release)
 
 		return true
 	}
@@ -168,40 +168,40 @@ LOG_FLUSH_TIME :: time.Millisecond * 1000
 
 @(private)
 log_reader_thread_proc :: proc(t: ^thread.Thread) {
-	lastFlush := time.now()
+	last_flush := time.now()
 
-	for intrinsics.atomic_load_explicit(&ctx.loggerRunning, .Acquire) {
+	for intrinsics.atomic_load_explicit(&ctx.logger_running, .Acquire) {
 		msg: Log
 
-		shouldFlush := time.since(lastFlush) > LOG_FLUSH_TIME
+		should_flush := time.since(last_flush) > LOG_FLUSH_TIME
 
-		for &logger in ctx.logPools {
-			if logger.ringBuffer != nil {
+		for &logger in ctx.log_pools {
+			if logger.ring_buffer != nil {
 				msg = {}
-				hasLog := log_try_read(logger.ringBuffer, &msg)
+				has_log := log_try_read(logger.ring_buffer, &msg)
 
-				logStr := strings.string_from_null_terminated_ptr(&msg[0], MAX_LOG_LENGTH)
+				log_str := strings.string_from_null_terminated_ptr(&msg[0], MAX_LOG_LENGTH)
 
-				if (hasLog && len(logStr) + logger.logWritePos >= FILE_BUFFER_SIZE) || (shouldFlush && logger.logWritePos > 0) {
+				if (has_log && len(log_str) + logger.log_write_pos >= FILE_BUFFER_SIZE) || (should_flush && logger.log_write_pos > 0) {
 					// Flush buffer to file
-					handle, err := os.open(logger.outputFilename, {.Write, .Append, .Create})
+					handle, err := os.open(logger.output_filename, {.Write, .Append, .Create})
 					if err == nil {
-						os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
+						os.write(handle, logger.log_write_buffer[:logger.log_write_pos])
 						os.close(handle)
-						logger.logWritePos = 0
+						logger.log_write_pos = 0
 					}
 				}
 
-				if hasLog {
+				if has_log {
 					// Write to buffer
-					copy(logger.logWriteBuffer[logger.logWritePos:], logStr)
-					logger.logWritePos += len(logStr)
+					copy(logger.log_write_buffer[logger.log_write_pos:], log_str)
+					logger.log_write_pos += len(log_str)
 				}
 			}
 		}
 
-		if shouldFlush {
-			lastFlush = time.now()
+		if should_flush {
+			last_flush = time.now()
 		}
 
 		// TODO: Add a condition flag here to wake thread when a log is written
@@ -209,13 +209,13 @@ log_reader_thread_proc :: proc(t: ^thread.Thread) {
 	}
 
 	// Flush remaining buffer to file
-	for &logger in ctx.logPools {
-		if logger.logWritePos > 0 {
-			handle, err := os.open(logger.outputFilename, {.Write, .Create, .Append})
+	for &logger in ctx.log_pools {
+		if logger.log_write_pos > 0 {
+			handle, err := os.open(logger.output_filename, {.Write, .Create, .Append})
 			if err == nil {
-				os.write(handle, logger.logWriteBuffer[:logger.logWritePos])
+				os.write(handle, logger.log_write_buffer[:logger.log_write_pos])
 				os.close(handle)
-				logger.logWritePos = 0
+				logger.log_write_pos = 0
 			}
 		}
 	}
@@ -230,7 +230,7 @@ logger_proc :: proc(
 ) {
 	data := cast(^LoggerData)logger_data
 
-	if data == nil || data.ringBuffer == nil {
+	if data == nil || data.ring_buffer == nil {
 		return
 	}
 
@@ -238,22 +238,22 @@ logger_proc :: proc(
 	// Construct log
 	logstr := fmt.bprintln(newlog[:], "[", level, "] ", text, sep="")
 
-	log_write(data.ringBuffer, logstr)
+	log_write(data.ring_buffer, logstr)
 }
 
 @(private)
 test_stop_thread :: proc() {
-	intrinsics.atomic_store_explicit(&ctx.loggerRunning, false, .Release)
-	thread.join(ctx.readerThread)
-	thread.destroy(ctx.readerThread)
-	ctx.readerThread = thread.create(log_reader_thread_proc)
-	ctx.readerThread.init_context = context
+	intrinsics.atomic_store_explicit(&ctx.logger_running, false, .Release)
+	thread.join(ctx.reader_thread)
+	thread.destroy(ctx.reader_thread)
+	ctx.reader_thread = thread.create(log_reader_thread_proc)
+	ctx.reader_thread.init_context = context
 }
 
 @(private)
 test_start_thread :: proc() {
-	intrinsics.atomic_store_explicit(&ctx.loggerRunning, true, .Release)
-	thread.start(ctx.readerThread)
+	intrinsics.atomic_store_explicit(&ctx.logger_running, true, .Release)
+	thread.start(ctx.reader_thread)
 }
 
 @(test)
@@ -262,8 +262,8 @@ test_logger :: proc(t: ^testing.T) {
 	log_init("")
 	defer {
 		log_exit()
-		for &logger in ctx.logPools {
-			os.remove(logger.outputFilename)
+		for &logger in ctx.log_pools {
+			os.remove(logger.output_filename)
 		}
 		free_all(context.temp_allocator)
 	}
@@ -277,7 +277,7 @@ test_logger :: proc(t: ^testing.T) {
 
 		time.sleep(2 * LOG_FLUSH_TIME)
 
-		content, err := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		content, err := os.read_entire_file(ctx.log_pools[.Processor].output_filename, allocator = context.temp_allocator)
 		testing.expect(t, err == nil, "Failed to read log file")
 		testing.expect(t, strings.contains(string(content), test_msg), "Log file does not contain expected message")
 	}
@@ -290,17 +290,17 @@ test_logger :: proc(t: ^testing.T) {
 			log.debug("Message", i)
 		}
 
-		droppedStr := "This should be dropped"
+		dropped_str := "This should be dropped"
 
-		log.error(droppedStr)
+		log.error(dropped_str)
 		test_start_thread()
 
 		time.sleep(2 * LOG_FLUSH_TIME)
 		log.info("This should not be dropped")
 
-		content, err := os.read_entire_file(ctx.logPools[.Processor].outputFilename, allocator = context.temp_allocator)
+		content, err := os.read_entire_file(ctx.log_pools[.Processor].output_filename, allocator = context.temp_allocator)
 		testing.expect(t, err == nil, "Failed to read log file")
-		testing.expect(t, !strings.contains(string(content), droppedStr), "Dropped message found in file")
+		testing.expect(t, !strings.contains(string(content), dropped_str), "Dropped message found in file")
 		testing.expect(t, strings.contains(string(content), fmt.tprintf("Message %d", LOG_BUFFER_COUNT - 2)), "Last log not present")
 		testing.expect(t, strings.contains(string(content), "This should not be dropped"), "Post-flushed log not present")
 	}
@@ -343,7 +343,7 @@ test_logger :: proc(t: ^testing.T) {
 
 		// Per source: parse TSAN_MARKER lines, assert seq numbers strictly increase.
 		for src in LogSource {
-			content_bytes, err := os.read_entire_file(ctx.logPools[src].outputFilename, allocator = context.temp_allocator)
+			content_bytes, err := os.read_entire_file(ctx.log_pools[src].output_filename, allocator = context.temp_allocator)
 			testing.expect(t, err == nil, "Failed to read log file")
 			content := string(content_bytes)
 

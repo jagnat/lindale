@@ -19,8 +19,8 @@ Oscillator :: struct {
 	wave: Waveform,
 
 	// Running variables
-	val, lastVal: Sample,
-	triAcc: Sample, // pre-normalization triangle integrator state
+	val, last_val: Sample,
+	tri_acc: Sample, // pre-normalization triangle integrator state
 }
 
 osc_init :: proc(o: ^Oscillator, sample_rate: f32) {
@@ -42,7 +42,7 @@ osc_reset :: proc(o: ^Oscillator) {
 }
 
 osc_next :: proc(o: ^Oscillator) -> Sample {
-	o.lastVal = o.val
+	o.last_val = o.val
 	o.val = osc_polyblep_value(o)
 	o.phase += o.phase_inc
 	// Wrap to 0..1
@@ -99,8 +99,8 @@ osc_polyblep_value :: proc(o: ^Oscillator) -> Sample {
 		val += blep(phase, phase_inc)
 		val -= blep(math.mod(phase + 0.5, 1.0), phase_inc)
 		if o.wave == .Triangle {
-			o.triAcc = phase_inc * val + (1 - phase_inc) * o.triAcc
-			val = o.triAcc * 4.0
+			o.tri_acc = phase_inc * val + (1 - phase_inc) * o.tri_acc
+			val = o.tri_acc * 4.0
 		}
 	case .Noise:
 		val = rand.float32_range(-1, 1)
@@ -125,9 +125,9 @@ test_polyblep_amplitude :: proc(t: ^testing.T) {
 	SR :: f32(44100)
 	FREQ :: f32(440)
 	samples_per_cycle := int(math.trunc(SR / FREQ))
-	run_cycles :: 2
+	RUN_CYCLES :: 2
 
-	warmup_cycles :: 5
+	WARMUP_CYCLES :: 5
 	waves := [?]Waveform{.Sine, .Saw, .Triangle, .Square}
 	for wave in waves {
 		o: Oscillator
@@ -135,10 +135,10 @@ test_polyblep_amplitude :: proc(t: ^testing.T) {
 		osc_set_freq(&o, FREQ)
 		o.wave = wave
 
-		for _ in 0 ..< samples_per_cycle * warmup_cycles do osc_next(&o)
+		for _ in 0 ..< samples_per_cycle * WARMUP_CYCLES do osc_next(&o)
 
 		peak: f32 = 0
-		for _ in 0 ..< samples_per_cycle * run_cycles {
+		for _ in 0 ..< samples_per_cycle * RUN_CYCLES {
 			v := math.abs(osc_next(&o))
 			if v > peak do peak = v
 		}
@@ -151,9 +151,9 @@ test_polyblep_dc_offset :: proc(t: ^testing.T) {
 	SR :: f32(44100)
 	FREQ :: f32(440)
 	samples_per_cycle := int(math.trunc(SR / FREQ))
-	run_cycles :: 10
+	RUN_CYCLES :: 10
 
-	warmup_cycles :: 5
+	WARMUP_CYCLES :: 5
 	waves := [?]Waveform{.Sine, .Saw, .Triangle, .Square}
 	for wave in waves {
 		o: Oscillator
@@ -161,10 +161,10 @@ test_polyblep_dc_offset :: proc(t: ^testing.T) {
 		osc_set_freq(&o, FREQ)
 		o.wave = wave
 
-		for _ in 0 ..< samples_per_cycle * warmup_cycles do osc_next(&o)
+		for _ in 0 ..< samples_per_cycle * WARMUP_CYCLES do osc_next(&o)
 
 		sum: f32 = 0
-		n := samples_per_cycle * run_cycles
+		n := samples_per_cycle * RUN_CYCLES
 		for _ in 0 ..< n {
 			sum += osc_next(&o)
 		}

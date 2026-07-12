@@ -38,66 +38,66 @@ TextureSlot :: struct {
 	width: u32,
 	height: u32,
 	format: bridge.PixelFormat,
-	inUse: bool,
+	in_use: bool,
 }
 
 DX11Renderer :: struct {
 	hwnd: win.HWND,        // Our child window
-	parentHwnd: win.HWND,  // DAW's parent window
+	parent_hwnd: win.HWND,  // DAW's parent window
 	device: ^d3d11.IDevice,
-	deviceContext: ^d3d11.IDeviceContext,
-	swapChain: ^dxgi.ISwapChain,
+	device_context: ^d3d11.IDeviceContext,
+	swap_chain: ^dxgi.ISwapChain,
 
-	renderTargetView: ^d3d11.IRenderTargetView,
+	render_target_view: ^d3d11.IRenderTargetView,
 
-	vertexShader: ^d3d11.IVertexShader,
-	pixelShader: ^d3d11.IPixelShader,
-	inputLayout: ^d3d11.IInputLayout,
+	vertex_shader: ^d3d11.IVertexShader,
+	pixel_shader: ^d3d11.IPixelShader,
+	input_layout: ^d3d11.IInputLayout,
 
-	instanceBuffer: ^d3d11.IBuffer,
-	instanceCapacity: u32,
+	instance_buffer: ^d3d11.IBuffer,
+	instance_capacity: u32,
 
-	uniformBuffer: ^d3d11.IBuffer,
+	uniform_buffer: ^d3d11.IBuffer,
 	uniforms: bridge.UniformBuffer,
 
 	textures: [bridge.MAX_TEXTURES]TextureSlot,
-	nextTextureSlot: u32,
+	next_texture_slot: u32,
 	sampler: ^d3d11.ISamplerState,
 
-	blendState: ^d3d11.IBlendState,
-	rasterizerState: ^d3d11.IRasterizerState,
+	blend_state: ^d3d11.IBlendState,
+	rasterizer_state: ^d3d11.IRasterizerState,
 
 	// logical = points for UI, physical = actual pixels
-	logicalWidth: i32,
-	logicalHeight: i32,
-	scaleFactor: f32,
-	physicalWidth: i32,
-	physicalHeight: i32,
+	logical_width: i32,
+	logical_height: i32,
+	scale_factor: f32,
+	physical_width: i32,
+	physical_height: i32,
 
-	whiteTexture: bridge.TextureHandle,
+	white_texture: bridge.TextureHandle,
 
 	mouse: ^bridge.MouseState,
-	onRepaint: proc "c" (rawptr),
-	onRepaintData: rawptr,
-	parentOldWndProc: win.WNDPROC,
+	on_repaint: proc "c" (rawptr),
+	on_repaint_data: rawptr,
+	parent_old_wnd_proc: win.WNDPROC,
 	ctx: runtime.Context,
 }
 
 @(private="file")
-PROP_RENDERER: win.LPCWSTR = win.L("LindaleRenderer")
+prop_renderer: win.LPCWSTR = win.L("LindaleRenderer")
 
 @(private)
 parent_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPARAM, lParam: win.LPARAM) -> win.LRESULT {
-	renderer := transmute(^DX11Renderer)win.GetPropW(hwnd, PROP_RENDERER)
+	renderer := transmute(^DX11Renderer)win.GetPropW(hwnd, prop_renderer)
 	if renderer == nil {
 		return win.DefWindowProcW(hwnd, msg, wParam, lParam)
 	}
 
 	if msg == win.WM_SIZE {
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 	}
 
-	return win.CallWindowProcW(renderer.parentOldWndProc, hwnd, msg, wParam, lParam)
+	return win.CallWindowProcW(renderer.parent_old_wnd_proc, hwnd, msg, wParam, lParam)
 }
 
 // Renderer lifecycle
@@ -121,7 +121,7 @@ self_module :: proc() -> win.HINSTANCE {
 register_window_class :: proc() {
 	if window_class_atom != 0 do return
 
-	hInstance := self_module()
+	h_instance := self_module()
 	arrow_cursor = win.LoadCursorW(nil, transmute(win.LPCWSTR)uintptr(32512))
 	// a Win32 window class is process-global, so two
 	// Lindale plugins in one host must not register the same name
@@ -131,7 +131,7 @@ register_window_class :: proc() {
 		cbSize = size_of(win.WNDCLASSEXW),
 		style = win.CS_DBLCLKS,
 		lpfnWndProc = lindale_wndproc,
-		hInstance = hInstance,
+		hInstance = h_instance,
 		lpszClassName = class_name,
 		hCursor = arrow_cursor,
 	}
@@ -145,21 +145,21 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 
 	if parent == nil do return nil
 
-	parentHwnd := win.HWND(parent)
+	parent_hwnd := win.HWND(parent)
 	renderer := new(DX11Renderer)
-	renderer.parentHwnd = parentHwnd
+	renderer.parent_hwnd = parent_hwnd
 	renderer.ctx = context
 
 	register_window_class()
 
-	dpi := win.GetDpiForWindow(parentHwnd)
-	renderer.scaleFactor = f32(dpi) / 96.0
-	renderer.logicalWidth = width
-	renderer.logicalHeight = height
-	renderer.physicalWidth = i32(f32(width) * renderer.scaleFactor)
-	renderer.physicalHeight = i32(f32(height) * renderer.scaleFactor)
+	dpi := win.GetDpiForWindow(parent_hwnd)
+	renderer.scale_factor = f32(dpi) / 96.0
+	renderer.logical_width = width
+	renderer.logical_height = height
+	renderer.physical_width = i32(f32(width) * renderer.scale_factor)
+	renderer.physical_height = i32(f32(height) * renderer.scale_factor)
 
-	hInstance := self_module()
+	h_instance := self_module()
 
 	renderer.hwnd = win.CreateWindowExW(
 		0,
@@ -167,10 +167,10 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		nil,
 		win.WS_CHILD | win.WS_VISIBLE,
 		0, 0,
-		renderer.physicalWidth, renderer.physicalHeight,
-		parentHwnd,
+		renderer.physical_width, renderer.physical_height,
+		parent_hwnd,
 		nil,
-		hInstance,
+		h_instance,
 		nil,
 	)
 
@@ -183,46 +183,46 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	// Store renderer pointer in window user data so WndProc can find it
 	win.SetWindowLongPtrW(renderer.hwnd, win.GWLP_USERDATA, transmute(win.LONG_PTR)renderer)
 
-	log.infof("Created child HWND: %p, parent: %p, size: %dx%d", renderer.hwnd, parentHwnd, renderer.physicalWidth, renderer.physicalHeight)
+	log.infof("Created child HWND: %p, parent: %p, size: %dx%d", renderer.hwnd, parent_hwnd, renderer.physical_width, renderer.physical_height)
 
 	// Subclass parent window to catch resize events
-	win.SetPropW(parentHwnd, PROP_RENDERER, transmute(win.HANDLE)renderer)
-	renderer.parentOldWndProc = transmute(win.WNDPROC)win.SetWindowLongPtrW(parentHwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)parent_wndproc)
+	win.SetPropW(parent_hwnd, prop_renderer, transmute(win.HANDLE)renderer)
+	renderer.parent_old_wnd_proc = transmute(win.WNDPROC)win.SetWindowLongPtrW(parent_hwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)parent_wndproc)
 
-	featureLevels := []d3d11.FEATURE_LEVEL{._11_0, ._10_1, ._10_0}
-	deviceFlags: d3d11.CREATE_DEVICE_FLAGS = {}
+	feature_levels := []d3d11.FEATURE_LEVEL{._11_0, ._10_1, ._10_0}
+	device_flags: d3d11.CREATE_DEVICE_FLAGS = {}
 	when ODIN_DEBUG {
-		deviceFlags += {.DEBUG}
+		device_flags += {.DEBUG}
 	}
 
 	hr := d3d11.CreateDevice(
 		nil,
 		.HARDWARE,
 		nil,
-		deviceFlags,
-		raw_data(featureLevels),
-		u32(len(featureLevels)),
+		device_flags,
+		raw_data(feature_levels),
+		u32(len(feature_levels)),
 		d3d11.SDK_VERSION,
 		&renderer.device,
 		nil,
-		&renderer.deviceContext,
+		&renderer.device_context,
 	)
 	if hr < 0 {
 		free(renderer)
 		return nil
 	}
 
-	dxgiDevice: ^dxgi.IDevice
-	hr = renderer.device->QueryInterface(dxgi.IDevice_UUID, (^rawptr)(&dxgiDevice))
+	dxgi_device: ^dxgi.IDevice
+	hr = renderer.device->QueryInterface(dxgi.IDevice_UUID, (^rawptr)(&dxgi_device))
 	if hr < 0 {
 		renderer.device->Release()
 		free(renderer)
 		return nil
 	}
-	defer dxgiDevice->Release()
+	defer dxgi_device->Release()
 
 	adapter: ^dxgi.IAdapter
-	hr = dxgiDevice->GetAdapter(&adapter)
+	hr = dxgi_device->GetAdapter(&adapter)
 	if hr < 0 {
 		renderer.device->Release()
 		free(renderer)
@@ -239,10 +239,10 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	}
 	defer factory->Release()
 
-	swapChainDesc := dxgi.SWAP_CHAIN_DESC{
+	swap_chain_desc := dxgi.SWAP_CHAIN_DESC{
 		BufferDesc = {
-			Width = u32(renderer.physicalWidth),
-			Height = u32(renderer.physicalHeight),
+			Width = u32(renderer.physical_width),
+			Height = u32(renderer.physical_height),
 			RefreshRate = {Numerator = 60, Denominator = 1},
 			Format = .B8G8R8A8_UNORM,
 		},
@@ -254,7 +254,7 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		SwapEffect = .DISCARD,
 	}
 
-	hr = factory->CreateSwapChain(renderer.device, &swapChainDesc, &renderer.swapChain)
+	hr = factory->CreateSwapChain(renderer.device, &swap_chain_desc, &renderer.swap_chain)
 	if hr < 0 {
 		renderer.device->Release()
 		free(renderer)
@@ -272,33 +272,33 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 	}
 
 	// 1MB instance buffer
-	instanceBufferSize := bridge.MAX_INSTANCES * size_of(bridge.DrawInstance)
-	instanceBufferDesc := d3d11.BUFFER_DESC{
-		ByteWidth = u32(instanceBufferSize),
+	instance_buffer_size := bridge.MAX_INSTANCES * size_of(bridge.DrawInstance)
+	instance_buffer_desc := d3d11.BUFFER_DESC{
+		ByteWidth = u32(instance_buffer_size),
 		Usage = .DYNAMIC,
 		BindFlags = {.VERTEX_BUFFER},
 		CPUAccessFlags = {.WRITE},
 	}
-	hr = renderer.device->CreateBuffer(&instanceBufferDesc, nil, &renderer.instanceBuffer)
+	hr = renderer.device->CreateBuffer(&instance_buffer_desc, nil, &renderer.instance_buffer)
 	if hr < 0 {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
-	renderer.instanceCapacity = bridge.MAX_INSTANCES
+	renderer.instance_capacity = bridge.MAX_INSTANCES
 
-	uniformBufferDesc := d3d11.BUFFER_DESC{
+	uniform_buffer_desc := d3d11.BUFFER_DESC{
 		ByteWidth = size_of(bridge.UniformBuffer),
 		Usage = .DYNAMIC,
 		BindFlags = {.CONSTANT_BUFFER},
 		CPUAccessFlags = {.WRITE},
 	}
-	hr = renderer.device->CreateBuffer(&uniformBufferDesc, nil, &renderer.uniformBuffer)
+	hr = renderer.device->CreateBuffer(&uniform_buffer_desc, nil, &renderer.uniform_buffer)
 	if hr < 0 {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
-	samplerDesc := d3d11.SAMPLER_DESC{
+	sampler_desc := d3d11.SAMPLER_DESC{
 		Filter = .MIN_MAG_MIP_POINT,
 		AddressU = .WRAP,
 		AddressV = .WRAP,
@@ -307,13 +307,13 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		MinLOD = 0,
 		MaxLOD = d3d11.FLOAT32_MAX,
 	}
-	hr = renderer.device->CreateSamplerState(&samplerDesc, &renderer.sampler)
+	hr = renderer.device->CreateSamplerState(&sampler_desc, &renderer.sampler)
 	if hr < 0 {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
-	blendDesc := d3d11.BLEND_DESC{
+	blend_desc := d3d11.BLEND_DESC{
 		AlphaToCoverageEnable = false,
 		IndependentBlendEnable = false,
 		RenderTarget = {
@@ -329,13 +329,13 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 			},
 		},
 	}
-	hr = renderer.device->CreateBlendState(&blendDesc, &renderer.blendState)
+	hr = renderer.device->CreateBlendState(&blend_desc, &renderer.blend_state)
 	if hr < 0 {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
-	rasterizerDesc := d3d11.RASTERIZER_DESC{
+	rasterizer_desc := d3d11.RASTERIZER_DESC{
 		FillMode = .SOLID,
 		CullMode = .NONE,
 		FrontCounterClockwise = false,
@@ -344,18 +344,18 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		MultisampleEnable = false,
 		AntialiasedLineEnable = false,
 	}
-	hr = renderer.device->CreateRasterizerState(&rasterizerDesc, &renderer.rasterizerState)
+	hr = renderer.device->CreateRasterizerState(&rasterizer_desc, &renderer.rasterizer_state)
 	if hr < 0 {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
 
-	renderer.nextTextureSlot = 1
-	whitePixel := []u8{255, 255, 255, 255}
-	renderer.whiteTexture = create_texture_internal(renderer, 1, 1, .RGBA8)
-	upload_texture_internal(renderer, renderer.whiteTexture, whitePixel)
+	renderer.next_texture_slot = 1
+	white_pixel := []u8{255, 255, 255, 255}
+	renderer.white_texture = create_texture_internal(renderer, 1, 1, .RGBA8)
+	upload_texture_internal(renderer, renderer.white_texture, white_pixel)
 
-	resize_internal(renderer, width, height, renderer.scaleFactor)
+	resize_internal(renderer, width, height, renderer.scale_factor)
 
 	return bridge.Renderer(renderer)
 }
@@ -365,9 +365,9 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	if renderer == nil do return
 
 	// Restore parent wndproc before destroying child
-	if renderer.parentHwnd != nil && renderer.parentOldWndProc != nil {
-		win.SetWindowLongPtrW(renderer.parentHwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)renderer.parentOldWndProc)
-		win.RemovePropW(renderer.parentHwnd, PROP_RENDERER)
+	if renderer.parent_hwnd != nil && renderer.parent_old_wnd_proc != nil {
+		win.SetWindowLongPtrW(renderer.parent_hwnd, win.GWLP_WNDPROC, transmute(win.LONG_PTR)renderer.parent_old_wnd_proc)
+		win.RemovePropW(renderer.parent_hwnd, prop_renderer)
 	}
 
 	if renderer.hwnd != nil {
@@ -375,23 +375,23 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	}
 
 	for &slot in renderer.textures {
-		if slot.inUse {
+		if slot.in_use {
 			if slot.srv != nil do slot.srv->Release()
 			if slot.texture != nil do slot.texture->Release()
 		}
 	}
 
-	if renderer.rasterizerState != nil do renderer.rasterizerState->Release()
-	if renderer.blendState != nil do renderer.blendState->Release()
+	if renderer.rasterizer_state != nil do renderer.rasterizer_state->Release()
+	if renderer.blend_state != nil do renderer.blend_state->Release()
 	if renderer.sampler != nil do renderer.sampler->Release()
-	if renderer.uniformBuffer != nil do renderer.uniformBuffer->Release()
-	if renderer.instanceBuffer != nil do renderer.instanceBuffer->Release()
-	if renderer.inputLayout != nil do renderer.inputLayout->Release()
-	if renderer.pixelShader != nil do renderer.pixelShader->Release()
-	if renderer.vertexShader != nil do renderer.vertexShader->Release()
-	if renderer.renderTargetView != nil do renderer.renderTargetView->Release()
-	if renderer.swapChain != nil do renderer.swapChain->Release()
-	if renderer.deviceContext != nil do renderer.deviceContext->Release()
+	if renderer.uniform_buffer != nil do renderer.uniform_buffer->Release()
+	if renderer.instance_buffer != nil do renderer.instance_buffer->Release()
+	if renderer.input_layout != nil do renderer.input_layout->Release()
+	if renderer.pixel_shader != nil do renderer.pixel_shader->Release()
+	if renderer.vertex_shader != nil do renderer.vertex_shader->Release()
+	if renderer.render_target_view != nil do renderer.render_target_view->Release()
+	if renderer.swap_chain != nil do renderer.swap_chain->Release()
+	if renderer.device_context != nil do renderer.device_context->Release()
 	if renderer.device != nil do renderer.device->Release()
 
 	free(renderer)
@@ -408,15 +408,15 @@ renderer_set_mouse_state :: proc(r: bridge.Renderer, mouse: ^bridge.MouseState) 
 renderer_set_repaint_callback :: proc(r: bridge.Renderer, callback: proc "c" (rawptr), data: rawptr) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
-	renderer.onRepaint = callback
-	renderer.onRepaintData = data
+	renderer.on_repaint = callback
+	renderer.on_repaint_data = data
 }
 
 @(private)
 get_mouse_pos :: #force_inline proc "contextless" (renderer: ^DX11Renderer, lParam: win.LPARAM) -> bridge.Vec2f {
 	x := win.GET_X_LPARAM(lParam)
 	y := win.GET_Y_LPARAM(lParam)
-	scale := renderer.scaleFactor
+	scale := renderer.scale_factor
 	return {f32(x) / scale, f32(y) / scale}
 }
 
@@ -433,65 +433,65 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 	switch msg {
 	case win.WM_MOUSEMOVE:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_LBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Left}
 		renderer.mouse.pressed += {.Left}
 		win.SetCapture(hwnd)
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_LBUTTONDBLCLK:
-		renderer.mouse.doubleClicked += {.Left}
+		renderer.mouse.double_clicked += {.Left}
 
 	case win.WM_LBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Left}
 		renderer.mouse.released += {.Left}
 		if renderer.mouse.down == {} do win.ReleaseCapture()
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_RBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Right}
 		renderer.mouse.pressed += {.Right}
 		win.SetCapture(hwnd)
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_RBUTTONDBLCLK:
-	renderer.mouse.doubleClicked += {.Right}
+	renderer.mouse.double_clicked += {.Right}
 
 	case win.WM_RBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Right}
 		renderer.mouse.released += {.Right}
 		if renderer.mouse.down == {} do win.ReleaseCapture()
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_MBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Middle}
 		renderer.mouse.pressed += {.Middle}
 		win.SetCapture(hwnd)
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_MBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down -= {.Middle}
 		renderer.mouse.released += {.Middle}
 		if renderer.mouse.down == {} do win.ReleaseCapture()
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_MOUSEWHEEL:
 		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
-		renderer.mouse.scrollDelta.y += f32(delta) / 120.0
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		renderer.mouse.scroll_delta.y += f32(delta) / 120.0
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case WM_MOUSEHWHEEL:
 		delta := win.GET_WHEEL_DELTA_WPARAM(wParam)
-		renderer.mouse.scrollDelta.x += f32(delta) / 120.0
-		if renderer.onRepaint != nil do renderer.onRepaint(renderer.onRepaintData)
+		renderer.mouse.scroll_delta.x += f32(delta) / 120.0
+		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
 	case win.WM_SETCURSOR:
 		if win.LOWORD(u32(lParam)) == win.HTCLIENT {
@@ -508,43 +508,43 @@ renderer_resize :: proc(r: bridge.Renderer, width, height: i32) {
 	if renderer == nil do return
 
 	dpi := win.GetDpiForWindow(renderer.hwnd)
-	scaleFactor := f32(dpi) / 96.0
+	scale_factor := f32(dpi) / 96.0
 
-	if renderer.renderTargetView != nil {
-		renderer.renderTargetView->Release()
-		renderer.renderTargetView = nil
+	if renderer.render_target_view != nil {
+		renderer.render_target_view->Release()
+		renderer.render_target_view = nil
 	}
 
-	physicalWidth := u32(f32(width) * scaleFactor)
-	physicalHeight := u32(f32(height) * scaleFactor)
-	renderer.swapChain->ResizeBuffers(0, physicalWidth, physicalHeight, .UNKNOWN, {})
+	physical_width := u32(f32(width) * scale_factor)
+	physical_height := u32(f32(height) * scale_factor)
+	renderer.swap_chain->ResizeBuffers(0, physical_width, physical_height, .UNKNOWN, {})
 
 	create_render_target_view(renderer)
 
-	resize_internal(renderer, width, height, scaleFactor)
+	resize_internal(renderer, width, height, scale_factor)
 }
 
 @(private)
-resize_internal :: proc(renderer: ^DX11Renderer, logicalWidth, logicalHeight: i32, scaleFactor: f32) {
-	renderer.logicalWidth = logicalWidth
-	renderer.logicalHeight = logicalHeight
-	renderer.scaleFactor = scaleFactor
-	renderer.physicalWidth = i32(f32(logicalWidth) * scaleFactor)
-	renderer.physicalHeight = i32(f32(logicalHeight) * scaleFactor)
+resize_internal :: proc(renderer: ^DX11Renderer, logical_width, logical_height: i32, scale_factor: f32) {
+	renderer.logical_width = logical_width
+	renderer.logical_height = logical_height
+	renderer.scale_factor = scale_factor
+	renderer.physical_width = i32(f32(logical_width) * scale_factor)
+	renderer.physical_height = i32(f32(logical_height) * scale_factor)
 
-	renderer.uniforms.projMatrix = linalg.matrix_ortho3d_f32(0, f32(logicalWidth), f32(logicalHeight), 0, -1, 1)
-	renderer.uniforms.dims = {f32(logicalWidth), f32(logicalHeight)}
+	renderer.uniforms.proj_matrix = linalg.matrix_ortho3d_f32(0, f32(logical_width), f32(logical_height), 0, -1, 1)
+	renderer.uniforms.dims = {f32(logical_width), f32(logical_height)}
 }
 
 renderer_get_size :: proc(r: bridge.Renderer) -> bridge.RendererSize {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return {}
 	return bridge.RendererSize{
-		logicalWidth = renderer.logicalWidth,
-		logicalHeight = renderer.logicalHeight,
-		scaleFactor = renderer.scaleFactor,
-		physicalWidth = renderer.physicalWidth,
-		physicalHeight = renderer.physicalHeight,
+		logical_width = renderer.logical_width,
+		logical_height = renderer.logical_height,
+		scale_factor = renderer.scale_factor,
+		physical_width = renderer.physical_width,
+		physical_height = renderer.physical_height,
 	}
 }
 
@@ -560,27 +560,27 @@ renderer_create_texture :: proc(r: bridge.Renderer, width, height: u32, format: 
 create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, format: bridge.PixelFormat) -> bridge.TextureHandle {
 	slot: u32 = 0
 	for i in 1..<u32(bridge.MAX_TEXTURES) {
-		if !renderer.textures[i].inUse {
+		if !renderer.textures[i].in_use {
 			slot = i
 			break
 		}
 	}
 	if slot == 0 do return bridge.INVALID_TEXTURE
 
-	dxgiFormat: dxgi.FORMAT
+	dxgi_format: dxgi.FORMAT
 	switch format {
 	case .RGBA8:
-		dxgiFormat = .R8G8B8A8_UNORM
+		dxgi_format = .R8G8B8A8_UNORM
 	case .R8:
-		dxgiFormat = .R8_UNORM
+		dxgi_format = .R8_UNORM
 	}
 
-	textureDesc := d3d11.TEXTURE2D_DESC{
+	texture_desc := d3d11.TEXTURE2D_DESC{
 		Width = width,
 		Height = height,
 		MipLevels = 1,
 		ArraySize = 1,
-		Format = dxgiFormat,
+		Format = dxgi_format,
 		SampleDesc = {Count = 1, Quality = 0},
 		Usage = .DEFAULT,
 		BindFlags = {.SHADER_RESOURCE},
@@ -588,17 +588,17 @@ create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, for
 	}
 
 	texture: ^d3d11.ITexture2D
-	hr := renderer.device->CreateTexture2D(&textureDesc, nil, &texture)
+	hr := renderer.device->CreateTexture2D(&texture_desc, nil, &texture)
 	if hr < 0 do return bridge.INVALID_TEXTURE
 
-	srvDesc := d3d11.SHADER_RESOURCE_VIEW_DESC{
-		Format = dxgiFormat,
+	srv_desc := d3d11.SHADER_RESOURCE_VIEW_DESC{
+		Format = dxgi_format,
 		ViewDimension = .TEXTURE2D,
 		Texture2D = {MostDetailedMip = 0, MipLevels = 1},
 	}
 
 	srv: ^d3d11.IShaderResourceView
-	hr = renderer.device->CreateShaderResourceView(texture, &srvDesc, &srv)
+	hr = renderer.device->CreateShaderResourceView(texture, &srv_desc, &srv)
 	if hr < 0 {
 		texture->Release()
 		return bridge.INVALID_TEXTURE
@@ -610,7 +610,7 @@ create_texture_internal :: proc(renderer: ^DX11Renderer, width, height: u32, for
 		width = width,
 		height = height,
 		format = format,
-		inUse = true,
+		in_use = true,
 	}
 
 	return bridge.TextureHandle(slot)
@@ -623,7 +623,7 @@ renderer_destroy_texture :: proc(r: bridge.Renderer, handle: bridge.TextureHandl
 	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
-	if slot.inUse {
+	if slot.in_use {
 		if slot.srv != nil do slot.srv->Release()
 		if slot.texture != nil do slot.texture->Release()
 		slot^ = {}
@@ -642,10 +642,10 @@ upload_texture_internal :: proc(renderer: ^DX11Renderer, handle: bridge.TextureH
 	if u32(handle) >= bridge.MAX_TEXTURES do return
 
 	slot := &renderer.textures[handle]
-	if !slot.inUse || slot.texture == nil do return
+	if !slot.in_use || slot.texture == nil do return
 
-	bytesPerPixel: u32 = slot.format == .RGBA8 ? 4 : 1
-	bytesPerRow := slot.width * bytesPerPixel
+	bytes_per_pixel: u32 = slot.format == .RGBA8 ? 4 : 1
+	bytes_per_row := slot.width * bytes_per_pixel
 
 	box := d3d11.BOX{
 		left = 0,
@@ -656,13 +656,13 @@ upload_texture_internal :: proc(renderer: ^DX11Renderer, handle: bridge.TextureH
 		back = 1,
 	}
 
-	renderer.deviceContext->UpdateSubresource(slot.texture, 0, &box, raw_data(pixels), bytesPerRow, 0)
+	renderer.device_context->UpdateSubresource(slot.texture, 0, &box, raw_data(pixels), bytes_per_row, 0)
 }
 
 renderer_get_white_texture :: proc(r: bridge.Renderer) -> bridge.TextureHandle {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return bridge.INVALID_TEXTURE
-	return renderer.whiteTexture
+	return renderer.white_texture
 }
 
 // Frame rendering
@@ -672,29 +672,29 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 	if renderer == nil do return false
 
 	// Detect parent window resize, matching macOS pattern of auto-detecting in the render path
-	parentRect: win.RECT
-	win.GetClientRect(renderer.parentHwnd, &parentRect)
-	parentWidth := i32(parentRect.right - parentRect.left)
-	parentHeight := i32(parentRect.bottom - parentRect.top)
-	if parentWidth > 0 && parentHeight > 0 {
+	parent_rect: win.RECT
+	win.GetClientRect(renderer.parent_hwnd, &parent_rect)
+	parent_width := i32(parent_rect.right - parent_rect.left)
+	parent_height := i32(parent_rect.bottom - parent_rect.top)
+	if parent_width > 0 && parent_height > 0 {
 		dpi := win.GetDpiForWindow(renderer.hwnd)
-		scaleFactor := f32(dpi) / 96.0
+		scale_factor := f32(dpi) / 96.0
 
-		if parentWidth != renderer.physicalWidth || parentHeight != renderer.physicalHeight || scaleFactor != renderer.scaleFactor {
+		if parent_width != renderer.physical_width || parent_height != renderer.physical_height || scale_factor != renderer.scale_factor {
 			// Resize child window to match parent
-			win.SetWindowPos(renderer.hwnd, nil, 0, 0, parentWidth, parentHeight, win.SWP_NOZORDER | win.SWP_NOMOVE)
+			win.SetWindowPos(renderer.hwnd, nil, 0, 0, parent_width, parent_height, win.SWP_NOZORDER | win.SWP_NOMOVE)
 
-			renderer.deviceContext->OMSetRenderTargets(0, nil, nil)
-			if renderer.renderTargetView != nil {
-				renderer.renderTargetView->Release()
-				renderer.renderTargetView = nil
+			renderer.device_context->OMSetRenderTargets(0, nil, nil)
+			if renderer.render_target_view != nil {
+				renderer.render_target_view->Release()
+				renderer.render_target_view = nil
 			}
-			renderer.swapChain->ResizeBuffers(0, u32(parentWidth), u32(parentHeight), .UNKNOWN, {})
+			renderer.swap_chain->ResizeBuffers(0, u32(parent_width), u32(parent_height), .UNKNOWN, {})
 			create_render_target_view(renderer)
 
-			logicalWidth := i32(f32(parentWidth) / scaleFactor)
-			logicalHeight := i32(f32(parentHeight) / scaleFactor)
-			resize_internal(renderer, logicalWidth, logicalHeight, scaleFactor)
+			logical_width := i32(f32(parent_width) / scale_factor)
+			logical_height := i32(f32(parent_height) / scale_factor)
+			resize_internal(renderer, logical_width, logical_height, scale_factor)
 		}
 	}
 
@@ -704,64 +704,64 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 renderer_end_frame :: proc(r: bridge.Renderer) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
-	if renderer.swapChain == nil do return
+	if renderer.swap_chain == nil do return
 
-	renderer.swapChain->Present(1, {})
+	renderer.swap_chain->Present(1, {})
 }
 
 renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawInstance) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instanceCapacity {
-		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instanceCapacity)
+	if u32(len(instances)) > renderer.instance_capacity {
+		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instance_capacity)
 		assert(false, "draw instance count exceeded MAX_INSTANCES")
 		return
 	}
 
-	mappedResource: d3d11.MAPPED_SUBRESOURCE
-	hr := renderer.deviceContext->Map(renderer.instanceBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)
+	mapped_resource: d3d11.MAPPED_SUBRESOURCE
+	hr := renderer.device_context->Map(renderer.instance_buffer, 0, .WRITE_DISCARD, {}, &mapped_resource)
 	if hr < 0 do return
 
-	mem.copy(mappedResource.pData, raw_data(instances), len(instances) * size_of(bridge.DrawInstance))
-	renderer.deviceContext->Unmap(renderer.instanceBuffer, 0)
+	mem.copy(mapped_resource.pData, raw_data(instances), len(instances) * size_of(bridge.DrawInstance))
+	renderer.device_context->Unmap(renderer.instance_buffer, 0)
 }
 
-renderer_begin_pass :: proc(r: bridge.Renderer, clearColor: bridge.ColorF32) {
+renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
-	if renderer.renderTargetView == nil do return
+	if renderer.render_target_view == nil do return
 
-	clearColorArray := clearColor
-	renderer.deviceContext->ClearRenderTargetView(renderer.renderTargetView, &clearColorArray)
+	clear_color_array := clear_color
+	renderer.device_context->ClearRenderTargetView(renderer.render_target_view, &clear_color_array)
 
-	renderer.deviceContext->OMSetRenderTargets(1, &renderer.renderTargetView, nil)
+	renderer.device_context->OMSetRenderTargets(1, &renderer.render_target_view, nil)
 
 	// physical pixels
 	viewport := d3d11.VIEWPORT{
 		TopLeftX = 0,
 		TopLeftY = 0,
-		Width = f32(renderer.physicalWidth),
-		Height = f32(renderer.physicalHeight),
+		Width = f32(renderer.physical_width),
+		Height = f32(renderer.physical_height),
 		MinDepth = 0,
 		MaxDepth = 1,
 	}
-	renderer.deviceContext->RSSetViewports(1, &viewport)
+	renderer.device_context->RSSetViewports(1, &viewport)
 
-	renderer.deviceContext->VSSetShader(renderer.vertexShader, nil, 0)
-	renderer.deviceContext->PSSetShader(renderer.pixelShader, nil, 0)
-	renderer.deviceContext->IASetInputLayout(renderer.inputLayout)
+	renderer.device_context->VSSetShader(renderer.vertex_shader, nil, 0)
+	renderer.device_context->PSSetShader(renderer.pixel_shader, nil, 0)
+	renderer.device_context->IASetInputLayout(renderer.input_layout)
 
 	stride := u32(size_of(bridge.DrawInstance))
 	offset: u32 = 0
-	renderer.deviceContext->IASetVertexBuffers(0, 1, &renderer.instanceBuffer, &stride, &offset)
+	renderer.device_context->IASetVertexBuffers(0, 1, &renderer.instance_buffer, &stride, &offset)
 
-	renderer.deviceContext->IASetPrimitiveTopology(.TRIANGLESTRIP)
+	renderer.device_context->IASetPrimitiveTopology(.TRIANGLESTRIP)
 
-	blendFactor := [4]f32{0, 0, 0, 0}
-	renderer.deviceContext->OMSetBlendState(renderer.blendState, &blendFactor, 0xffffffff)
+	blend_factor := [4]f32{0, 0, 0, 0}
+	renderer.device_context->OMSetBlendState(renderer.blend_state, &blend_factor, 0xffffffff)
 
-	renderer.deviceContext->RSSetState(renderer.rasterizerState)
+	renderer.device_context->RSSetState(renderer.rasterizer_state)
 }
 
 renderer_end_pass :: proc(r: bridge.Renderer) {
@@ -771,77 +771,77 @@ renderer_end_pass :: proc(r: bridge.Renderer) {
 renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	renderer := cast(^DX11Renderer)r
 	if renderer == nil do return
-	if cmd.instanceCount == 0 do return
+	if cmd.instance_count == 0 do return
 
 	if cmd.scissor.w > 0 && cmd.scissor.h > 0 {
-		scale := renderer.scaleFactor
-		scissorRect := d3d11.RECT{
+		scale := renderer.scale_factor
+		scissor_rect := d3d11.RECT{
 			left = i32(f32(cmd.scissor.x) * scale),
 			top = i32(f32(cmd.scissor.y) * scale),
 			right = i32(f32(cmd.scissor.x + cmd.scissor.w) * scale),
 			bottom = i32(f32(cmd.scissor.y + cmd.scissor.h) * scale),
 		}
-		renderer.deviceContext->RSSetScissorRects(1, &scissorRect)
+		renderer.device_context->RSSetScissorRects(1, &scissor_rect)
 	} else {
-		scissorRect := d3d11.RECT{
+		scissor_rect := d3d11.RECT{
 			left = 0,
 			top = 0,
-			right = renderer.physicalWidth,
-			bottom = renderer.physicalHeight,
+			right = renderer.physical_width,
+			bottom = renderer.physical_height,
 		}
-		renderer.deviceContext->RSSetScissorRects(1, &scissorRect)
+		renderer.device_context->RSSetScissorRects(1, &scissor_rect)
 	}
 
-	renderer.uniforms.singleChannelTexture = cmd.singleChannelTexture ? 1 : 0
+	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
 
-	mappedResource: d3d11.MAPPED_SUBRESOURCE
-	hr := renderer.deviceContext->Map(renderer.uniformBuffer, 0, .WRITE_DISCARD, {}, &mappedResource)
+	mapped_resource: d3d11.MAPPED_SUBRESOURCE
+	hr := renderer.device_context->Map(renderer.uniform_buffer, 0, .WRITE_DISCARD, {}, &mapped_resource)
 	if hr >= 0 {
-		mem.copy(mappedResource.pData, &renderer.uniforms, size_of(bridge.UniformBuffer))
-		renderer.deviceContext->Unmap(renderer.uniformBuffer, 0)
+		mem.copy(mapped_resource.pData, &renderer.uniforms, size_of(bridge.UniformBuffer))
+		renderer.device_context->Unmap(renderer.uniform_buffer, 0)
 	}
 
-	renderer.deviceContext->VSSetConstantBuffers(0, 1, &renderer.uniformBuffer)
-	renderer.deviceContext->PSSetConstantBuffers(0, 1, &renderer.uniformBuffer)
+	renderer.device_context->VSSetConstantBuffers(0, 1, &renderer.uniform_buffer)
+	renderer.device_context->PSSetConstantBuffers(0, 1, &renderer.uniform_buffer)
 
-	textureHandle := cmd.texture
-	if textureHandle == bridge.INVALID_TEXTURE {
-		textureHandle = renderer.whiteTexture
+	texture_handle := cmd.texture
+	if texture_handle == bridge.INVALID_TEXTURE {
+		texture_handle = renderer.white_texture
 	}
 
-	if u32(textureHandle) < bridge.MAX_TEXTURES {
-		slot := &renderer.textures[textureHandle]
-		if slot.inUse && slot.srv != nil {
-			renderer.deviceContext->PSSetShaderResources(0, 1, &slot.srv)
-			renderer.deviceContext->PSSetSamplers(0, 1, &renderer.sampler)
+	if u32(texture_handle) < bridge.MAX_TEXTURES {
+		slot := &renderer.textures[texture_handle]
+		if slot.in_use && slot.srv != nil {
+			renderer.device_context->PSSetShaderResources(0, 1, &slot.srv)
+			renderer.device_context->PSSetSamplers(0, 1, &renderer.sampler)
 		}
 	}
 
 	// 4 vertices per instance (triangle strip quad)
-	renderer.deviceContext->DrawInstanced(4, cmd.instanceCount, 0, cmd.instanceOffset)
+	renderer.device_context->DrawInstanced(4, cmd.instance_count, 0, cmd.instance_offset)
 }
 
 // Pipeline creation
 
 @(private)
 create_render_target_view :: proc(renderer: ^DX11Renderer) -> bool {
-	backBuffer: ^d3d11.ITexture2D
-	hr := renderer.swapChain->GetBuffer(0, d3d11.ITexture2D_UUID, (^rawptr)(&backBuffer))
+	back_buffer: ^d3d11.ITexture2D
+	hr := renderer.swap_chain->GetBuffer(0, d3d11.ITexture2D_UUID, (^rawptr)(&back_buffer))
 	if hr < 0 do return false
-	defer backBuffer->Release()
+	defer back_buffer->Release()
 
-	hr = renderer.device->CreateRenderTargetView(backBuffer, nil, &renderer.renderTargetView)
+	hr = renderer.device->CreateRenderTargetView(back_buffer, nil, &renderer.render_target_view)
 	return hr >= 0
 }
 
 @(private)
 create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
-	vsBlob: ^d3dc.ID3DBlob
-	errorBlob: ^d3dc.ID3DBlob
-	defer if vsBlob != nil do vsBlob->Release()
-	defer if errorBlob != nil do errorBlob->Release()
+	vs_blob: ^d3dc.ID3DBlob
+	error_blob: ^d3dc.ID3DBlob
+	defer if vs_blob != nil do vs_blob->Release()
+	defer if error_blob != nil do error_blob->Release()
 
-	shaderDefines := []d3dc.SHADER_MACRO{
+	shader_defines := []d3dc.SHADER_MACRO{
 		{Name = "VERTEX", Definition = "1"},
 		{},
 	}
@@ -850,36 +850,36 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 		raw_data(shader_source),
 		len(shader_source),
 		"shader.hlsl",
-		raw_data(shaderDefines),
+		raw_data(shader_defines),
 		nil,
 		"VSMain",
 		"vs_5_0",
 		transmute(u32)d3dc.D3DCOMPILE{.ENABLE_STRICTNESS},
 		0,
-		&vsBlob,
-		&errorBlob,
+		&vs_blob,
+		&error_blob,
 	)
 	if hr < 0 {
-		if errorBlob != nil {
-			errorSize := errorBlob->GetBufferSize()
-			errorData := ([^]byte)(errorBlob->GetBufferPointer())[:errorSize]
-			fmt.println("VS compile error:", string(errorData))
+		if error_blob != nil {
+			error_size := error_blob->GetBufferSize()
+			error_data := ([^]byte)(error_blob->GetBufferPointer())[:error_size]
+			fmt.println("VS compile error:", string(error_data))
 		}
 		return false
 	}
 
 	hr = renderer.device->CreateVertexShader(
-		vsBlob->GetBufferPointer(),
-		vsBlob->GetBufferSize(),
+		vs_blob->GetBufferPointer(),
+		vs_blob->GetBufferSize(),
 		nil,
-		&renderer.vertexShader,
+		&renderer.vertex_shader,
 	)
 	if hr < 0 do return false
 
-	psBlob: ^d3dc.ID3DBlob
-	defer if psBlob != nil do psBlob->Release()
+	ps_blob: ^d3dc.ID3DBlob
+	defer if ps_blob != nil do ps_blob->Release()
 
-	psDefines := []d3dc.SHADER_MACRO{
+	ps_defines := []d3dc.SHADER_MACRO{
 		{},
 	}
 
@@ -887,33 +887,33 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 		raw_data(shader_source),
 		len(shader_source),
 		"shader.hlsl",
-		raw_data(psDefines),
+		raw_data(ps_defines),
 		nil,
 		"PSMain",
 		"ps_5_0",
 		transmute(u32)d3dc.D3DCOMPILE{.ENABLE_STRICTNESS},
 		0,
-		&psBlob,
-		&errorBlob,
+		&ps_blob,
+		&error_blob,
 	)
 	if hr < 0 {
-		if errorBlob != nil {
-			errorSize := errorBlob->GetBufferSize()
-			errorData := ([^]byte)(errorBlob->GetBufferPointer())[:errorSize]
-			fmt.println("PS compile error:", string(errorData))
+		if error_blob != nil {
+			error_size := error_blob->GetBufferSize()
+			error_data := ([^]byte)(error_blob->GetBufferPointer())[:error_size]
+			fmt.println("PS compile error:", string(error_data))
 		}
 		return false
 	}
 
 	hr = renderer.device->CreatePixelShader(
-		psBlob->GetBufferPointer(),
-		psBlob->GetBufferSize(),
+		ps_blob->GetBufferPointer(),
+		ps_blob->GetBufferSize(),
 		nil,
-		&renderer.pixelShader,
+		&renderer.pixel_shader,
 	)
 	if hr < 0 do return false
 
-	inputElements := []d3d11.INPUT_ELEMENT_DESC{
+	input_elements := []d3d11.INPUT_ELEMENT_DESC{
 		// Attribute 0: pos0
 		{SemanticName = "TEXCOORD", SemanticIndex = 0, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 0,  InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 		// Attribute 1: pos1
@@ -924,9 +924,9 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 		{SemanticName = "TEXCOORD", SemanticIndex = 3, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 24, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 		// Attribute 4: color
 		{SemanticName = "TEXCOORD", SemanticIndex = 4, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 32, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		// Attribute 5: borderColor
+		// Attribute 5: border_color
 		{SemanticName = "TEXCOORD", SemanticIndex = 5, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 36, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		// Attribute 6: params - borderWidth, shapeParam, noTexture
+		// Attribute 6: params - border_width, shape_param, no_texture
 		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32_FLOAT,     InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 		// Attribute 7: mode - shape selector
 		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32_UINT,            InputSlot = 0, AlignedByteOffset = 52, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
@@ -935,11 +935,11 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 	}
 
 	hr = renderer.device->CreateInputLayout(
-		raw_data(inputElements),
-		u32(len(inputElements)),
-		vsBlob->GetBufferPointer(),
-		vsBlob->GetBufferSize(),
-		&renderer.inputLayout,
+		raw_data(input_elements),
+		u32(len(input_elements)),
+		vs_blob->GetBufferPointer(),
+		vs_blob->GetBufferSize(),
+		&renderer.input_layout,
 	)
 	if hr < 0 do return false
 

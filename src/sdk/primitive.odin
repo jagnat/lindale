@@ -18,7 +18,7 @@ DrawCommand :: b.DrawCommand
 MouseState :: b.MouseState
 MouseButton :: b.MouseButton
 
-ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
+color_f32_from_hex :: proc(hex: u32) -> ColorF32 {
 	r := f32((hex >> 24) & 0xFF) / 255.0
 	g := f32((hex >> 16) & 0xFF) / 255.0
 	b := f32((hex >>  8) & 0xFF) / 255.0
@@ -26,15 +26,15 @@ ColorF32_from_hex :: proc(hex: u32) -> ColorF32 {
 	return {r, g, b, a}
 }
 
-ColorU8_from_hex :: proc(hexCode: u32) -> ColorU8 {
-	r := u8((hexCode >> 24) & 0xFF)
-	g := u8((hexCode >> 16) & 0xFF)
-	b := u8((hexCode >> 8) & 0xFF)
-	a := u8(hexCode & 0xFF)
+color_u8_from_hex :: proc(hex_code: u32) -> ColorU8 {
+	r := u8((hex_code >> 24) & 0xFF)
+	g := u8((hex_code >> 16) & 0xFF)
+	b := u8((hex_code >> 8) & 0xFF)
+	a := u8(hex_code & 0xFF)
 	return {r, g, b, a}
 }
 
-ColorU8_lerp :: proc(from, to: ColorU8, t: f32) -> ColorU8 {
+color_u8_lerp :: proc(from, to: ColorU8, t: f32) -> ColorU8 {
 	t := clamp(t, 0, 1)
 	return {
 		u8(f32(from.r) + (f32(to.r) - f32(from.r)) * t),
@@ -44,7 +44,7 @@ ColorU8_lerp :: proc(from, to: ColorU8, t: f32) -> ColorU8 {
 	}
 }
 
-ColorF32_from_ColorU8 :: proc(col: ColorU8) -> ColorF32 {
+color_f32_from_color_u8 :: proc(col: ColorU8) -> ColorF32 {
 	r := f32(col.r) / 255.0
 	g := f32(col.g) / 255.0
 	b := f32(col.b) / 255.0

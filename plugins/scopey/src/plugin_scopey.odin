@@ -11,8 +11,8 @@ import "../../../src/dsp"
 import dit "../../../src/thirdparty/uFFT_DIT"
 
 @(export)
-GetPluginApi :: proc() -> sdk.PluginApi {
-	return sdk.fallbackApi
+get_plugin_api :: proc() -> sdk.PluginApi {
+	return sdk.FALLBACK_API
 }
 @(init)
 _register :: proc "contextless" () {
@@ -123,21 +123,21 @@ scopey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 }
 
 scopey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
-	actx := plug.audioProcessor
+	actx := plug.audio_processor
 	if actx == nil do return
 	if plug.state == nil do return
-	if actx.numChannels == 0 || actx.numSamples == 0 do return
+	if actx.num_channels == 0 || actx.num_samples == 0 do return
 	state := cast(^ScopeyProcessState)plug.state
 
-	n := actx.numSamples
-	num_channels := min(actx.numChannels, MAX_CHANNELS)
+	n := actx.num_samples
+	num_channels := min(actx.num_channels, MAX_CHANNELS)
 
 	// EMA decay per sample for the running mean-square, converted from the integration time
-	rms_decay := 1.0 - 1.0 / (f32(actx.sampleRate) * RMS_INTEGRATION_SEC)
+	rms_decay := 1.0 - 1.0 / (f32(actx.sample_rate) * RMS_INTEGRATION_SEC)
 	rms_input_gain := 1.0 - rms_decay
 
 	// Per-sample peak-follower release coeff from the fall rate; instant attack is the max() below
-	meter_release := math.pow(f32(10), -METER_RELEASE_DB_PER_SEC / (20 * f32(actx.sampleRate)))
+	meter_release := math.pow(f32(10), -METER_RELEASE_DB_PER_SEC / (20 * f32(actx.sample_rate)))
 
 	// Accumulate the mono mix as we DC-block each channel. Only [0..n) is used.
 	mono_buf: []f32 = make([]f32, RING_SIZE, allocator=context.temp_allocator)
@@ -179,14 +179,14 @@ scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 	process_state := cast(^ScopeyProcessState)plug.processor_peer.state
 	a := &state.analysis
 
-	if plug.processor_peer == nil || plug.processor_peer.audioProcessor == nil {
+	if plug.processor_peer == nil || plug.processor_peer.audio_processor == nil {
 		a.num_channels = 0
 		return
 	}
-	actx := plug.processor_peer.audioProcessor
-	a.sample_rate = f32(actx.sampleRate)
-	a.num_channels = min(actx.numChannels, MAX_CHANNELS)
-	dt := plug.frameDt
+	actx := plug.processor_peer.audio_processor
+	a.sample_rate = f32(actx.sample_rate)
+	a.num_channels = min(actx.num_channels, MAX_CHANNELS)
+	dt := plug.frame_dt
 
 	// The analytic ring advances on every process call. If it hasn't for a while, the host has
 	// stopped processing (bypass/disable) and we decay the display to rest
@@ -323,9 +323,9 @@ draw_canvas_frame :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component) {
 		x = comp.calc_bounds.x, y = comp.calc_bounds.y,
 		width = comp.calc_bounds.w, height = comp.calc_bounds.h,
 		color = {0, 0, 0, 0},
-		cornerRad = 10,
-		borderColor = {80, 80, 80, 255},
-		borderWidth = 1.2,
+		corner_rad = 10,
+		border_color = {80, 80, 80, 255},
+		border_width = 1.2,
 	})
 }
 
@@ -335,14 +335,14 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 	a := cast(^AnalysisFrame)data
 	if a == nil || a.sample_rate <= 0 do return
 
-	spectrum_offset_x :: 12
-	spectrum_offset_y :: 20
+	SPECTRUM_OFFSET_X :: 12
+	SPECTRUM_OFFSET_Y :: 20
 
 	// Adjust bounds to leave room for axes labels
-	bounds.x += spectrum_offset_x
+	bounds.x += SPECTRUM_OFFSET_X
 	bounds.y += 2
-	bounds.w -= spectrum_offset_x + 2
-	bounds.h -= spectrum_offset_y
+	bounds.w -= SPECTRUM_OFFSET_X + 2
+	bounds.h -= SPECTRUM_OFFSET_Y
 
 	FMIN :: f32(10)
 	FMAX :: f32(20000)
@@ -472,8 +472,8 @@ draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: 
 	sdk.draw_push_rect(dc, sdk.SimpleUIRect{
 		x = cx - radius, y = cy - radius,
 		width = radius * 2, height = radius * 2,
-		cornerRad = radius,
-		borderColor = grid_color, borderWidth = 1,
+		corner_rad = radius,
+		border_color = grid_color, border_width = 1,
 	})
 	sdk.draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, grid_color)
 	sdk.draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, grid_color)
@@ -552,7 +552,7 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 	bounds.h -= 8
 	bounds.x += METER_OFFSET_X
 	bounds.w -= METER_OFFSET_X
-	meterW := (bounds.w - STEREO_SPACING_PX) / 2
+	meter_w := (bounds.w - STEREO_SPACING_PX) / 2
 
 	MIN_DB, ORANGE_DB, RED_DB, MAX_DB :: f32(-60), f32(-12), f32(-6), f32(0)
 
@@ -580,7 +580,7 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 		for i in 0 ..< a.num_channels {
 			dbs := sdk.linear_to_decibels(is_peak ? a.peak[i] : a.rms[i])
 			if dbs < MIN_DB do continue
-			x := bounds.x + f32(i) * (meterW + STEREO_SPACING_PX)
+			x := bounds.x + f32(i) * (meter_w + STEREO_SPACING_PX)
 			prev_db := MIN_DB
 			for seg in segments {
 				top_db := min(dbs, seg.top_db)
@@ -589,8 +589,8 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 				y := bounds.y + bounds.h - pix_per_db * (top_db - MIN_DB)
 				color := is_peak ? seg.peak_color : seg.rms_color
 				sdk.draw_push_rect(ctx.plugin.draw, {
-					x = x, y = y, width = meterW, height = h,
-					color = color, cornerRad = 2,
+					x = x, y = y, width = meter_w, height = h,
+					color = color, corner_rad = 2,
 				})
 				prev_db = seg.top_db
 			}
@@ -608,11 +608,11 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 				break
 			}
 		}
-		x := bounds.x + f32(c) * (meterW + STEREO_SPACING_PX)
+		x := bounds.x + f32(c) * (meter_w + STEREO_SPACING_PX)
 		y := bounds.y + bounds.h - pix_per_db * (dbs - MIN_DB)
 		sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
-			x = x, y = y - PEAK_TICK_H / 2, width = meterW, height = PEAK_TICK_H,
-			color = col, cornerRad = 1,
+			x = x, y = y - PEAK_TICK_H / 2, width = meter_w, height = PEAK_TICK_H,
+			color = col, corner_rad = 1,
 		})
 	}
 }
@@ -623,17 +623,17 @@ scopey_draw :: proc(plug: ^sdk.PluginController) {
 	state := cast(^ScopeyControlState)plug.state
 	a := &state.analysis
 
-	sdk.draw_set_clear_color(plug.draw, sdk.ColorF32_from_ColorU8(plug.ui.theme.bg_color))
+	sdk.draw_set_clear_color(plug.draw, sdk.color_f32_from_color_u8(plug.ui.theme.bg_color))
 	// sdk.draw_set_clear_color(plug.draw, sdk.ColorF32{ 0, 1, 0, 1})
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .VERTICAL, sizing_horiz = {type = .GROW}, sizing_vert = {type = .GROW}, child_gaps = 10, padding = 10, skip_draw = true) {
-			if sdk.ui_panel(plug.ui, dir=.HORIZONTAL, sizing_horiz= {type = .GROW}, sizing_vert = {type = .GROW}, padding = 0, child_gaps = 10, skip_draw = true) {
+		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, dir=.Horizontal, sizing_horiz= {type = .Grow}, sizing_vert = {type = .Grow}, padding = 0, child_gaps = 10, skip_draw = true) {
 				// Goniometer
 				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a)
 				// Meter (rms plus peaks)
-				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = sdk.AxisSizing{type = .FIXED, value = 60})
+				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = sdk.AxisSizing{type = .Fixed, value = 60})
 				// david lu esque hilbert transform scope
 				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
 			}
