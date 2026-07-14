@@ -271,7 +271,8 @@ scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 		}
 
 		for v, i in time_slice do fft_buf[i] = complex64(v * state.fft_window[i])
-		dit.fft(&fft_buf[0], FFT_SIZE)
+		// dit.fft(&fft_buf[0], FFT_SIZE)
+		dsp.radix2_fft(fft_buf[:])
 		// dsp.smooth_brain_dft(&fft_buf)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.

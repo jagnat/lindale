@@ -65,7 +65,7 @@ build_plugin :: proc () {
 	// Make vst3 dir if not exist
 	os.make_directory_all(fmt.tprintf("out/%s.vst3/Contents/%s", plugin, subdir))
 
-	args := make([dynamic]string)
+	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "vst3",
 		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
