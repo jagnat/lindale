@@ -15,8 +15,7 @@ radix2_fft :: proc(buf: []complex64) {
 	size := u32(len(buf))
 	assert(intrinsics.count_ones(size) == 1, "Must use power of 2 for array size")
 
-	half := size / 2
-	twiddles := make([]complex64, half, allocator = context.temp_allocator)
+	twiddles := make([]complex64, size / 2, allocator = context.temp_allocator)
 	compute_twiddles(twiddles)
 
 	// Perform bit-reversal swap relative to the size of the array
