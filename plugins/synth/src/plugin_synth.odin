@@ -62,7 +62,7 @@ SynthProcessState :: struct {
 
 	// SPSC Queue for FFT
 	backing_buf: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
-	buffer: dsp.RingBuffer,
+	buffer: dsp.RingBuffer(dsp.Sample),
 }
 
 // Controller thread

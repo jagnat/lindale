@@ -14,10 +14,11 @@ Mode :: enum {
 	build,
 	hotbuild,
 	check,
+	standalone,
 }
 
 opts : struct {
-	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check"`,
+	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check | standalone"`,
 	release: bool `usage:"Specify a release build"`,
 	no_hot: bool `usage:"No hotloading"`,
 }
@@ -49,6 +50,8 @@ execute :: proc() {
 			build_hotloaded()
 		case .check:
 			check_plugin()
+		case .standalone:
+			build_standalone()
 	}
 }
 
@@ -140,6 +143,35 @@ BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 	symlink_plugin()
 }
 
+build_standalone :: proc() {
+	os.make_directory_all("out")
+
+	exe: string
+	when ODIN_OS == .Windows {
+		exe = fmt.tprintf("out/%s_standalone.exe", plugin)
+	} else {
+		exe = fmt.tprintf("out/%s_standalone", plugin)
+	}
+
+	args := make([dynamic]string, allocator = context.temp_allocator)
+	append(&args, "odin", "build", "standalone",
+		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
+		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
+		fmt.tprintf("-out:%s", exe),
+		opts.release ? "-o:speed" : "-debug")
+	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
+	ps: os.Process_State
+	exec(args[:], ps = &ps)
+	if !ps.success do os.exit(1)
+
+	if !opts.no_hot {
+		build_hotloaded()
+		symlink_hot_runtime()
+	}
+
+	fmt.println("Built", exe)
+}
+
 build_hotloaded :: proc() {
 	// Create out/hot if not exist
 	err := os.make_directory_all("out/hot")
@@ -179,11 +211,6 @@ symlink_plugin :: proc() {
 		vst3_link := fmt.tprintf("%s/Library/Audio/Plug-Ins/VST3/%s.vst3", home, plugin)
 		exec({"ln", "-sfn", fmt.tprintf("%s/out/%s.vst3", cwd, plugin), vst3_link})
 		fmt.println("Linked", vst3_link)
-
-		runtime_dir := fmt.tprintf("%s/Library/Application Support/jagi/%s", home, plugin)
-		os.make_directory_all(runtime_dir)
-		exec({"ln", "-sfn", fmt.tprintf("%s/out/hot", cwd), fmt.tprintf("%s/hot", runtime_dir)})
-		fmt.println("Linked", fmt.tprintf("%s/hot", runtime_dir))
 	} else when ODIN_OS == .Windows {
 		// Junctions (/J flag) need no admin, unlike symlinks
 		// The rmdir drops stale junction first
@@ -191,7 +218,26 @@ symlink_plugin :: proc() {
 		os.make_directory_all(vst3_dir)
 		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\%s.vst3", vst3_dir, plugin)})
 		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\%s.vst3", vst3_dir, plugin), fmt.tprintf("%s\\out\\%s.vst3", cwd, plugin)})
+	}
 
+	symlink_hot_runtime()
+}
+
+// link the hot dir at out/hot so the hotloader finds fresh DLLs
+symlink_hot_runtime :: proc() {
+	cwd, err := os.get_working_directory(context.allocator)
+	if err != nil {
+		fmt.println("Failed to get working directory!")
+		os.exit(1)
+	}
+
+	when ODIN_OS == .Darwin {
+		home := os.get_env("HOME", context.allocator)
+		runtime_dir := fmt.tprintf("%s/Library/Application Support/jagi/%s", home, plugin)
+		os.make_directory_all(runtime_dir)
+		exec({"ln", "-sfn", fmt.tprintf("%s/out/hot", cwd), fmt.tprintf("%s/hot", runtime_dir)})
+		fmt.println("Linked", fmt.tprintf("%s/hot", runtime_dir))
+	} else when ODIN_OS == .Windows {
 		runtime_dir := fmt.tprintf("%s\\jagi\\%s", os.get_env("APPDATA", context.allocator), plugin)
 		os.make_directory_all(runtime_dir)
 		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\hot", runtime_dir)})

@@ -7,31 +7,42 @@ import "core:thread"
 // SPSC (single-producer, single-consumer) lock-free ring buffer.
 // Buffer must be power-of-2 sized, externally provided.
 
-RingBuffer :: struct {
-	data: []Sample,
+RingBuffer :: struct($T: typeid) {
+	data: []T,
 	mask: int,
 	write_pos: int, // Only producer writes this
 	read_pos: int, // Only consumer writes this
 }
 
-ring_init :: proc(r: ^RingBuffer, buffer: []Sample) {
+ring_init :: proc(r: ^RingBuffer($T), buffer: []T) {
 	assert(len(buffer) > 0 && len(buffer) & (len(buffer) - 1) == 0, "ring buffer size must be power of 2")
 	r.data = buffer
 	r.mask = len(buffer) - 1
 	r.write_pos = 0
 	r.read_pos = 0
-	buf_clear(buffer)
+	for &v in buffer do v = {}
 }
 
-// Write one sample
-ring_write :: proc(r: ^RingBuffer, sample: Sample) {
+// Write one sample, overwriting the oldest when full (snapshot/visualization use)
+ring_write :: proc(r: ^RingBuffer($T), sample: T) {
 	pos := intrinsics.atomic_load_explicit(&r.write_pos, .Relaxed)
 	r.data[pos & r.mask] = sample
 	intrinsics.atomic_store_explicit(&r.write_pos, pos + 1, .Release)
 }
 
+// Write one sample only if there is room, so unread data is never overwritten.
+// Use with ring_read for consume-mode queues. Returns false when full
+ring_try_write :: proc(r: ^RingBuffer($T), sample: T) -> bool {
+	pos := intrinsics.atomic_load_explicit(&r.write_pos, .Relaxed)
+	rp := intrinsics.atomic_load_explicit(&r.read_pos, .Acquire)
+	if pos - rp >= len(r.data) do return false
+	r.data[pos & r.mask] = sample
+	intrinsics.atomic_store_explicit(&r.write_pos, pos + 1, .Release)
+	return true
+}
+
 // Write a block of samples
-ring_write_buf :: proc(r: ^RingBuffer, samples: []Sample) {
+ring_write_buf :: proc(r: ^RingBuffer($T), samples: []T) {
 	pos := intrinsics.atomic_load_explicit(&r.write_pos, .Relaxed)
 	for s in samples {
 		r.data[pos & r.mask] = s
@@ -41,7 +52,7 @@ ring_write_buf :: proc(r: ^RingBuffer, samples: []Sample) {
 }
 
 // How many unread samples are available
-ring_available :: proc(r: ^RingBuffer) -> int {
+ring_available :: proc(r: ^RingBuffer($T)) -> int {
 	wp := intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
 	rp := intrinsics.atomic_load_explicit(&r.read_pos, .Relaxed)
 	return wp - rp
@@ -51,7 +62,7 @@ ring_available :: proc(r: ^RingBuffer) -> int {
 // Does NOT advance read_pos — this is a snapshot for visualization.
 // Returns number of samples actually copied (may be less than count
 // if fewer than count samples have been written total).
-ring_read_latest :: proc(r: ^RingBuffer, dest: []Sample) -> int {
+ring_read_latest :: proc(r: ^RingBuffer($T), dest: []T) -> int {
 	count := len(dest)
 	wp := intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
 	available := min(count, wp, len(r.data))
@@ -63,7 +74,7 @@ ring_read_latest :: proc(r: ^RingBuffer, dest: []Sample) -> int {
 }
 
 // Current write position. Use to align snapshot reads across multiple rings.
-ring_get_write_pos :: proc(r: ^RingBuffer) -> int {
+ring_get_write_pos :: proc(r: ^RingBuffer($T)) -> int {
 	return intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
 }
 
@@ -71,7 +82,7 @@ ring_get_write_pos :: proc(r: ^RingBuffer) -> int {
 // Like ring_read_latest but with a caller-supplied end boundary so several rings
 // can be read against a common point without per-channel write_pos skew.
 // Does NOT advance read_pos. Returns number of samples copied.
-ring_read_window :: proc(r: ^RingBuffer, end: int, dest: []Sample) -> int {
+ring_read_window :: proc(r: ^RingBuffer($T), end: int, dest: []T) -> int {
 	available := min(len(dest), end, len(r.data))
 	start := end - available
 	for i in 0 ..< available {
@@ -83,7 +94,7 @@ ring_read_window :: proc(r: ^RingBuffer, end: int, dest: []Sample) -> int {
 // UI thread: read and consume up to len(dest) samples.
 // Advances read_pos. Use this for streaming consumption rather than snapshots.
 // Returns number of samples actually read.
-ring_read :: proc(r: ^RingBuffer, dest: []Sample) -> int {
+ring_read :: proc(r: ^RingBuffer($T), dest: []T) -> int {
 	wp := intrinsics.atomic_load_explicit(&r.write_pos, .Acquire)
 	rp := intrinsics.atomic_load_explicit(&r.read_pos, .Relaxed)
 	available := min(len(dest), wp - rp)
@@ -99,7 +110,7 @@ ring_read :: proc(r: ^RingBuffer, dest: []Sample) -> int {
 @(test)
 test_ring_write_read_latest :: proc(t: ^testing.T) {
 	buf: [8]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	ring_write(&r, 1)
@@ -117,7 +128,7 @@ test_ring_write_read_latest :: proc(t: ^testing.T) {
 @(test)
 test_ring_read_latest_more_than_available :: proc(t: ^testing.T) {
 	buf: [8]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	ring_write(&r, 5)
@@ -133,7 +144,7 @@ test_ring_read_latest_more_than_available :: proc(t: ^testing.T) {
 @(test)
 test_ring_read_latest_is_snapshot :: proc(t: ^testing.T) {
 	buf: [8]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	ring_write(&r, 1)
@@ -152,7 +163,7 @@ test_ring_read_latest_is_snapshot :: proc(t: ^testing.T) {
 @(test)
 test_ring_write_buf :: proc(t: ^testing.T) {
 	buf: [8]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	samples := [4]Sample{10, 20, 30, 40}
@@ -169,7 +180,7 @@ test_ring_write_buf :: proc(t: ^testing.T) {
 @(test)
 test_ring_wraparound :: proc(t: ^testing.T) {
 	buf: [4]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	// Write 6 samples into a 4-slot buffer - wraps around
@@ -190,7 +201,7 @@ test_ring_wraparound :: proc(t: ^testing.T) {
 @(test)
 test_ring_read_consume :: proc(t: ^testing.T) {
 	buf: [8]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	ring_write(&r, 1)
@@ -216,7 +227,7 @@ test_ring_read_consume :: proc(t: ^testing.T) {
 @(test)
 test_ring_empty :: proc(t: ^testing.T) {
 	buf: [4]Sample
-	r: RingBuffer
+	r: RingBuffer(Sample)
 	ring_init(&r, buf[:])
 
 	testing.expect_value(t, ring_available(&r), 0)
@@ -236,7 +247,7 @@ test_ring_spsc_threaded :: proc(t: ^testing.T) {
 	TOTAL :: 200_000
 
 	Shared :: struct {
-		r: RingBuffer,
+		r: RingBuffer(Sample),
 		buf: [BUF_SIZE]Sample,
 		consumer_ok: bool,
 		consumer_count: int,

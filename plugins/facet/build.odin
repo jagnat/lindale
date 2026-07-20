@@ -1,4 +1,4 @@
-package scopey
+package facet
 
 import "../../src/build"
 

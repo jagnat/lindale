@@ -1,4 +1,4 @@
-package scopey
+package facet
 
 import "base:intrinsics"
 import "core:fmt"
@@ -8,7 +8,6 @@ import "core:log"
 import "../../../src/sdk"
 import b "../../../src/bridge"
 import "../../../src/dsp"
-import dit "../../../src/thirdparty/uFFT_DIT"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {
@@ -16,7 +15,7 @@ get_plugin_api :: proc() -> sdk.PluginApi {
 }
 @(init)
 _register :: proc "contextless" () {
-	sdk.register_plugin(scopey_api)
+	sdk.register_plugin(facet_api)
 }
 
 FFT_SIZE :: 4096
@@ -48,9 +47,9 @@ AGC_RELEASE :: f32(0.04) // smoothing toward larger gains (quieter signal); ~400
 INACTIVE_THRESHOLD_SEC :: f32(0.15)
 INACTIVE_TRAIL_DECAY :: f32(0.85)
 
-ScopeyProcessState :: struct {
+FacetProcessState :: struct {
 	backing_bufs: [MAX_CHANNELS][RING_SIZE]f32,
-	rings: [MAX_CHANNELS]dsp.RingBuffer,
+	rings: [MAX_CHANNELS]dsp.RingBuffer(dsp.Sample),
 	dc_blockers: [MAX_CHANNELS]dsp.DCBlocker,
 
 	peak: [MAX_CHANNELS]f32,
@@ -63,12 +62,13 @@ ScopeyProcessState :: struct {
 	hilbert_delay: [HILBERT_DELAY]f32,
 	hilbert_fir: dsp.HilbertFIR,
 	analytic_buf: [RING_SIZE * 2]f32, // interleaved (r, im) pairs
-	analytic_ring: dsp.RingBuffer,
+	analytic_ring: dsp.RingBuffer(dsp.Sample),
 }
 
-ScopeyControlState :: struct {
+FacetControlState :: struct {
 	fft_window: [FFT_SIZE]f32,
 	fft_window_gain: f32,
+	fft: dsp.Radix2FFT,
 
 	analysis: AnalysisFrame,
 }
@@ -102,16 +102,16 @@ AnalysisFrame :: struct {
 	silence_age: f32, // seconds since the processor last produced samples
 }
 
-@(rodata) scopey_param_table := [?]b.ParamDescriptor {
+@(rodata) facet_param_table := [?]b.ParamDescriptor {
 }
 
-scopey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
+facet_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
-		name = "Scopey",
+		name = "Facet",
 		vendor = "JagI",
 		version = "0.0.1",
 		plugin_type = .Effect,
-		params = scopey_param_table[:],
+		params = facet_param_table[:],
 		max_channels = MAX_CHANNELS,
 
 		view = sdk.ViewConfig {
@@ -122,12 +122,12 @@ scopey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	}
 }
 
-scopey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
+facet_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	actx := plug.audio_processor
 	if actx == nil do return
 	if plug.state == nil do return
 	if actx.num_channels == 0 || actx.num_samples == 0 do return
-	state := cast(^ScopeyProcessState)plug.state
+	state := cast(^FacetProcessState)plug.state
 
 	n := actx.num_samples
 	num_channels := min(actx.num_channels, MAX_CHANNELS)
@@ -174,15 +174,16 @@ scopey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	}
 }
 
-scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
-	state := cast(^ScopeyControlState)plug.state
-	process_state := cast(^ScopeyProcessState)plug.processor_peer.state
+facet_run_analysis :: proc(plug: ^sdk.PluginController) {
+	state := cast(^FacetControlState)plug.state
 	a := &state.analysis
 
 	if plug.processor_peer == nil || plug.processor_peer.audio_processor == nil {
 		a.num_channels = 0
 		return
 	}
+
+	process_state := cast(^FacetProcessState)plug.processor_peer.state
 	actx := plug.processor_peer.audio_processor
 	a.sample_rate = f32(actx.sample_rate)
 	a.num_channels = min(actx.num_channels, MAX_CHANNELS)
@@ -271,9 +272,7 @@ scopey_run_analysis :: proc(plug: ^sdk.PluginController) {
 		}
 
 		for v, i in time_slice do fft_buf[i] = complex64(v * state.fft_window[i])
-		// dit.fft(&fft_buf[0], FFT_SIZE)
-		dsp.radix2_fft(fft_buf[:])
-		// dsp.smooth_brain_dft(&fft_buf)
+		dsp.radix2_fft(fft_buf[:], state.fft)
 
 		// FFT_SIZE/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
 		norm := f32(FFT_SIZE / 2) * state.fft_window_gain
@@ -619,9 +618,9 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 }
 
 // Main draw proc
-scopey_draw :: proc(plug: ^sdk.PluginController) {
-	scopey_run_analysis(plug)
-	state := cast(^ScopeyControlState)plug.state
+facet_draw :: proc(plug: ^sdk.PluginController) {
+	facet_run_analysis(plug)
+	state := cast(^FacetControlState)plug.state
 	a := &state.analysis
 
 	sdk.draw_set_clear_color(plug.draw, sdk.color_f32_from_color_u8(plug.ui.theme.bg_color))
@@ -646,8 +645,8 @@ scopey_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_submit(plug.draw)
 }
 
-scopey_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
-	state := new(ScopeyControlState, allocator = plug.host.session_allocator)
+facet_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
+	state := new(FacetControlState, allocator = plug.host.session_allocator)
 	dsp.window_fill(state.fft_window[:], .Hann)
 	state.fft_window_gain = dsp.window_coherent_gain(state.fft_window[:])
 	// Init smoothed to floor (-100db)
@@ -656,14 +655,15 @@ scopey_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
 			state.analysis.fft_smooth_db[c][i] = DB_FLOOR
 		}
 	}
+	state.fft = dsp.radix2_fft_init(FFT_SIZE)
 	state.analysis.agc_gain = 1
 	state.analysis.gonio_gain = 1
 
 	return state
 }
 
-scopey_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
-	state := new(ScopeyProcessState, allocator = plug.host.session_allocator)
+facet_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
+	state := new(FacetProcessState, allocator = plug.host.session_allocator)
 	for c in 0 ..< MAX_CHANNELS {
 		dsp.ring_init(&state.rings[c], state.backing_bufs[c][:])
 		dsp.dc_blocker_init(&state.dc_blockers[c], 0.999) // ~7.6 Hz cutoff at 48k
@@ -674,17 +674,17 @@ scopey_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 	return state
 }
 
-scopey_api :: sdk.PluginApi {
-	get_plugin_descriptor = scopey_get_plugin_descriptor,
-	process_audio         = scopey_process_audio,
-	draw                  = scopey_draw,
+facet_api :: sdk.PluginApi {
+	get_plugin_descriptor = facet_get_plugin_descriptor,
+	process_audio         = facet_process_audio,
+	draw                  = facet_draw,
 
-	setup_controller      = scopey_setup_controller,
+	setup_controller      = facet_setup_controller,
 	view_attached         = nil,
 	view_removed          = nil,
 	view_resized          = nil,
 
-	setup_processor       = scopey_setup_processor,
+	setup_processor       = facet_setup_processor,
 	get_latency_samples   = nil,
 	get_tail_samples      = nil,
 	reset                 = nil,
