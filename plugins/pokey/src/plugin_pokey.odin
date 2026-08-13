@@ -136,7 +136,7 @@ pokey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 		params = pokey_param_table[:],
 		max_channels = MAX_CHANNELS,
 		view = {
-			min_width = 640, min_height = 480,
+			min_width = 890, min_height = 400,
 			resizable = true,
 		}
 	}
@@ -416,23 +416,6 @@ pokey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 
 // UI
 
-@(private="file")
-pokey_machine_to_string :: proc(val: f64) -> string {
-	return val < 0.5 ? "NTSC" : "PAL"
-}
-
-@(private="file")
-pokey_timbre_to_string :: proc(val: f64) -> string {
-	switch timbre_from_param(f32(val)) {
-	case .Pure: return "Pure"
-	case .Gritty: return "Gritty"
-	case .Buzzy: return "Buzzy"
-	case .Unstable: return "Unstable"
-	case .Bass16: return "Bass 16"
-	}
-	return ""
-}
-
 pokey_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_set_clear_color(plug.draw, plug.ui.theme.bg_color)
 	sdk.draw_clear(plug.draw)
@@ -443,7 +426,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 			if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 14, padding = 0) {
 				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Timbre")
-					sdk.ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = pokey_timbre_to_string)
+					sdk.ui_knob_param_labeled(ui, PARAM_TIMBRE, enum_to_string = sdk.enum_label(PokeyTimbre))
 				}
 				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
 					sdk.ui_label(ui, "Envelope")
@@ -476,7 +459,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 					sdk.ui_label(ui, "Tune")
 					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
 						sdk.ui_knob_param_labeled(ui, PARAM_DETUNE)
-						sdk.ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = pokey_machine_to_string)
+						sdk.ui_knob_param_labeled(ui, PARAM_MACHINE, enum_to_string = sdk.enum_label(dsp.PokeyMachine))
 					}
 				}
 			}

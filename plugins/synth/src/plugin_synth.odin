@@ -464,18 +464,6 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_set_clear_color(plug.draw, sdk.color_f32_from_color_u8(plug.ui.theme.bg_color))
 	sdk.draw_clear(plug.draw)
 
-	osc_enum_to_string :: proc(val: f64) -> string {
-		waveform := waveform_from_param(f32(val))
-		switch waveform {
-			case .Sine: return "Sine"
-			case .Saw: return "Saw"
-			case .Square: return "Square"
-			case .Triangle: return "Triangle"
-			case .Noise: return "Noise"
-		}
-		return ""
-	}
-	
 	arp_rate_to_string :: proc(val: f64) -> string {
 		switch int(val + 0.5) {
 		case 0: return "1/4"
@@ -540,8 +528,8 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 			}
 			// Oscillator param
 			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 0, skip_draw = true) {
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = osc_enum_to_string)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = osc_enum_to_string)
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = sdk.enum_label(dsp.Waveform))
+				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = sdk.enum_label(dsp.Waveform))
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
 				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
 			}
