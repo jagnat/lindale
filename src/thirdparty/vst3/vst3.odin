@@ -62,6 +62,8 @@ BusType :: enum i32 {
 }
 TBool :: u8
 SpeakerArrangement :: u64
+kEmpty : SpeakerArrangement : 0
+kMono : SpeakerArrangement : 1 << 19 // kSpeakerM, not bit 0
 kStereo : SpeakerArrangement : 1 << 0 | 1 << 1
 SymbolicSampleSize :: enum i32 {
 	Sample32 = 0,

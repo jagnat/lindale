@@ -19,6 +19,7 @@ import "core:unicode/utf16"
 import "core:thread"
 import "base:runtime"
 import "base:builtin"
+import "base:intrinsics"
 import "core:log"
 import "core:time"
 import "core:hash"
@@ -125,6 +126,9 @@ LindaleProcessor :: struct {
 	bypass_param_idx: int,
 	bypassed: bool,
 
+	input_arrangement: vst3.SpeakerArrangement,
+	output_arrangement: vst3.SpeakerArrangement,
+
 	peer: ^vst3.IConnectionPoint,
 	host_application: ^vst3.IHostApplication,
 	host_context: ^vst3.FUnknown,
@@ -142,10 +146,24 @@ BYPASS_PARAM_DESC :: bridge.ParamDescriptor {
 	flags = {.Automatable},
 }
 
+// Speaker arrangements are bit masks, one bit per speaker, so the channel count is a popcount.
+// We validate the count and store the host's mask verbatim rather than interpreting the layout
+arrangement_channel_count :: proc(arr: vst3.SpeakerArrangement) -> int {
+	return int(intrinsics.count_ones(arr))
+}
+
+default_arrangement :: proc(max_channels: int) -> vst3.SpeakerArrangement {
+	return vst3.kStereo if max_channels >= 2 else vst3.kMono
+}
+
 create_lindale_processor :: proc() -> ^LindaleProcessor {
 	log.info("create_lindale_processor")
 	processor := new(LindaleProcessor)
 	processor.ref_count = 0
+
+	desc := plugin_factory.desc
+	processor.output_arrangement = default_arrangement(desc.max_channels)
+	processor.input_arrangement = vst3.kEmpty if desc.plugin_type == .Instrument else processor.output_arrangement
 
 	processor.component_vtable = {
 		queryInterface = lp_comp_queryInterface,
@@ -362,9 +380,10 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 
 		if type == .Audio {
 			if is_instrument && dir == .Input do return vst3.kInvalidArgument
+			arrangement := processor.input_arrangement if dir == .Input else processor.output_arrangement
 			bus.mediaType = type
 			bus.direction = dir
-			bus.channelCount = 2
+			bus.channelCount = i32(arrangement_channel_count(arrangement))
 			utf16.encode_string(bus.name[:], "Main")
 			bus.busType = .Main
 			bus.flags = u32(vst3.BusFlags.kDefaultActive)
@@ -446,6 +465,8 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		log.info("lp_ap_release")
 		return lp_releaseImplementation(processor)
 	}
+	// Accepting here is a promise that we reconfigured to exactly these arrangements. Rejecting
+	// obliges us to leave ourselves in a layout we do support, which the host then reads back
 	lp_ap_setBusArrangements :: proc "system" (
 		this: rawptr,
 		inputs: ^vst3.SpeakerArrangement,
@@ -453,7 +474,41 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		outputs: ^vst3.SpeakerArrangement,
 		numOuts: i32
 	) -> vst3.TResult {
-		return vst3.kResultOk
+		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audio_processor")
+		context = processor.ctx
+		desc := plugin_api.get_plugin_descriptor()
+		is_instrument := desc.plugin_type == .Instrument
+
+		reject :: proc(processor: ^LindaleProcessor, max_channels: int, is_instrument: bool) -> vst3.TResult {
+			processor.output_arrangement = default_arrangement(max_channels)
+			processor.input_arrangement = vst3.kEmpty if is_instrument else processor.output_arrangement
+			return vst3.kResultFalse
+		}
+
+		expected_ins := i32(0) if is_instrument else i32(1)
+		if numOuts != 1 || numIns != expected_ins || outputs == nil {
+			return reject(processor, desc.max_channels, is_instrument)
+		}
+
+		out_arr := outputs^
+		out_count := arrangement_channel_count(out_arr)
+		if out_count < 1 || out_count > desc.max_channels {
+			return reject(processor, desc.max_channels, is_instrument)
+		}
+
+		in_arr := vst3.kEmpty
+		if !is_instrument {
+			if inputs == nil do return reject(processor, desc.max_channels, is_instrument)
+			in_arr = inputs^
+			// Matching counts keeps the per-channel process loop honest
+			if arrangement_channel_count(in_arr) != out_count {
+				return reject(processor, desc.max_channels, is_instrument)
+			}
+		}
+
+		processor.input_arrangement = in_arr
+		processor.output_arrangement = out_arr
+		return vst3.kResultTrue
 	}
 	lp_ap_getBusArrangement :: proc "system" (
 		this: rawptr,
@@ -461,11 +516,11 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		index: i32,
 		arr: ^vst3.SpeakerArrangement
 	) -> vst3.TResult {
-		if arr == nil do return vst3.kInvalidArgument
+		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audio_processor")
+		context = processor.ctx
+		if arr == nil || index != 0 do return vst3.kInvalidArgument
 
-		if index == 0 {
-			arr^ = vst3.kStereo
-		}
+		arr^ = processor.input_arrangement if dir == .Input else processor.output_arrangement
 		return vst3.kResultOk
 	}
 	lp_ap_canProcessSampleSize :: proc "system" (this: rawptr, sss: vst3.SymbolicSampleSize) -> vst3.TResult {
@@ -706,16 +761,23 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 			for c in 0 ..< nc {
 				audio_context.outputs[c] = output.channelBuffers32[c][:num_samples]
 			}
+			// Negotiation should prevent this, but a channel the plugin can't see still has to
+			// be filled or the host reads whatever was left in its buffer
+			for c in nc ..< int(output.numChannels) {
+				for s in 0 ..< num_samples {
+					output.channelBuffers32[c][s] = 0
+				}
+			}
+		}
+		// Cleared first so a narrower input bus can't leave stale slices from an earlier call
+		for c in 0 ..< desc.max_channels {
+			audio_context.inputs[c] = nil
 		}
 		if num_inputs > 0 {
 			input := inputs[0]
 			nc := min(int(input.numChannels), desc.max_channels)
 			for c in 0 ..< nc {
 				audio_context.inputs[c] = input.channelBuffers32[c][:num_samples]
-			}
-		} else {
-			for c in 0 ..< audio_context.num_channels {
-				audio_context.inputs[c] = nil
 			}
 		}
 
