@@ -33,8 +33,8 @@ jobs:
       # The plugin check never compiles vst_host/platform_specific, so check the
       # static layer once (picks up per-OS platform code)
       - name: Check host layer
-        working-directory: plugins/scopey
-        run: odin check vst3 -define:PLUGIN_NAME=scopey -define:HOT_DLL=true -no-entry-point
+        working-directory: plugins/facet
+        run: odin check vst3 -define:PLUGIN_NAME=facet -define:HOT_DLL=true -no-entry-point
 
       - name: Test dsp
         run: odin test src/dsp
