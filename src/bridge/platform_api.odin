@@ -100,20 +100,19 @@ DrawCommand :: struct {
 MAX_INSTANCES :: 256 * 1024 * 1024 / size_of(DrawInstance)
 MAX_TEXTURES :: 64
 
-// Renderer handle - platform specific implementation
 Renderer :: distinct rawptr
 
-// Renderer size info - logical coordinates for UI, physical for actual rendering
+// logical coordinates for UI, physical for actual rendering
 RendererSize :: struct {
-	logical_width: i32,   // Width in points (use this for UI layout)
-	logical_height: i32,  // Height in points (use this for UI layout)
-	scale_factor: f32,    // DPI scale (1.0 = standard, 2.0 = retina)
+	logical_width: i32,   // Width in points
+	logical_height: i32,  // Height in points
+	scale_factor: f32,    // DPI scale
 	physical_width: i32,  // Actual drawable pixels
 	physical_height: i32, // Actual drawable pixels
 }
 
 // Host-provided resources passed to the hot-loaded plugin.
-// Allocated and owned by the static VST layer, survives hot-reloads.
+// Allocated and owned by the static layer, survives hot-reloads.
 HostContext :: struct {
 	params: ^ParamValues,
 	platform: ^PlatformApi,

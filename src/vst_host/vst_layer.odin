@@ -146,8 +146,7 @@ BYPASS_PARAM_DESC :: bridge.ParamDescriptor {
 	flags = {.Automatable},
 }
 
-// Speaker arrangements are bit masks, one bit per speaker, so the channel count is a popcount.
-// We validate the count and store the host's mask verbatim rather than interpreting the layout
+// one bit per speaker
 arrangement_channel_count :: proc(arr: vst3.SpeakerArrangement) -> int {
 	return int(intrinsics.count_ones(arr))
 }
@@ -465,8 +464,8 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		log.info("lp_ap_release")
 		return lp_releaseImplementation(processor)
 	}
-	// Accepting here is a promise that we reconfigured to exactly these arrangements. Rejecting
-	// obliges us to leave ourselves in a layout we do support, which the host then reads back
+	// accept = we support this config
+	// reject = tell host what we do accept
 	lp_ap_setBusArrangements :: proc "system" (
 		this: rawptr,
 		inputs: ^vst3.SpeakerArrangement,
@@ -500,7 +499,6 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		if !is_instrument {
 			if inputs == nil do return reject(processor, desc.max_channels, is_instrument)
 			in_arr = inputs^
-			// Matching counts keeps the per-channel process loop honest
 			if arrangement_channel_count(in_arr) != out_count {
 				return reject(processor, desc.max_channels, is_instrument)
 			}
@@ -761,15 +759,15 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 			for c in 0 ..< nc {
 				audio_context.outputs[c] = output.channelBuffers32[c][:num_samples]
 			}
-			// Negotiation should prevent this, but a channel the plugin can't see still has to
-			// be filled or the host reads whatever was left in its buffer
+			// TODO: Can we optimize this? need to zero buffers the plugin can't see
+			// bc we support more than 2 translucently
 			for c in nc ..< int(output.numChannels) {
 				for s in 0 ..< num_samples {
 					output.channelBuffers32[c][s] = 0
 				}
 			}
 		}
-		// Cleared first so a narrower input bus can't leave stale slices from an earlier call
+		// cleared first so a narrower input bus can't leave stale slices from an earlier call
 		for c in 0 ..< desc.max_channels {
 			audio_context.inputs[c] = nil
 		}

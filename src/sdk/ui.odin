@@ -50,6 +50,13 @@ UITheme :: struct {
 	toggle_width: f32,
 	toggle_height: f32,
 	toggle_thumb_margin: f32,
+
+	popup_bg_color: ColorU8,
+	popup_border_color: ColorU8,
+	menu_item_hover_color: ColorU8,
+	menu_item_height: f32,
+	menu_gap: f32,
+	chevron_size: f32,
 }
 
 DEFAULT_THEME : UITheme : {
@@ -92,6 +99,13 @@ DEFAULT_THEME : UITheme : {
 	toggle_width = 40,
 	toggle_height = 22,
 	toggle_thumb_margin = 3,
+
+	popup_bg_color = {0x45, 0x47, 0x49, 0xff},
+	popup_border_color = {0x61, 0x63, 0x65, 0xff},
+	menu_item_hover_color = {0x4c, 0x87, 0xc8, 0xff},
+	menu_item_height = 24,
+	menu_gap = 4,
+	chevron_size = 8,
 }
 
 THEME_JQ : UITheme : {
@@ -134,6 +148,13 @@ THEME_JQ : UITheme : {
 	toggle_width = 40,
 	toggle_height = 22,
 	toggle_thumb_margin = 3,
+
+	popup_bg_color = {0x26, 0x28, 0x23, 0xff},
+	popup_border_color = {0xe9, 0xe6, 0xde, 0xff},
+	menu_item_hover_color = {0x3d, 0x47, 0x32, 0xff},
+	menu_item_height = 24,
+	menu_gap = 4,
+	chevron_size = 8,
 }
 
 // Persists across frames; call any time, e.g. once in view_attached
@@ -147,6 +168,14 @@ SliderOrientation :: enum { Vertical, Horizontal }
 AlignX :: enum { Left, Center, Right, }
 AlignY :: enum { Top, Center, Bottom, }
 SizingType :: enum { Fixed, Fit, Grow, Percent }
+
+FloatingAnchor :: enum {
+	Inside,
+	OutsideBottom,
+	OutsideTop,
+	OutsideLeft,
+	OutsideRight,
+}
 
 AxisSizing :: struct {
 	type: SizingType,
@@ -164,10 +193,13 @@ ComponentType :: enum {
 	Toggle,
 	Knob,
 	Canvas,
+	DropDown,
+	DropDownItem,
 }
 
 PanelData :: struct {
 	skip_draw: bool,
+	popup: bool,
 }
 
 LabelData :: struct {
@@ -177,7 +209,6 @@ LabelData :: struct {
 
 ButtonData :: struct {
 	label: string,
-	id: u32,
 }
 
 FloatBinding :: struct {
@@ -204,24 +235,35 @@ ToggleBinding :: union {
 }
 
 SliderData :: struct {
-	id: u32,
 	orientation: SliderOrientation,
 	binding: ValueBinding,
 }
 
 ToggleData :: struct {
-	id: u32,
 	binding: ToggleBinding,
 }
 
 KnobData :: struct {
-	id: u32,
 	binding: ValueBinding,
 }
 
 CanvasData :: struct {
 	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
 	data: rawptr
+}
+
+DropDownData :: struct {
+	choices: []string,
+	binding: ValueBinding,
+}
+
+DropDownItemData :: struct {
+	owner_id: u32,
+	index: int,
+	count: int,
+	text: string,
+	selected: bool,
+	binding: ValueBinding,
 }
 
 ComponentData :: union {
@@ -232,10 +274,13 @@ ComponentData :: union {
 	ToggleData,
 	KnobData,
 	CanvasData,
+	DropDownData,
+	DropDownItemData,
 }
 
 Component :: struct {
 	type: ComponentType,
+	id: u32, // zero = doesn't want input
 	sizing_horiz, sizing_vert: AxisSizing,
 
 	direction: LayoutDirection,
@@ -243,10 +288,13 @@ Component :: struct {
 	align_x: AlignX,
 	align_y: AlignY,
 
-	// Floating components are excluded from flow layout and drawn on top.
-	// Positioned against the parent content box via align_x/align_y plus float_offset
+	// Floating components are excluded from flow layout, drawn on top, clamped to the root.
+	// Inside positions against the parent content box, Outside* against its border box
 	floating: bool,
-	float_offset: Vec2f,
+	float_offset: Vec2f, // Outside*: gap on the anchor axis, nudge on the cross axis
+	float_anchor: FloatingAnchor,
+	float_flip: bool, // use the opposite side when the preferred one is clipped
+	blocks_input: bool, // swallows hover for anything underneath
 
 	// w and h are calculated first, then finally x and y
 	calc_bounds: RectF32,
@@ -290,6 +338,12 @@ UIContext :: struct {
 	mouse: MouseState,
 	theme: UITheme,
 
+	// One popup open at a time. Component construction reads this a frame behind
+	// the interact pass that writes it
+	open_popup_id: u32,
+	open_popup_frame: u32, // suppresses close-on-click-outside on the frame a popup opened
+	popup_blocks_mouse: bool,
+
 	// Id scoping
 	id_seed_stack: [UI_MAX_DEPTH]u32,
 	id_seed_count: int,
@@ -302,10 +356,14 @@ UIContext :: struct {
 	plugin: ^PluginController
 }
 
-// Widget ids hash the label with the current scope seed, so
-// duplicate labels are distinct in different scopes
-ui_make_id :: proc(ctx: ^UIContext, label: string) -> u32 {
+// Salted with the call site, so the same label at two places in the source is
+// distinct without manual scoping. Widgets built in a loop share a call site --
+// scope those with ui_push_id. Ids change on rebuild since line numbers move
+ui_make_id :: proc(ctx: ^UIContext, label: string, loc := #caller_location) -> u32 {
 	id := string_hash_u32(label)
+	id = (id ~ string_hash_u32(loc.file_path)) * 0x01000193
+	id = (id ~ u32(loc.line)) * 0x01000193
+	id = (id ~ u32(loc.column)) * 0x01000193
 	if ctx.id_seed_count > 0 {
 		id = (id ~ ctx.id_seed_stack[ctx.id_seed_count - 1]) * 0x01000193
 	}
@@ -430,10 +488,11 @@ ui_canvas :: proc(ctx: ^UIContext,
 	ui_close_component(ctx)
 }
 
-ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .Left, min_width: f32 = 0, size: f32 = 0) {
+ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .Left, align_y: AlignY = .Top, min_width: f32 = 0, size: f32 = 0) {
 	comp := ui_open_component(ctx)
 	comp.type = .Label
 	comp.align_x = align_x
+	comp.align_y = align_y
 	resolved_size := size if size > 0 else ctx.theme.font_size
 	text_size := draw_measure_text(ctx.plugin.draw, text, resolved_size)
 	comp.sizing_horiz = {type = .Fixed, value = math.max(text_size.x, min_width)}
@@ -442,8 +501,8 @@ ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .Left, min_wid
 	ui_close_component(ctx)
 }
 
-ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
-	id := ui_make_id(ctx, label)
+ui_button :: proc(ctx: ^UIContext, label: string, loc := #caller_location) -> bool {
+	id := ui_make_id(ctx, label, loc)
 	clicked := ctx.last_clicked_id == id
 	if clicked do ctx.last_clicked_id = 0
 
@@ -453,13 +512,14 @@ ui_button :: proc(ctx: ^UIContext, label: string) -> bool {
 	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.font_state, ctx.theme.font_size)
 	comp.sizing_horiz = {type = .Fixed, value = text_size.x + ctx.theme.padding * 2}
 	comp.sizing_vert = {type = .Fixed, value = (ascent - descent) + ctx.theme.padding * 2}
-	comp.data = ButtonData{label = label, id = id}
+	comp.id = id
+	comp.data = ButtonData{label = label}
 	ui_close_component(ctx)
 	return clicked
 }
 
-ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .Vertical, align_x: AlignX = .Center, align_y: AlignY = .Center) {
-	id := ui_make_id(ctx, label)
+ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .Vertical, align_x: AlignX = .Center, align_y: AlignY = .Center, loc := #caller_location) {
+	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Slider
 	if orientation == .Vertical {
@@ -471,11 +531,12 @@ ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orienta
 		comp.sizing_horiz = {type = .Grow, min = 100, max = 500}
 		comp.sizing_vert = {type = .Fixed, value = ctx.theme.slider_width}
 	}
-	comp.data = SliderData{id, orientation, binding}
+	comp.id = id
+	comp.data = SliderData{orientation, binding}
 	ui_close_component(ctx)
 }
 
-ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -484,12 +545,12 @@ ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_
 	comp.sizing_horiz = {type = .Fit}
 	comp.sizing_vert = {type = .Grow}
 	ui_param_value_label(ctx, param_idx, enum_to_string)
-	ui_slider(ctx, desc.name, ParamBinding{param_idx})
+	ui_slider(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
 	ui_label(ctx, desc.name, align_x = .Center)
 	ui_close_component(ctx)
 }
 
-ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -498,22 +559,93 @@ ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_t
 	comp.sizing_horiz = {type = .Grow}
 	comp.sizing_vert = {type = .Fit}
 	ui_label(ctx, desc.name)
-	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .Horizontal)
+	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .Horizontal, loc = loc)
 	ui_param_value_label(ctx, param_idx, enum_to_string, align_x = .Right)
 	ui_close_component(ctx)
 }
 
-ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding) {
-	id := ui_make_id(ctx, label)
+ui_drop_down :: proc(ctx: ^UIContext, label: string, choices: []string, binding: ValueBinding, loc := #caller_location) {
+	id := ui_make_id(ctx, label, loc)
+	open := ctx.open_popup_id == id
+
+	widest: f32
+	for choice in choices {
+		widest = math.max(widest, draw_measure_text(ctx.plugin.draw, choice, ctx.theme.font_size).x)
+	}
+	item_w := widest + ctx.theme.padding * 3
+
+	box := ui_open_component(ctx)
+	box.type = .DropDown
+	box.id = id
+	box.sizing_horiz = {type = .Fixed, value = item_w + ctx.theme.chevron_size + ctx.theme.padding}
+	box.sizing_vert = {type = .Fixed, value = ctx.theme.menu_item_height}
+	box.data = DropDownData{choices = choices, binding = binding}
+
+	if open {
+		selected := binding_norm_to_index(ctx, binding, len(choices))
+		popup := ui_open_component(ctx)
+		popup.type = .Panel
+		popup.data = PanelData{popup = true}
+		popup.direction = .Vertical
+		popup.floating = true
+		popup.float_anchor = .OutsideBottom
+		popup.float_flip = true
+		popup.blocks_input = true
+		popup.float_offset = {0, ctx.theme.menu_gap}
+		popup.child_gaps = 0
+		popup.sizing_horiz = {type = .Fit, padding = ctx.theme.menu_gap}
+		popup.sizing_vert = {type = .Fit, padding = ctx.theme.menu_gap}
+
+		ui_push_id_string(ctx, label)
+		for choice, i in choices {
+			ui_push_id_index(ctx, i) // choice text may repeat
+			item := ui_open_component(ctx)
+			item.type = .DropDownItem
+			item.id = ui_make_id(ctx, choice)
+			item.sizing_horiz = {type = .Fixed, value = item_w}
+			item.sizing_vert = {type = .Fixed, value = ctx.theme.menu_item_height}
+			item.data = DropDownItemData {
+				owner_id = id,
+				index = i,
+				count = len(choices),
+				text = choice,
+				selected = i == selected,
+				binding = binding,
+			}
+			ui_close_component(ctx)
+			ui_pop_id(ctx)
+		}
+		ui_pop_id(ctx)
+		ui_close_component(ctx)
+	}
+	ui_close_component(ctx)
+}
+
+// Choices come from the param's step_count, formatted through enum_to_string
+ui_drop_down_param :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
+	desc := plugin_api().get_plugin_descriptor().params[param_idx]
+	count := int(desc.step_count) + 1
+	choices := make([]string, count, allocator = ctx.plugin.host.frame_allocator)
+	for i in 0 ..< count {
+		buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
+		norm := f64(i) / f64(desc.step_count) if desc.step_count > 0 else 0
+		choices[i] = b.param_format_value_with_unit(b.normalized_to_param(norm, desc), desc, buf, enum_to_string)
+	}
+	ui_drop_down(ctx, desc.name, choices, ParamBinding{param_idx}, loc = loc)
+}
+
+ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding, loc := #caller_location) {
+	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Toggle
 	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.toggle_width}
 	comp.sizing_vert = {type = .Fixed, value = ctx.theme.toggle_height}
-	comp.data = ToggleData{id = id, binding = binding}
+	comp.id = id
+	comp.data = ToggleData{binding = binding}
 	ui_close_component(ctx)
 }
 
-ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
+ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, loc := #caller_location) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -521,23 +653,24 @@ ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex) {
 	comp.child_gaps = 6
 	comp.sizing_horiz = {type = .Fit}
 	comp.sizing_vert = {type = .Fit}
-	ui_toggle(ctx, desc.name, ParamBinding{param_idx})
+	ui_toggle(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
 	ui_label(ctx, desc.name)
 	ui_close_component(ctx)
 }
 
-ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .Center) {
-	id := ui_make_id(ctx, label)
+ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .Center, loc := #caller_location) {
+	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Knob
 	comp.align_x = align_x
 	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.knob_size}
 	comp.sizing_vert = {type = .Fixed, value = ctx.theme.knob_size}
-	comp.data = KnobData{id, binding}
+	comp.id = id
+	comp.data = KnobData{binding}
 	ui_close_component(ctx)
 }
 
-ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) {
+ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -546,7 +679,7 @@ ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_st
 	comp.sizing_horiz = {type = .Fit}
 	comp.sizing_vert = {type = .Fit}
 	ui_label(ctx, desc.name, align_x = .Center)
-	ui_knob(ctx, desc.name, ParamBinding{param_idx})
+	ui_knob(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_close_component(ctx)
 }
@@ -637,6 +770,30 @@ binding_set_norm :: proc(ctx: ^UIContext, binding: ValueBinding, norm: f32) {
 	}
 }
 
+// List params quantize by step_count, float bindings by choice count
+@(private="file")
+binding_index_to_norm :: proc(ctx: ^UIContext, binding: ValueBinding, index: int, count: int) -> f32 {
+	if pb, ok := binding.(ParamBinding); ok {
+		desc := plugin_api().get_plugin_descriptor().params[pb.param_idx]
+		if desc.step_count > 0 do return f32(index) / f32(desc.step_count)
+		return 0
+	}
+	if count > 1 do return f32(index) / f32(count - 1)
+	return 0
+}
+
+@(private="file")
+binding_norm_to_index :: proc(ctx: ^UIContext, binding: ValueBinding, count: int) -> int {
+	norm := binding_get_norm(ctx, binding)
+	if pb, ok := binding.(ParamBinding); ok {
+		desc := plugin_api().get_plugin_descriptor().params[pb.param_idx]
+		if desc.step_count > 0 do return clamp(int(math.round(norm * f32(desc.step_count))), 0, count - 1)
+		return 0
+	}
+	if count > 1 do return clamp(int(math.round(norm * f32(count - 1))), 0, count - 1)
+	return 0
+}
+
 @(private="file")
 binding_begin_edit :: proc(ctx: ^UIContext, binding: ValueBinding) {
 	if pb, ok := binding.(ParamBinding); ok do ui_param_begin_edit(ctx, pb.param_idx)
@@ -723,6 +880,7 @@ ui_frame_end :: proc(ctx: ^UIContext) {
 	ui_size_grow_components(ctx)
 	ui_position_components(ctx)
 	ui_snap_components_to_pixels(ctx)
+	ui_hover_components(ctx)
 	ui_interact_components(ctx)
 	ui_generate_draw_calls(ctx)
 }
@@ -739,6 +897,20 @@ ui_snap_components_to_pixels :: proc(ctx: ^UIContext) {
 	}
 }
 
+ui_hover_components :: proc(ctx: ^UIContext) {
+	ctx.popup_blocks_mouse = false
+	it := ui_iterate_draw_order(ctx)
+	for c in ui_next_draw_order(&it) {
+		if c == ctx.root do continue
+		mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
+		if c.blocks_input && mouse_over {
+			ctx.hovered_id = 0
+			ctx.popup_blocks_mouse = true
+		}
+		if c.id != 0 && mouse_over do ctx.hovered_id = c.id
+	}
+}
+
 ui_interact_components :: proc(ctx: ^UIContext) {
 	it := ui_iterate_draw_order(ctx)
 	for c in ui_next_draw_order(&it) {
@@ -747,23 +919,18 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 			case .Panel, .Label: break
 			case .Canvas: break // TODO: Canvas interact callback?
 			case .Button: {
-				d := c.data.(ButtonData) or_continue
-				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
-				if mouse_over do ctx.hovered_id = d.id
-				if d.id == ctx.active_id {
+				if c.id == ctx.active_id {
 					if .Left not_in ctx.mouse.down {
-						if mouse_over do ctx.last_clicked_id = d.id
+						if ctx.hovered_id == c.id do ctx.last_clicked_id = c.id
 						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
-					ctx.active_id = d.id
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = c.id
 				}
 			}
 			case .Slider: {
 				d := c.data.(SliderData) or_continue
-				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
-				if mouse_over do ctx.hovered_id = d.id
-				if d.id == ctx.active_id {
+				if c.id == ctx.active_id {
 					thumb_r := ctx.theme.slider_width / 2
 					norm: f32
 					if d.orientation == .Vertical {
@@ -780,22 +947,39 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						binding_end_edit(ctx, d.binding)
 						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
 					// Reset param to default on double click
 					binding_reset_to_default(ctx, d.binding)
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
-					ctx.active_id = d.id
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = c.id
+					binding_begin_edit(ctx, d.binding)
+				}
+			}
+			case .Knob: {
+				d := c.data.(KnobData) or_continue
+				if c.id == ctx.active_id {
+					norm := clamp(ctx.drag_anchor_norm + (ctx.drag_anchor_mouse_y - ctx.mouse.pos.y) / ctx.theme.knob_drag_pixels, 0, 1)
+					binding_set_norm(ctx, d.binding, norm)
+					if .Left not_in ctx.mouse.down {
+						binding_end_edit(ctx, d.binding)
+						ctx.active_id = 0
+					}
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
+					// Reset param to default on double click
+					binding_reset_to_default(ctx, d.binding)
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = c.id
+					ctx.drag_anchor_mouse_y = ctx.mouse.pos.y
+					ctx.drag_anchor_norm = binding_get_norm(ctx, d.binding)
 					binding_begin_edit(ctx, d.binding)
 				}
 			}
 			case .Toggle: {
 				d := c.data.(ToggleData) or_continue
-				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
-				if mouse_over do ctx.hovered_id = d.id
 				// Click = press + release while hovered
-				if d.id == ctx.active_id {
+				if c.id == ctx.active_id {
 					if .Left not_in ctx.mouse.down {
-						if mouse_over {
+						if c.id == ctx.hovered_id {
 							switch v in d.binding {
 							case ToggleBoolBinding:
 								v.val^ = !v.val^
@@ -809,32 +993,35 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 						}
 						ctx.active_id = 0
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
-					ctx.active_id = d.id
+				} else if c.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					ctx.active_id = c.id
 				}
 			}
-			case .Knob: {
-				d := c.data.(KnobData) or_continue
-				mouse_over := collide_vec2_rect(ctx.mouse.pos, c.calc_bounds)
-				if mouse_over do ctx.hovered_id = d.id
-				if d.id == ctx.active_id {
-					norm := clamp(ctx.drag_anchor_norm + (ctx.drag_anchor_mouse_y - ctx.mouse.pos.y) / ctx.theme.knob_drag_pixels, 0, 1)
-					binding_set_norm(ctx, d.binding, norm)
-					if .Left not_in ctx.mouse.down {
-						binding_end_edit(ctx, d.binding)
-						ctx.active_id = 0
+			case .DropDown: {
+				if c.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
+					if ctx.open_popup_id == c.id {
+						ctx.open_popup_id = 0
+					} else {
+						ctx.open_popup_id = c.id
+						ctx.open_popup_frame = ctx.frame_counter
 					}
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.double_clicked {
-					// Reset param to default on double click
-					binding_reset_to_default(ctx, d.binding)
-				} else if d.id == ctx.hovered_id && .Left in ctx.mouse.pressed {
-					ctx.active_id = d.id
-					ctx.drag_anchor_mouse_y = ctx.mouse.pos.y
-					ctx.drag_anchor_norm = binding_get_norm(ctx, d.binding)
+				}
+			}
+			case .DropDownItem: {
+				d := c.data.(DropDownItemData) or_continue
+				if c.id == ctx.hovered_id && .Left in ctx.mouse.released {
 					binding_begin_edit(ctx, d.binding)
+					binding_set_norm(ctx, d.binding, binding_index_to_norm(ctx, d.binding, d.index, d.count))
+					binding_end_edit(ctx, d.binding)
+					ctx.open_popup_id = 0
 				}
 			}
 		}
+	}
+
+	if ctx.open_popup_id != 0 && .Left in ctx.mouse.pressed &&
+	   !ctx.popup_blocks_mouse && ctx.open_popup_frame != ctx.frame_counter {
+		ctx.open_popup_id = 0
 	}
 }
 
@@ -930,18 +1117,72 @@ ui_position_components :: proc(ctx: ^UIContext) {
 		content_h := parent.calc_bounds.h - 2 * parent.sizing_vert.padding
 
 		if c.floating {
-			switch c.align_x {
-			case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
-			case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
-			case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
+			switch c.float_anchor {
+			case .Inside: {
+				switch c.align_x {
+				case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
+				case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
+				case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
+				}
+				switch c.align_y {
+				case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
+				case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
+				case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+				}
+				c.calc_bounds.x += c.float_offset.x
+				c.calc_bounds.y += c.float_offset.y
 			}
-			switch c.align_y {
-			case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
-			case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
-			case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
+			case .OutsideBottom, .OutsideTop, .OutsideLeft, .OutsideRight: {
+				pb := parent.calc_bounds
+				root := ctx.root.calc_bounds
+				vertical := c.float_anchor == .OutsideBottom || c.float_anchor == .OutsideTop
+
+				main_lo := pb.y if vertical else pb.x
+				main_size := pb.h if vertical else pb.w
+				self_size := c.calc_bounds.h if vertical else c.calc_bounds.w
+				root_lo := root.y if vertical else root.x
+				root_size := root.h if vertical else root.w
+				gap := c.float_offset.y if vertical else c.float_offset.x
+
+				pos_after := main_lo + main_size + gap
+				pos_before := main_lo - self_size - gap
+				fits_after := pos_after + self_size <= root_lo + root_size
+				fits_before := pos_before >= root_lo
+				prefer_after := c.float_anchor == .OutsideBottom || c.float_anchor == .OutsideRight
+
+				pos := pos_after if prefer_after else pos_before
+				if c.float_flip {
+					if prefer_after && !fits_after && fits_before do pos = pos_before
+					if !prefer_after && !fits_before && fits_after do pos = pos_after
+				}
+
+				// AlignX and AlignY are both near/center/far
+				cross_lo := pb.x if vertical else pb.y
+				cross_parent := pb.w if vertical else pb.h
+				cross_self := c.calc_bounds.w if vertical else c.calc_bounds.h
+				cross_align := int(c.align_x) if vertical else int(c.align_y)
+				cross: f32
+				switch cross_align {
+				case 0: cross = cross_lo
+				case 1: cross = cross_lo + (cross_parent - cross_self) * 0.5
+				case 2: cross = cross_lo + cross_parent - cross_self
+				}
+				cross += c.float_offset.x if vertical else c.float_offset.y
+
+				if vertical {
+					c.calc_bounds.y = pos
+					c.calc_bounds.x = cross
+				} else {
+					c.calc_bounds.x = pos
+					c.calc_bounds.y = cross
+				}
 			}
-			c.calc_bounds.x += c.float_offset.x
-			c.calc_bounds.y += c.float_offset.y
+			}
+
+			// max() guards popups larger than the root, where lo would exceed hi
+			root := ctx.root.calc_bounds
+			c.calc_bounds.x = clamp(c.calc_bounds.x, root.x, math.max(root.x, root.x + root.w - c.calc_bounds.w))
+			c.calc_bounds.y = clamp(c.calc_bounds.y, root.y, math.max(root.y, root.y + root.h - c.calc_bounds.h))
 		} else if parent.direction == .Horizontal {
 			c.calc_bounds.x = parent.cursor.x
 			switch c.align_y {
@@ -978,10 +1219,10 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				rect.y = c.calc_bounds.y
 				rect.width = c.calc_bounds.w
 				rect.height = c.calc_bounds.h
-				rect.color = ctx.theme.panel_bg_color
+				rect.color = ctx.theme.popup_bg_color if d.popup else ctx.theme.panel_bg_color
 				rect.corner_rad = ctx.theme.corner_radius
-				rect.border_width = ctx.theme.panel_border_width
-				rect.border_color = ctx.theme.panel_border_color
+				rect.border_width = ctx.theme.border_width if d.popup else ctx.theme.panel_border_width
+				rect.border_color = ctx.theme.popup_border_color if d.popup else ctx.theme.panel_border_color
 				draw_push_rect(ctx.plugin.draw, rect)
 			}
 			case .Label: {
@@ -997,9 +1238,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			}
 			case .Button: {
 				d := c.data.(ButtonData) or_continue
-				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				hover_t := ui_animate(ctx, c.id, f32(1) if c.id == ctx.hovered_id else f32(0))
 				bg_color := color_u8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
-				if d.id == ctx.active_id do bg_color = ctx.theme.button_active_color
+				if c.id == ctx.active_id do bg_color = ctx.theme.button_active_color
 				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
 					x = c.calc_bounds.x, y = c.calc_bounds.y,
 					width = c.calc_bounds.w, height = c.calc_bounds.h,
@@ -1021,9 +1262,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 
 				norm := binding_get_norm(ctx, d.binding)
 
-				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				hover_t := ui_animate(ctx, c.id, f32(1) if c.id == ctx.hovered_id else f32(0))
 				thumb_color := color_u8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
-				if d.id == ctx.active_id do thumb_color = ctx.theme.slider_active_color
+				if c.id == ctx.active_id do thumb_color = ctx.theme.slider_active_color
 
 				if d.orientation == .Vertical {
 					track_range := bounds.h - ctx.theme.slider_width
@@ -1109,7 +1350,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 					on = ui_param_get_normalized(ctx, v.param_idx) >= 0.5
 				}
 
-				t := ui_animate(ctx, d.id, f32(1) if on else f32(0), 18)
+				t := ui_animate(ctx, c.id, f32(1) if on else f32(0), 18)
 				bg_color := color_u8_lerp(ctx.theme.toggle_off_color, ctx.theme.toggle_on_color, t)
 				pill_rad := bounds.h / 2
 				// Pill background
@@ -1132,9 +1373,9 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 
 				norm := binding_get_norm(ctx, d.binding)
 
-				hover_t := ui_animate(ctx, d.id, f32(1) if d.id == ctx.hovered_id else f32(0))
+				hover_t := ui_animate(ctx, c.id, f32(1) if c.id == ctx.hovered_id else f32(0))
 				arc_color := color_u8_lerp(ctx.theme.slider_color, ctx.theme.slider_hover_color, hover_t)
-				if d.id == ctx.active_id do arc_color = ctx.theme.slider_active_color
+				if c.id == ctx.active_id do arc_color = ctx.theme.slider_active_color
 
 				center := Vec2f{bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.5}
 				radius := math.min(bounds.w, bounds.h) * 0.5 - ctx.theme.knob_arc_thickness
@@ -1163,6 +1404,67 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				draw_set_scissor(ctx.plugin.draw, RectI32{i32(cb.x), i32(cb.y), i32(cb.w), i32(cb.h)})
 				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
 				draw_remove_scissor(ctx.plugin.draw)
+			}
+			case .DropDown: {
+				bounds := c.calc_bounds
+				d := c.data.(DropDownData) or_continue
+
+				hover_t := ui_animate(ctx, c.id, f32(1) if c.id == ctx.hovered_id else f32(0))
+				bg_color := color_u8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
+				if ctx.open_popup_id == c.id do bg_color = ctx.theme.button_active_color
+
+				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+					x = bounds.x, y = bounds.y,
+					width = bounds.w, height = bounds.h,
+					color = bg_color,
+					corner_rad = ctx.theme.corner_radius,
+					border_color = ctx.theme.border_color,
+					border_width = ctx.theme.border_width,
+				})
+
+				idx := binding_norm_to_index(ctx, d.binding, len(d.choices))
+				if len(d.choices) > 0 {
+					text := d.choices[clamp(idx, 0, len(d.choices) - 1)]
+					text_size := draw_measure_text(ctx.plugin.draw, text, ctx.theme.font_size)
+					draw_text(ctx.plugin.draw, text,
+						bounds.x + ctx.theme.padding,
+						bounds.y + (bounds.h - text_size.y) * 0.5,
+						ctx.theme.text_color, ctx.theme.font_size)
+				}
+
+				cs := ctx.theme.chevron_size
+				cx := bounds.x + bounds.w - ctx.theme.padding - cs * 0.5
+				cy := bounds.y + bounds.h * 0.5
+				flip := f32(-1) if ctx.open_popup_id == c.id else f32(1)
+				left := Vec2f{cx - cs * 0.5, cy - cs * 0.25 * flip}
+				mid := Vec2f{cx, cy + cs * 0.25 * flip}
+				right := Vec2f{cx + cs * 0.5, cy - cs * 0.25 * flip}
+				draw_push_pill(ctx.plugin.draw, left, mid, 1.5, ctx.theme.text_color)
+				draw_push_pill(ctx.plugin.draw, mid, right, 1.5, ctx.theme.text_color)
+			}
+			case .DropDownItem: {
+				bounds := c.calc_bounds
+				d := c.data.(DropDownItemData) or_continue
+
+				if c.id == ctx.hovered_id {
+					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
+						x = bounds.x, y = bounds.y,
+						width = bounds.w, height = bounds.h,
+						color = ctx.theme.menu_item_hover_color,
+						corner_rad = ctx.theme.corner_radius * 0.5,
+					})
+				}
+
+				text_size := draw_measure_text(ctx.plugin.draw, d.text, ctx.theme.font_size)
+				text_y := bounds.y + (bounds.h - text_size.y) * 0.5
+				draw_text(ctx.plugin.draw, d.text,
+					bounds.x + ctx.theme.padding * 1.5, text_y,
+					ctx.theme.text_color, ctx.theme.font_size)
+
+				if d.selected {
+					r := ctx.theme.font_size * 0.15
+					draw_circle(ctx.plugin.draw, bounds.x + ctx.theme.padding * 0.75, bounds.y + bounds.h * 0.5, r, ctx.theme.text_color)
+				}
 			}
 		}
 	}
@@ -1512,4 +1814,73 @@ test_floating_skips_flow :: proc(t: ^testing.T) {
 	testing.expect(t, approx(a.calc_bounds.x, 0), "in-flow child position unchanged")
 	testing.expect(t, approx(f.calc_bounds.x, 5), "floating x from parent origin plus offset")
 	testing.expect(t, approx(f.calc_bounds.y, 6), "floating y from parent origin plus offset")
+}
+
+// The anchor itself floats Inside so its position survives the positioning pass
+@(private = "file")
+test_anchored_float :: proc(ctx: ^UIContext, anchor: FloatingAnchor, flip: bool, anchor_bounds: RectF32, w, h: f32) -> ^Component {
+	parent := test_open_comp(ctx, {type = .Fixed, value = anchor_bounds.w}, {type = .Fixed, value = anchor_bounds.h})
+	parent.floating = true
+	parent.float_offset = {anchor_bounds.x, anchor_bounds.y}
+	f := test_open_comp(ctx, {type = .Fixed, value = w}, {type = .Fixed, value = h})
+	f.floating = true
+	f.float_anchor = anchor
+	f.float_flip = flip
+	test_close_comp(ctx)
+	test_close_comp(ctx)
+
+	ui_size_grow_components(ctx)
+	ui_position_components(ctx)
+	return f
+}
+
+@(test)
+test_float_outside_bottom :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	f := test_anchored_float(&ctx, .OutsideBottom, false, {50, 40, 100, 20}, 80, 60)
+
+	testing.expect(t, approx(f.calc_bounds.y, 60), "sits below the anchor")
+	testing.expect(t, approx(f.calc_bounds.x, 50), "left-aligned to the anchor border box")
+}
+
+@(test)
+test_float_flips_up_when_clipped :: proc(t: ^testing.T) {
+	// anchor near the bottom of a 300-tall root, popup too tall to fit below
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	f := test_anchored_float(&ctx, .OutsideBottom, true, {50, 260, 100, 20}, 80, 60)
+
+	testing.expect(t, approx(f.calc_bounds.y, 200), "flipped above the anchor")
+}
+
+@(test)
+test_float_no_flip_stays_and_clamps :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	f := test_anchored_float(&ctx, .OutsideBottom, false, {50, 260, 100, 20}, 80, 60)
+
+	// 280 would overflow a 300-tall root, so the clamp pulls it back to 240
+	testing.expect(t, approx(f.calc_bounds.y, 240), "clamped into the root instead of flipping")
+}
+
+@(test)
+test_float_outside_right_flips_left :: proc(t: ^testing.T) {
+	// anchor near the right edge of a 400-wide root
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	f := test_anchored_float(&ctx, .OutsideRight, true, {330, 40, 40, 20}, 120, 50)
+
+	testing.expect(t, approx(f.calc_bounds.x, 210), "flipped to the left of the anchor")
+	testing.expect(t, approx(f.calc_bounds.y, 40), "top-aligned to the anchor on the cross axis")
+}
+
+@(test)
+test_float_oversized_clamps_to_root_origin :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	f := test_anchored_float(&ctx, .OutsideBottom, true, {50, 40, 100, 20}, 500, 400)
+
+	testing.expect(t, approx(f.calc_bounds.x, 0), "oversized float pinned to root x")
+	testing.expect(t, approx(f.calc_bounds.y, 0), "oversized float pinned to root y")
 }

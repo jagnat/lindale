@@ -37,7 +37,7 @@ ParamDescriptor :: struct {
 	min: f64,
 	max: f64,
 	default_value: f64,
-	step_count: i32,
+	step_count: i32, // number of "steps" in between discrete values.. e.g. for 4 values, step_count = 3
 	unit: ParamUnit,
 	flags: ParamFlagSet,
 	smooth_ms: f32,

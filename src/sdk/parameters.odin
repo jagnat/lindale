@@ -2,6 +2,8 @@ package sdk
 
 import b "../bridge"
 import "core:math"
+import "core:reflect"
+import "core:strings"
 import "core:testing"
 
 ParamIndex :: distinct int
@@ -13,6 +15,16 @@ param_init :: proc(params: []b.ParamDescriptor) {
 	param_index = make(map[string]ParamIndex)
 	for desc, i in params {
 		param_index[desc.name] = ParamIndex(i)
+	}
+}
+
+// .List label callback: step value -> enum member identifier
+enum_label :: proc($E: typeid) -> proc(val: f64) -> string {
+	return proc(val: f64) -> string {
+		names := reflect.enum_field_names(E)
+		i := int(val + 0.5)
+		if i < 0 || i >= len(names) do return ""
+		return names[i]
 	}
 }
 
