@@ -6,7 +6,6 @@ import "core:mem"
 import "core:time"
 import "core:math"
 import "core:math/linalg"
-import dit "../../../src/thirdparty/uFFT_DIT"
 import "core:c"
 import "../../../src/sdk"
 import b "../../../src/bridge"
@@ -70,7 +69,9 @@ SynthControlState :: struct {
 	test: bool,
 	hit: bool,
 	fft_window: [ANALYSIS_BUFFER_SIZE]dsp.Sample,
-	fft_window_gain: f32
+	fft_window_gain: f32,
+	fft: dsp.Radix2FFT,
+	twiddles: [ANALYSIS_BUFFER_SIZE / 2]complex64,
 }
 
 // Parameters
@@ -452,7 +453,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 		copy(tmp_buf2[first_len:], tmp_buf[:write_idx])
 		tmp_buf2 = tmp_buf2 * cstate.fft_window
 		for val, i in tmp_buf2 do vec[i] = complex64(val)
-		dit.fft(&vec[0], ANALYSIS_BUFFER_SIZE)
+		dsp.radix2_fft(vec[:], cstate.fft)
 
 		for i in 0 ..< ANALYSIS_BUFFER_SIZE / 2 {
 			val := vec[i]
@@ -557,6 +558,7 @@ synth_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 synth_setup_controller :: proc(plug: ^sdk.PluginController) -> rawptr {
 	state := new(SynthControlState, allocator = plug.host.session_allocator)
 	dsp.window_fill(state.fft_window[:], .Hann)
+	state.fft = dsp.radix2_fft_init(ANALYSIS_BUFFER_SIZE, state.twiddles[:])
 	state.fft_window_gain = dsp.window_coherent_gain(state.fft_window[:])
 	return state
 }
