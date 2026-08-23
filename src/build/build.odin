@@ -33,9 +33,14 @@ sign_identity: string
 // Build-specific ID that can be used in the code
 build_id: string
 
-execute :: proc() {
+// Plugin version passed by the plugin's build shim
+// Becomes a PLUGIN_VERSION define and into the Info.plist
+plugin_version: string
+
+execute :: proc(version := "0.0.0") {
 	flags.parse_or_exit(&opts, os.args)
 
+	plugin_version = version
 	gen_build_id()
 
 	sign_identity = os.get_env("LINDALE_SIGN_IDENTITY", context.allocator)
@@ -68,33 +73,73 @@ build_plugin :: proc () {
 	// Make vst3 dir if not exist
 	os.make_directory_all(fmt.tprintf("out/%s.vst3/Contents/%s", plugin, subdir))
 
-	args := make([dynamic]string, allocator = context.temp_allocator)
-	append(&args, "odin", "build", "vst3",
-		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
-		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
-		"-build-mode:dynamic",
-		fmt.tprintf("-out:out/%s.vst3/Contents/%s/%s.vst3", plugin, subdir, plugin),
-		opts.release ? "-o:speed" : "-debug")
-	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
+	out_dylib := fmt.tprintf("out/%s.vst3/Contents/%s/%s.vst3", plugin, subdir, plugin)
 	when ODIN_OS == .Darwin {
-		append(&args, fmt.tprintf("-extra-linker-flags:-install_name @loader_path/%s", plugin))
-	}
-	ps: os.Process_State
-	exec(args[:], ps = &ps)
-	if !ps.success {
-		// fmt.println("Failed to build!", ps.exit_code)
-		os.exit(1)
+		if opts.release {
+			// Universal binary lipo'd together, support apple silicon and old intel
+			archs := [?]struct { target, suffix: string } {
+				{"darwin_arm64", "arm64"},
+				{"darwin_amd64", "x86_64"},
+			}
+			thins: [len(archs)]string
+			for arch, i in archs {
+				thins[i] = fmt.tprintf("out/%s.vst3/Contents/%s/%s_%s.vst3", plugin, subdir, plugin, arch.suffix)
+				build_vst3_dylib(thins[i], arch.target)
+			}
+			ps: os.Process_State
+			exec({"lipo", "-create", "-output", out_dylib, thins[0], thins[1]}, ps = &ps)
+			if !ps.success {
+				fmt.println("lipo failed")
+				os.exit(1)
+			}
+			for thin in thins do os.remove(thin)
+		} else {
+			build_vst3_dylib(out_dylib)
+		}
+	} else {
+		build_vst3_dylib(out_dylib)
 	}
 
 	if !opts.no_hot do build_hotloaded()
 
 	when ODIN_OS == .Darwin { // All the postbuild garbage I need to do on mac
+		mac_postbuild()
+	} else when ODIN_OS == .Windows {
+	}
+
+	symlink_plugin()
+}
+
+build_vst3_dylib :: proc(out_path: string, target: string = "") {
+	args := make([dynamic]string, allocator = context.temp_allocator)
+	append(&args, "odin", "build", "vst3",
+		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
+		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
+		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
+		"-build-mode:dynamic",
+		fmt.tprintf("-out:%s", out_path),
+		opts.release ? "-o:speed" : "-debug")
+	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
+	if target != "" do append(&args, fmt.tprintf("-target:%s", target))
+	when ODIN_OS == .Darwin {
+		append(&args, fmt.tprintf("-extra-linker-flags:-install_name @loader_path/%s", plugin))
+	}
+	ps: os.Process_State
+	exec(args[:], ps = &ps)
+	if !ps.success do os.exit(1)
+}
+
+when ODIN_OS == .Darwin {
+	mac_postbuild :: proc() {
 		// This is all to strip the .dylib suffix from the artifact (and debug symbols) because Odin automatically adds it
 		mac_contents_path := fmt.tprintf("out/%s.vst3/Contents/MacOS", plugin)
 		// Move main DLL
 		os.rename(fmt.tprintf("%s/%s.vst3", mac_contents_path, plugin), fmt.tprintf("%s/%s", mac_contents_path, plugin))
-		// Release builds (-o:speed) emit no dSYM, so the rename/copy is pointless
-		if !opts.release {
+		// Release builds (-o:speed) emit no dSYM; drop any stale one from earlier debug builds
+		if opts.release {
+			os.remove_all(fmt.tprintf("%s/%s.dSYM", mac_contents_path, plugin))
+			os.remove_all(fmt.tprintf("%s/%s.vst3.dSYM", mac_contents_path, plugin))
+		} else {
 			// make renamed debug info directory
 			os.make_directory_all(fmt.tprintf("%s/%s.dSYM/Contents/Resources/DWARF", mac_contents_path, plugin))
 			// copy dylib dsym into dwarf
@@ -104,7 +149,6 @@ build_plugin :: proc () {
 			os.remove_all(fmt.tprintf("%s/%s.vst3.dSYM", mac_contents_path, plugin))
 		}
 		// Generate bundle Info.plist
-		// Todo: Make some more data here be dynamic (version no.?)
 BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -114,18 +158,20 @@ BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundleExecutable</key>
 	<string>%s</string>
 	<key>CFBundleGetInfoString</key>
-	<string>%s 0.0.0</string>
+	<string>%s %s</string>
 	<key>CFBundleIdentifier</key>
 	<string>quest.jagi.%s.vst3</string>
 	<key>CFBundleName</key>
 	<string>%s</string>
+	<key>CFBundleShortVersionString</key>
+	<string>%s</string>
 	<key>CFBundleVersion</key>
-	<string>0.0.0</string>
+	<string>%s</string>
 </dict>
 </plist>
 `
 		err := os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", plugin),
-			fmt.tprintf(BUNDLE_INFO, plugin, plugin, plugin, plugin))
+			fmt.tprintf(BUNDLE_INFO, plugin, plugin, plugin_version, plugin, plugin, plugin_version, plugin_version))
 		if err != nil {
 			fmt.println("Failed to write info.plist!")
 			os.exit(1)
@@ -137,10 +183,7 @@ BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 		// Set bundle bit
 		exec({"SetFile", "-a", "B", fmt.tprintf("out/%s.vst3", plugin)})
 		if opts.release && sign_identity != "" do darwin_notarize_bundle()
-	} else when ODIN_OS == .Windows {
 	}
-
-	symlink_plugin()
 }
 
 build_standalone :: proc() {
@@ -157,6 +200,7 @@ build_standalone :: proc() {
 	append(&args, "odin", "build", "standalone",
 		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
+		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		fmt.tprintf("-out:%s", exe),
 		opts.release ? "-o:speed" : "-debug")
 	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
@@ -180,12 +224,12 @@ build_hotloaded :: proc() {
 		os.exit(1)
 	}
 
-	// Build hot dll. Plugin code always lives in the fixed `src` subdir; `plugin`
-	// (the folder name) is only an identity for output/bundle naming
+	// Build hot dll
 	ps: os.Process_State
 	exec({
 		"odin", "build", "src",
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
+		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION),
 		opts.release ? "-o:speed" : "-debug",
@@ -207,7 +251,7 @@ symlink_plugin :: proc() {
 
 	when ODIN_OS == .Darwin {
 		home := os.get_env("HOME", context.allocator)
-		// -sfn flags replace a stale/dangling link in place, so switching plugins self-heals
+		// -sfn flags replace a stale/dangling link in place
 		vst3_link := fmt.tprintf("%s/Library/Audio/Plug-Ins/VST3/%s.vst3", home, plugin)
 		exec({"ln", "-sfn", fmt.tprintf("%s/out/%s.vst3", cwd, plugin), vst3_link})
 		fmt.println("Linked", vst3_link)
@@ -271,7 +315,7 @@ when ODIN_OS == .Darwin {
 		args := make([dynamic]string)
 		append(&args, "codesign", "--force")
 		if opts.release && sign_identity != "" {
-			// Hardened runtime + secure timestamp are notarization prerequisites
+			// Hardened runtime and secure timestamp are needed for notarization
 			append(&args, "--options", "runtime", "--timestamp", "--sign", sign_identity)
 		} else {
 			append(&args, "--sign", "-")
@@ -293,7 +337,7 @@ when ODIN_OS == .Darwin {
 		}
 		bundle := fmt.tprintf("out/%s.vst3", plugin)
 		zip := fmt.tprintf("out/%s.vst3.zip", plugin)
-		// notarytool only accepts a zip/dmg/pkg, never a bare bundle
+		// notarytool only accepts a zip/dmg/pkg and not a bare bundle
 		exec({"ditto", "-c", "-k", "--keepParent", bundle, zip})
 		ps: os.Process_State
 		exec({"xcrun", "notarytool", "submit", zip, "--keychain-profile", profile, "--wait"}, ps = &ps)
@@ -302,7 +346,7 @@ when ODIN_OS == .Darwin {
 			fmt.println("Notarization failed")
 			os.exit(1)
 		}
-		// Staple the ticket so the bundle validates offline
+		// staple the ticket so the bundle validates offline
 		exec({"xcrun", "stapler", "staple", bundle})
 	}
 }
