@@ -18,6 +18,8 @@ _register :: proc "contextless" () {
 	sdk.register_plugin(facet_api)
 }
 
+PLUGIN_VERSION :: #config(PLUGIN_VERSION, "0.0.0")
+
 MAX_FFT_SIZE :: 8192
 RING_SIZE :: MAX_FFT_SIZE * 2
 MAX_CHANNELS :: 8
@@ -42,7 +44,7 @@ HILBERT_TAPS :: (HILBERT_N + 1) / 2 // packed nonzero taps
 HILBERT_DELAY :: 2 * HILBERT_N + 8 // double-write + 8-float SIMD tail pad
 
 TRAIL_SEC :: f32(0.085)
-TRAIL_SIZE :: 8192
+TRAIL_SIZE :: 4096
 HILBERT_TRAIL_SIZE :: TRAIL_SIZE
 GONIOMETER_TRAIL_SIZE :: TRAIL_SIZE
 
@@ -110,6 +112,8 @@ AnalysisFrame :: struct {
 	num_channels: int,
 
 	fft_size: int,
+	fft_mode: FFTMode,
+	fft_num_traces: int,
 	fft_smooth_db: [ANALYSIS_CHANNELS][MAX_FFT_SIZE / 2]f32, // exp-avg across frames
 
 	peak: [ANALYSIS_CHANNELS]f32,
@@ -135,7 +139,7 @@ facet_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		name = "Facet",
 		vendor = "JagI",
-		version = "0.0.1",
+		version = PLUGIN_VERSION,
 		plugin_type = .Effect,
 		params = facet_param_table[:],
 		max_channels = MAX_CHANNELS,
@@ -221,6 +225,10 @@ facet_run_analysis :: proc(plug: ^sdk.PluginController) {
 	}
 
 	process_state := cast(^FacetProcessState)plug.processor_peer.state
+	if process_state == nil { // processor exists but setup_processor hasn't run yet
+		a.num_channels = 0
+		return
+	}
 	actx := plug.processor_peer.audio_processor
 	a.sample_rate = f32(actx.sample_rate)
 	a.num_channels = min(actx.num_channels, ANALYSIS_CHANNELS)
@@ -239,7 +247,7 @@ facet_run_analysis :: proc(plug: ^sdk.PluginController) {
 	}
 	active := a.silence_age < INACTIVE_THRESHOLD_SEC
 
-	// Meter: pull the audio thread's latest published scalars, or release toward 0 when inactive
+	// Handle meter - fetch updated peak/rms values, or decay towards zero if silence
 	meter_release := math.pow(f32(10), -(METER_RELEASE_DB_PER_SEC * dt) / 20)
 	for c in 0 ..< a.num_channels {
 		if active {
@@ -262,28 +270,36 @@ facet_run_analysis :: proc(plug: ^sdk.PluginController) {
 
 	// FFT
 	fft_size := get_fft_size(plug.host.params)
-	if fft_size != state.fft.n do init_fft(plug, state) // param changed the size; reconfigure
+	if fft_size != state.fft.n do init_fft(plug, state) // param changed the size so reinit
 	a.fft_size = int(fft_size)
-	fft_buf := make([]complex64, fft_size, allocator=context.temp_allocator)
-
-	if !active { // shrink the frozen figure away rather than re-snapshotting stale rings
-		a.goniometer_trail_count = int(f32(a.goniometer_trail_count) * INACTIVE_TRAIL_DECAY)
-	} else if a.num_channels >= 2 { // Snapshot the latest trail's worth of L/R against a shared end so the channels stay sample-aligned
-		end := min(
-			dsp.ring_get_write_pos(&process_state.rings[0]),
-			dsp.ring_get_write_pos(&process_state.rings[1]),
-		)
-		nl := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:trail_len])
-		nr := dsp.ring_read_window(&process_state.rings[1], end, a.goniometer_trail[1][:trail_len])
-		a.goniometer_trail_count = min(nl, nr)
-	} else { // If mono, ring[1] is never written, so mirror L into R
-		end := dsp.ring_get_write_pos(&process_state.rings[0])
-		n := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:trail_len])
-		copy(a.goniometer_trail[1][:n], a.goniometer_trail[0][:n])
-		a.goniometer_trail_count = n
+	mode := get_fft_mode(plug.host.params)
+	// silence fft buf when mode is changed (current data is dirty)
+	if mode != a.fft_mode {
+		a.fft_mode = mode
+		for t in 0 ..< ANALYSIS_CHANNELS {
+			for i in 0 ..< fft_size / 2 do a.fft_smooth_db[t][i] = DB_FLOOR
+		}
 	}
+	a.fft_num_traces = fft_mode_trace_count(mode, a.num_channels)
 
-	if active { // Goniometer AGC over the freshly snapshotted trail (mono or stereo)
+	if active {
+		// goniometer
+		if a.num_channels >= 2 {
+			end := min(
+				dsp.ring_get_write_pos(&process_state.rings[0]),
+				dsp.ring_get_write_pos(&process_state.rings[1]),
+			)
+			nl := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:trail_len])
+			nr := dsp.ring_read_window(&process_state.rings[1], end, a.goniometer_trail[1][:trail_len])
+			a.goniometer_trail_count = min(nl, nr)
+		} else { // mono
+			// mirror L to R
+			end := dsp.ring_get_write_pos(&process_state.rings[0])
+			n := dsp.ring_read_window(&process_state.rings[0], end, a.goniometer_trail[0][:trail_len])
+			copy(a.goniometer_trail[1][:n], a.goniometer_trail[0][:n])
+			a.goniometer_trail_count = n
+		}
+		// AGC
 		gonio_peak2: f32 = 0
 		for k in 0 ..< a.goniometer_trail_count {
 			l := a.goniometer_trail[0][k]
@@ -297,67 +313,86 @@ facet_run_analysis :: proc(plug: ^sdk.PluginController) {
 		} else {
 			a.gonio_gain += (target_gain - a.gonio_gain) * AGC_RELEASE
 		}
-	}
 
-	// snapshot the latest fft size samples of each ring
-	for c in 0 ..< a.num_channels {
-		if !active { // decay smoothed magnitudes toward the floor
-			for i in 1 ..< fft_size / 2 {
-				a.fft_smooth_db[c][i] = SMOOTH_ALPHA * DB_FLOOR + (1 - SMOOTH_ALPHA) * a.fft_smooth_db[c][i]
+		// FFT
+		fft_buf := make([]complex64, fft_size, allocator=context.temp_allocator)
+		ch0 := make([]f32, fft_size, allocator=context.temp_allocator)
+		ch1 := ch0
+		n0 := dsp.ring_read_latest(&process_state.rings[0], ch0)
+		n1 := n0
+		if a.num_channels >= 2 {
+			ch1 = make([]f32, fft_size, allocator=context.temp_allocator)
+			n1 = dsp.ring_read_latest(&process_state.rings[1], ch1)
+		}
+		if n0 == int(fft_size) && n1 == int(fft_size) {
+			trace_in := make([]f32, fft_size, allocator=context.temp_allocator)
+			for t in 0 ..< a.fft_num_traces {
+				src: []f32
+				switch mode {
+				case .Overlay: src = ch0 if t == 0 else ch1
+				case .Left: src = ch0
+				case .Right: src = ch1
+				case .Sum: // (L+R)/2 keeps dB comparable to a single channel
+					for i in 0 ..< int(fft_size) do trace_in[i] = (ch0[i] + ch1[i]) * 0.5
+					src = trace_in
+				case .MidSide:
+					sign: f32 = 1 if t == 0 else -1
+					for i in 0 ..< int(fft_size) do trace_in[i] = (ch0[i] + sign * ch1[i]) * 0.5
+					src = trace_in
+				}
+
+				for v, i in src do fft_buf[i] = complex64(v * state.fft_window[i])
+				dsp.radix2_fft(fft_buf[:], state.fft)
+
+				// fft_size/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
+				norm := f32(fft_size / 2) * state.fft_window_gain
+				for i in 1 ..< fft_size / 2 {
+					v := fft_buf[i]
+					mag := math.sqrt(real(v) * real(v) + imag(v) * imag(v)) / norm
+					db := DB_FLOOR
+					if mag > 1e-10 do db = max(20 * math.log10(mag), DB_FLOOR)
+					prev := a.fft_smooth_db[t][i]
+					a.fft_smooth_db[t][i] = SMOOTH_ALPHA * db + (1 - SMOOTH_ALPHA) * prev
+				}
 			}
-			continue
-		}
-		time_slice_backing: [MAX_FFT_SIZE]f32
-		time_slice := time_slice_backing[:fft_size]
-		n := dsp.ring_read_latest(&process_state.rings[c], time_slice)
-		if n < int(fft_size) {
-			// log.info("Not hitting fft size, we got ", n, "and we need", fft_size)
-			continue
 		}
 
-		for v, i in time_slice do fft_buf[i] = complex64(v * state.fft_window[i])
-		dsp.radix2_fft(fft_buf[:], state.fft)
-
-		// fft_size/2 normalizes the one-sided bin energy; window gain undoes Hann's amplitude bias.
-		norm := f32(fft_size / 2) * state.fft_window_gain
-		for i in 1 ..< fft_size / 2 {
-			v := fft_buf[i]
-			mag := math.sqrt(real(v) * real(v) + imag(v) * imag(v)) / norm
-			db := DB_FLOOR
-			if mag > 1e-10 do db = max(20 * math.log10(mag), DB_FLOOR)
-			prev := a.fft_smooth_db[c][i]
-			a.fft_smooth_db[c][i] = SMOOTH_ALPHA * db + (1 - SMOOTH_ALPHA) * prev
+		// hilbert
+		drain_buf := make([]f32, RING_SIZE, allocator=context.temp_allocator)
+		got := dsp.ring_read(&process_state.analytic_ring, drain_buf[:])
+		pairs := got / 2
+		peak2: f32 = 0 // track squared magnitude to skip per-sample sqrt
+		a.hilbert_trail_count = min(a.hilbert_trail_count, trail_len)
+		for i in 0 ..< pairs {
+			r := drain_buf[2 * i]
+			im := drain_buf[2 * i + 1]
+			m2 := r * r + im * im
+			if m2 > peak2 do peak2 = m2
+			a.hilbert_trail[a.hilbert_trail_write] = complex(r, im)
+			a.hilbert_trail_write = (a.hilbert_trail_write + 1) % HILBERT_TRAIL_SIZE
+			if a.hilbert_trail_count < trail_len do a.hilbert_trail_count += 1
 		}
-	}
 
-	// Drain new complex stereo pairs into the controller trail ring buf
-	drain_buf := make([]f32, RING_SIZE, allocator=context.temp_allocator)
-	got := dsp.ring_read(&process_state.analytic_ring, drain_buf[:])
-	pairs := got / 2
-	peak2: f32 = 0 // track squared magnitude to skip per-sample sqrt
-	a.hilbert_trail_count = min(a.hilbert_trail_count, trail_len)
-	for i in 0 ..< pairs {
-		r := drain_buf[2 * i]
-		im := drain_buf[2 * i + 1]
-		m2 := r * r + im * im
-		if m2 > peak2 do peak2 = m2
-		a.hilbert_trail[a.hilbert_trail_write] = complex(r, im)
-		a.hilbert_trail_write = (a.hilbert_trail_write + 1) % HILBERT_TRAIL_SIZE
-		if a.hilbert_trail_count < trail_len do a.hilbert_trail_count += 1
-	}
-
-	// AGC
-	if pairs > 0 {
-		peak := math.sqrt(peak2)
-		target_gain := AGC_TARGET_FILL / max(peak, AGC_NOISE_FLOOR)
-		if target_gain < a.agc_gain {
-			a.agc_gain = target_gain
-		} else {
-			a.agc_gain += (target_gain - a.agc_gain) * AGC_RELEASE
+		// AGC
+		if pairs > 0 {
+			peak := math.sqrt(peak2)
+			target_gain := AGC_TARGET_FILL / max(peak, AGC_NOISE_FLOOR)
+			if target_gain < a.agc_gain {
+				a.agc_gain = target_gain
+			} else {
+				a.agc_gain += (target_gain - a.agc_gain) * AGC_RELEASE
+			}
 		}
-	}
-
-	if !active { // shrink the frozen trail away instead of holding it
+	} else { // inactive / silent
+		// goniometer
+		a.goniometer_trail_count = int(f32(a.goniometer_trail_count) * INACTIVE_TRAIL_DECAY)
+		// fft
+		for t in 0 ..< ANALYSIS_CHANNELS { // decay to db floor
+			for i in 1 ..< fft_size / 2 {
+				a.fft_smooth_db[t][i] = SMOOTH_ALPHA * DB_FLOOR + (1 - SMOOTH_ALPHA) * a.fft_smooth_db[t][i]
+			}
+		}
+		// hilbert
 		a.hilbert_trail_count = int(f32(a.hilbert_trail_count) * INACTIVE_TRAIL_DECAY)
 	}
 }
@@ -423,7 +458,20 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 		}
 	}
 
-	channel_colors := [2]sdk.ColorU8{{255, 100, 100, 255}, {100, 100, 255, 255}}
+	styles := fft_trace_styles(a.fft_mode)
+
+	// FFT legend colored to match centered on the top edge
+	LEGEND_GAP :: f32(10)
+	legend_w: f32
+	for t in 0 ..< a.fft_num_traces {
+		if t > 0 do legend_w += LEGEND_GAP
+		legend_w += sdk.draw_measure_text(ctx.plugin.draw, styles[t].label, LABEL_SIZE).x
+	}
+	lx := bounds.x + (bounds.w - legend_w) / 2
+	for t in 0 ..< a.fft_num_traces {
+		sdk.draw_text(ctx.plugin.draw, styles[t].label, lx, bounds.y + 1, styles[t].color, LABEL_SIZE)
+		lx += sdk.draw_measure_text(ctx.plugin.draw, styles[t].label, LABEL_SIZE).x + LEGEND_GAP
+	}
 
 	// Interpolate between bins using catmull-rom when bins are at least SMOOTH_MIN_BIN_PX apart
 	SMOOTH_MIN_BIN_PX :: f32(3)
@@ -438,7 +486,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 	unit_density_freq := bounds.w * bin_hz / (log_span * math.LN10)
 	smooth_freq := clamp(unit_density_freq / SMOOTH_MIN_BIN_PX, FMIN, FMAX)
 
-	for c in 0 ..< a.num_channels {
+	for c in 0 ..< a.fft_num_traces {
 		pts := make([dynamic]sdk.Vec2f, 0, max_i + int(bounds.w), context.temp_allocator)
 
 		// For low freqs, catmull-rom through the bins up to the threshold
@@ -473,7 +521,24 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 			append(&pts, sdk.Vec2f{spectrum_x(bounds, freq, log_span), spectrum_y(bounds, a.fft_smooth_db[c][i])})
 		}
 
-		if len(pts) >= 2 do sdk.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = channel_colors[c])
+		if len(pts) >= 2 do sdk.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = styles[c].color)
+	}
+
+	// frequency and dB readout at the mouse position
+	mp := ctx.mouse.pos
+	if mp.x >= bounds.x && mp.x < bounds.x + bounds.w && mp.y >= bounds.y && mp.y < bounds.y + bounds.h {
+		freq := FMIN * math.pow(f32(10), log_span * (mp.x - bounds.x) / bounds.w)
+		db := DB_TOP - (mp.y - bounds.y) / bounds.h * (DB_TOP - DB_FLOOR)
+		s: string
+		if freq >= 1000 {
+			s = fmt.tprintf("%.2f kHz  %.1f dB", freq / 1000, db)
+		} else {
+			s = fmt.tprintf("%.0f Hz  %.1f dB", freq, db)
+		}
+		tsz := sdk.draw_measure_text(ctx.plugin.draw, s, LABEL_SIZE)
+		tx := clamp(mp.x + 14, bounds.x, bounds.x + bounds.w - tsz.x)
+		ty := clamp(mp.y - tsz.y - 6, bounds.y, bounds.y + bounds.h - tsz.y)
+		sdk.draw_text(ctx.plugin.draw, s, tx, ty, CONTROL_TEXT_COLOR, LABEL_SIZE)
 	}
 }
 
@@ -549,7 +614,7 @@ draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: raw
 
 	cx := bounds.x + bounds.w / 2
 	cy := bounds.y + bounds.h / 2
-	// AGC maps peak |z| to AGC_TARGET_FILL of canvas radius (min/2); scale folds gain in
+	// scale goes from 0 to (bounds / 2) ish
 	scale := min(bounds.w, bounds.h) * 0.5 * a.agc_gain
 
 	n := a.hilbert_trail_count
@@ -557,18 +622,18 @@ draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: raw
 
 	start := (a.hilbert_trail_write + HILBERT_TRAIL_SIZE - n) % HILBERT_TRAIL_SIZE
 	inv_n := 1.0 / f32(n - 1)
+	trace_color := sdk.ColorU8{80, 190, 180, 255}
+	thickness := clamp(min(bounds.w, bounds.h) * 0.007, 1.5, 2.5)
 	for k in 0 ..< n - 1 {
 		p0 := a.hilbert_trail[(start + k) % HILBERT_TRAIL_SIZE]
 		p1 := a.hilbert_trail[(start + k + 1) % HILBERT_TRAIL_SIZE]
-		alpha := trail_alpha(f32(k) * inv_n)
-		// col := sdk.ColorU8{200, 200, 200, 255}
-		norm := min(max(real(p0), real(p1)), 1)
-		col := sdk.ColorU8{u8(norm * 255), 200, 200, 255}
+		opacity := trail_alpha(f32(k + 1) * inv_n)
+		col := sdk.color_u8_lerp(ctx.theme.bg_color, trace_color, opacity)
 		x0 := cx + real(p0) * scale
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
 		y1 := cy - imag(p1) * scale
-		sdk.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, 1, col)
+		sdk.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, thickness, col)
 	}
 }
 
@@ -656,18 +721,20 @@ facet_draw :: proc(plug: ^sdk.PluginController) {
 
 	if sdk.ui_frame_scoped(plug.ui) {
 		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10, skip_draw = true) {
-			if sdk.ui_panel(plug.ui, dir=.Horizontal, sizing_horiz= {type = .Grow}, sizing_vert = {type = .Grow}, padding = 0, child_gaps = 10, skip_draw = true) {
-				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a)
-				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = sdk.AxisSizing{type = .Fixed, value = 60})
-				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a) // david lu esque hilbert transform scope
+			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 1.1}, padding = 0, child_gaps = 10, skip_draw = true) {
+				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a, sizing_horiz = {type = .Percent, value = 0.22, min = 75, max = 170})
+				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
+				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = {type = .Fixed, value = 60})
 			}
-			if sdk.ui_panel(plug.ui, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 0.9}, padding = 0, skip_draw = true) {
 				sdk.ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
 				if sdk.ui_panel(plug.ui, floating = true, align_x = .Right, align_y = .Top,
 					float_offset = {-SPECTRUM_CONTROLS_INSET, SPECTRUM_CONTROLS_INSET},
 					padding = 0, child_gaps = 6, skip_draw = true) {
 					sdk.ui_label(plug.ui, "FFT Size:", align_y = .Center)
 					sdk.ui_drop_down_param(plug.ui, PARAM_FFT_SIZE, enum_to_string = fft_size_label)
+					sdk.ui_label(plug.ui, "Mode:", align_y = .Center)
+					sdk.ui_drop_down_param(plug.ui, PARAM_FFT_MODE, enum_to_string = fft_mode_label)
 				}
 			}
 		}
@@ -687,6 +754,51 @@ fft_size_label :: proc(val: f64) -> string {
 	i := int(val + 0.5)
 	if i < 0 || i >= len(FFT_SIZE_LABELS) do return ""
 	return FFT_SIZE_LABELS[i]
+}
+
+FFTMode :: enum { Overlay, Left, Right, Sum, MidSide }
+
+@(rodata) FFT_MODE_LABELS := [?]string{"L+R", "L", "R", "Sum", "M/S"}
+
+fft_mode_label :: proc(val: f64) -> string {
+	i := int(val + 0.5)
+	if i < 0 || i >= len(FFT_MODE_LABELS) do return ""
+	return FFT_MODE_LABELS[i]
+}
+
+get_fft_mode :: proc(params: ^b.ParamValues) -> FFTMode {
+	return FFTMode(int(params.values[PARAM_FFT_MODE] + 0.5))
+}
+
+TraceStyle :: struct {
+	label: string,
+	color: sdk.ColorU8,
+}
+
+CH_L_COLOR : sdk.ColorU8 : {255, 100, 100, 255}
+CH_R_COLOR : sdk.ColorU8 : {100, 100, 255, 255}
+SUM_COLOR : sdk.ColorU8 : {210, 210, 210, 255}
+MID_COLOR : sdk.ColorU8 : {235, 180, 90, 255}
+SIDE_COLOR : sdk.ColorU8 : {160, 110, 230, 255}
+
+fft_trace_styles :: proc(mode: FFTMode) -> [2]TraceStyle {
+	switch mode {
+	case .Overlay: return {{"L", CH_L_COLOR}, {"R", CH_R_COLOR}}
+	case .Left: return {{"L", CH_L_COLOR}, {}}
+	case .Right: return {{"R", CH_R_COLOR}, {}}
+	case .Sum: return {{"Sum", SUM_COLOR}, {}}
+	case .MidSide: return {{"M", MID_COLOR}, {"S", SIDE_COLOR}}
+	}
+	return {}
+}
+
+fft_mode_trace_count :: proc(mode: FFTMode, num_channels: int) -> int {
+	switch mode {
+	case .Overlay: return min(num_channels, ANALYSIS_CHANNELS)
+	case .Left, .Right, .Sum: return 1
+	case .MidSide: return 2
+	}
+	return 0
 }
 
 init_fft :: proc(plug: ^sdk.PluginController, state: ^FacetControlState) {
@@ -745,4 +857,3 @@ facet_api :: sdk.PluginApi {
 	setup_controller = facet_setup_controller,
 	setup_processor = facet_setup_processor,
 }
-
