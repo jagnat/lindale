@@ -567,7 +567,7 @@ draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: 
 	r_size := sdk.draw_measure_text(dc, "R", LABEL_SIZE)
 
 	radius_v := bounds.h * 0.5 - m_plus.y - LABEL_PAD
-	radius_h := bounds.w * 0.5 - max(s_plus.x, s_minus.x) - LABEL_PAD
+	radius_h := bounds.w * 0.5 - max(s_plus.x, s_minus.x) - LABEL_PAD * 2
 	radius := min(radius_v, radius_h)
 	diag := radius * SQRT_HALF
 
@@ -722,8 +722,8 @@ facet_draw :: proc(plug: ^sdk.PluginController) {
 	if sdk.ui_frame_scoped(plug.ui) {
 		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10, skip_draw = true) {
 			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 1.1}, padding = 0, child_gaps = 10, skip_draw = true) {
-				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a, sizing_horiz = {type = .Percent, value = 0.22, min = 75, max = 170})
-				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
+				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a, sizing_horiz = {type = .Grow, weight = 1})
+				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a, sizing_horiz = {type = .Grow, weight = 2})
 				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = {type = .Fixed, value = 60})
 			}
 			if sdk.ui_panel(plug.ui, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 0.9}, padding = 0, skip_draw = true) {
