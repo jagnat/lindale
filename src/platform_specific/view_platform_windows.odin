@@ -509,15 +509,18 @@ renderer_resize :: proc(r: bridge.Renderer, width, height: i32) {
 
 	dpi := win.GetDpiForWindow(renderer.hwnd)
 	scale_factor := f32(dpi) / 96.0
+	physical_width := i32(f32(width) * scale_factor)
+	physical_height := i32(f32(height) * scale_factor)
+
+	win.SetWindowPos(renderer.hwnd, nil, 0, 0, physical_width, physical_height, win.SWP_NOZORDER | win.SWP_NOMOVE)
+	renderer.device_context->OMSetRenderTargets(0, nil, nil)
 
 	if renderer.render_target_view != nil {
 		renderer.render_target_view->Release()
 		renderer.render_target_view = nil
 	}
 
-	physical_width := u32(f32(width) * scale_factor)
-	physical_height := u32(f32(height) * scale_factor)
-	renderer.swap_chain->ResizeBuffers(0, physical_width, physical_height, .UNKNOWN, {})
+	renderer.swap_chain->ResizeBuffers(0, u32(physical_width), u32(physical_height), .UNKNOWN, {})
 
 	create_render_target_view(renderer)
 
