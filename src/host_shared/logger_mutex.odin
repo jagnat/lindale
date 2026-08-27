@@ -119,8 +119,8 @@ mutex_log_flush :: proc() {
 	if err == nil {
 		os.write(handle, ctx.log_write_buffer[:ctx.log_write_pos])
 		os.close(handle)
-		ctx.log_write_pos = 0
 	}
+	ctx.log_write_pos = 0
 }
 
 @(private)

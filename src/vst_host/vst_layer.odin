@@ -1169,7 +1169,12 @@ create_lindale_controller :: proc () -> ^LindaleController {
 
 		desc := controller.param_descs[paramIndex]
 
-		flags := vst3.ParameterFlagSet{.kCanAutomate}
+		flags := vst3.ParameterFlagSet{}
+		if .Automatable in desc.flags do flags += {.kCanAutomate}
+		if .ReadOnly in desc.flags do flags += {.kIsReadOnly}
+		if .WrapAround in desc.flags do flags += {.kIsWrapAround}
+		if .List in desc.flags do flags += {.kIsList}
+		if .Hidden in desc.flags do flags += {.kIsHidden}
 		if int(paramIndex) == controller.bypass_param_idx {
 			flags += {.kIsBypass}
 		}
