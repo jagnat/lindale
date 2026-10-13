@@ -1,6 +1,6 @@
 package standalone_entry
 
-import "../../../src/standalone_host"
+import "lindale:standalone_host"
 import "../src"
 
 main :: proc() {

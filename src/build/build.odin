@@ -37,6 +37,10 @@ build_id: string
 // Becomes a PLUGIN_VERSION define and into the Info.plist
 plugin_version: string
 
+// Lets plugin code import the framework as lindale:sdk etc
+// wherever this checkout lives relative to the plugin
+LINDALE_COLLECTION :: "-collection:lindale=" + #directory + ".."
+
 execute :: proc(version := "0.0.0") {
 	flags.parse_or_exit(&opts, os.args)
 
@@ -113,6 +117,7 @@ build_plugin :: proc () {
 build_vst3_dylib :: proc(out_path: string, target: string = "") {
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "vst3",
+		LINDALE_COLLECTION,
 		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
 		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
@@ -198,6 +203,7 @@ build_standalone :: proc() {
 
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "standalone",
+		LINDALE_COLLECTION,
 		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
 		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
@@ -228,6 +234,7 @@ build_hotloaded :: proc() {
 	ps: os.Process_State
 	exec({
 		"odin", "build", "src",
+		LINDALE_COLLECTION,
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
 		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		"-build-mode:dynamic",
@@ -293,6 +300,7 @@ check_plugin :: proc() {
 	ps: os.Process_State
 	exec({
 		"odin", "check", "src",
+		LINDALE_COLLECTION,
 		"-no-entry-point",
 	}, ps = &ps)
 	if !ps.success {

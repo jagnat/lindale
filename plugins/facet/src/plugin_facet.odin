@@ -5,9 +5,9 @@ import "core:fmt"
 import "core:math"
 import "core:math/cmplx"
 import "core:log"
-import "../../../src/sdk"
-import b "../../../src/bridge"
-import "../../../src/dsp"
+import "lindale:sdk"
+import b "lindale:bridge"
+import "lindale:dsp"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {

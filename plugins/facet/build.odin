@@ -1,6 +1,6 @@
 package facet
 
-import "../../src/build"
+import "lindale:build"
 
 main :: proc() {
 	build.execute(version = "0.1.0")
