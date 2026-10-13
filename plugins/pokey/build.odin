@@ -1,6 +1,6 @@
 package pokey
 
-import "../../src/build"
+import "lindale:build"
 
 main :: proc() {
 	build.execute()

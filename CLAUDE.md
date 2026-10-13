@@ -6,7 +6,7 @@ Lindalë is a VST3 audio plugin framework in Odin (Mac + Windows), built around 
 
 ## Build Commands
 
-Each plugin lives in `plugins/<name>/`. `cd` into it and run its build shim: `odin run . -- <mode> [flags]`. Modes:
+Each plugin lives in `plugins/<name>/`. `cd` into it and run its build script: `sh build.sh <mode> [flags]` (`build.bat` on Windows). The script runs the `build.odin` shim with `-collection:lindale=<path>/src`, taking the path to the lindale checkout from the first line of `lindale_collection.txt` (`../..` for plugins in this repo; generated as `./lindale` when missing). Plain `odin run .` fails without that flag. Modes:
 
 - `hotbuild` — rebuild only the hot-reloadable DLL. Use this during dev.
 - `build` — full VST3 plugin + hot DLL, then symlinks into the system VST3 folder.
@@ -14,7 +14,7 @@ Each plugin lives in `plugins/<name>/`. `cd` into it and run its build shim: `od
 
 Flags: `-release` (else `-debug`), `-no-hot`.
 
-A plugin's identity is its folder name (the build derives `PLUGIN_NAME` from it); the build tool lives in `src/build/`. Each plugin dir holds a `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/scopey/src/plugin_scopey.odin`).
+A plugin's identity is its folder name (the build derives `PLUGIN_NAME` from it); the build tool lives in `src/build/`. Each plugin dir holds `build.sh`/`build.bat`, a `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/scopey/src/plugin_scopey.odin`).
 
 ## Style
 
@@ -43,7 +43,7 @@ Four packages enforce the hot-reload boundary:
 - `src/platform_specific/` — GPU renderers (Metal/DX11), timers, filesystem. Imports `bridge` only.
 - `src/vst_host/` — static VST3 layer and composition root. The only package that imports across the others.
 
-Plugin implementations live outside `src/`, under `plugins/<name>/src/`, and import `sdk` (plus `bridge`/`dsp`) via relative paths.
+Plugin implementations live outside `src/`, under `plugins/<name>/src/`, and import `sdk` (plus `bridge`/`dsp`) through the `lindale` collection (`import "lindale:sdk"`).
 
 ## Working Principles
 

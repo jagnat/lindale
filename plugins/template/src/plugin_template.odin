@@ -1,6 +1,6 @@
 package template
 
-import "../../../src/sdk"
+import "lindale:sdk"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {

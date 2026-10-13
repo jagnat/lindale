@@ -7,9 +7,9 @@ import "core:time"
 import "core:math"
 import "core:math/linalg"
 import "core:c"
-import "../../../src/sdk"
-import b "../../../src/bridge"
-import dsp "../../../src/dsp"
+import "lindale:sdk"
+import b "lindale:bridge"
+import dsp "lindale:dsp"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {

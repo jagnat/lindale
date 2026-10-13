@@ -21,14 +21,28 @@ jobs:
         with:
           release: dev-2026-05
 
-      # Type-check every plugin via its build shim (build.odin check mode)
+      # Type-check every plugin except the template through its build script
       - name: Check plugins
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           for d in plugins/*/; do
+            [ "$d" = "plugins/template/" ] && continue
             echo "== check ${d} =="
-            ( cd "$d" && odin run . -collection:lindale=../../src -- check )
+            "${d}build.sh" check
           done
+
+      # cmd so the Windows runner exercises build.bat
+      - name: Check plugins (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /d %%d in (plugins\*) do (
+            if /i not "%%~nxd"=="template" (
+              echo == check %%d ==
+              call "%%d\build.bat" check || exit /b 1
+            )
+          )
 
       # The plugin check never compiles vst_host/platform_specific, so check the
       # static layer once (picks up per-OS platform code)

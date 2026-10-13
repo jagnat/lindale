@@ -2,9 +2,9 @@ package pokey
 
 import "core:math"
 import "core:testing"
-import "../../../src/sdk"
-import b "../../../src/bridge"
-import "../../../src/dsp"
+import "lindale:sdk"
+import b "lindale:bridge"
+import "lindale:dsp"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {

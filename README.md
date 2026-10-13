@@ -5,7 +5,7 @@ Cross-platform audio plugin framework written in Odin, along with a set of demo 
 ![Screenshot of a visualization plugin built with the framework.](resources/screenshot_2.png)
 *Screenshot of a visualization plugin built with the framework.*
 
-My aim is to create a framework that's a joy to use to experiment with audio plugin development, and to have a long-term learning project. The project is built around a hot-reloading architecture, so that the core audio processing and rendering/UI code can be recompiled and reloaded on the fly without restarting the plugin or the DAW. This is common in game development, but as far as I know hasn't been done in the audio plugin environment before now. It's a huge benefit for iterating quickly while prototyping and learning DSP.
+My aim is to create a framework that's a joy to use to experiment with audio plugin development, and to have a long-term learning project. The project is built around a hot-reloading architecture, so that the core audio processing and rendering/UI code can be recompiled and reloaded on the fly without restarting the plugin or the DAW. This is common in game development, and is used somewhat in audio DSP experimentation environments, but isn't usually done in audio plugin development. It's a huge benefit for iterating quickly while prototyping, learning DSP, and adjusting plugin UI.
 
 I'm using the Odin language, which I find a perfect fit for audio programming. Builtin complex types, great SIMD and atomic support, very nice cross-platform development with platform bindings and objective-C subclassing, straightforward ways of plumbing custom allocators and loggers, and simple procedural code.
 
@@ -18,15 +18,16 @@ I'm using the Odin language, which I find a perfect fit for audio programming. B
 
 ## Setting up dev environment
 - Have the latest Odin compiler installed and in your path, along with a DAW to test in. I test regularly in Reaper and Ableton.
-- A plugin consists of a root folder with a build 'script' written in Odin called `build.odin` which calls into the framework's builder code, along with subfolders for the plugin implementation code, and one or more format entry point shims.
-- All build commands go through `build.odin`. Execute build commands by running `odin run . -- <command_name> [args]` while in a plugin's root directory. Everything I mention below implicitly uses this format.
-- Run `build` to build the plugin and install it. Each plugin builds into its own `out/<plugin>.vst3` bundle, and the script symlinks the bundle into a user VST3 folder (windows: `%LOCALAPPDATA%\Programs\Common\VST3`, mac: `~/Library/Audio/Plug-Ins/VST3`) and `out/hot` into the plugin's runtime folder.
-- Run `hotbuild` to build just the hot-loaded DLL for the selected or specified plugin. If a DAW is open with plugin instances, and hotloading isn't disabled, the running plugin instances will reload the UI and DSP code. Changes to the parameter list still require a full `build` and DAW reload.
+- A plugin consists of a root folder with build scripts which call into the framework's builder code, along with subfolders for the plugin implementation code, and one or more plugin format entry point shims.
+- Builds are invoked using `build.sh`(mac)/`build.bat`(windows), which pass the Lindale collection path to the Odin compiler and run `build.odin`, which calls into the Lindale build system, written in Odin as well. Execute build commands by running `./build.[sh/bat] <command_name> [args]` while in a plugin's root directory. Everything I mention below implicitly uses this format.
+- The build scripts read from a `lindale_collection.txt` file in the plugin directory, which should contain a path pointing to this repository's root directory locally. If the file doesn't exist, they will generate a default one which assumes Lindale is vendored as a submodule (`./lindale` as the collection path).
+- Run the `build` command to build the plugin and install it. Each plugin builds into its own `out/<plugin>.vst3` bundle, and the script symlinks the bundle into a user VST3 folder (windows: `%LOCALAPPDATA%\Programs\Common\VST3`, mac: `~/Library/Audio/Plug-Ins/VST3`) and `out/hot` into the plugin's runtime folder.
+- Run `hotbuild` to build just the hot-loaded DLL for the plugin. If a DAW is open with plugin instances, and hotloading isn't disabled, the running plugin instances will reload the UI and DSP code. Changes to the parameter list still require a full `build` and DAW reload.
 - You can pass `-no-hot` to the `build` command to build one self-contained DLL.
 - You can pass `-release` to the `build` or `hotbuild` commands to build an optimized build with no debug symbols.
 
 ## Creating a new plugin
-Start with the `plugins/template` folder, clone it and rename the folder to your plugin name, and rename the internal plugin odin file. Rename all the data definitions and procedures. You can then run the build commands to build your plugin.
+Start with the `plugins/template` folder, copy it and rename the folder to your plugin name, and rename the internal plugin odin file. Rename all the data definitions and procedures. If you want to vendor Lindale as a subdirectory, after setting up a git repo you can run `git submodule add https://github.com/jagnat/lindale.git lindale`. Otherwise, create `lindale_collection.txt` in the plugin root directory, and point it to your local Lindale directory. You can then run the build scripts to build your plugin.
 
 ## On AI
 

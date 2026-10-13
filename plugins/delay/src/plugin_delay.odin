@@ -4,9 +4,9 @@ import "core:log"
 import "core:math"
 import "core:mem"
 import "core:time"
-import "../../../src/sdk"
-import b "../../../src/bridge"
-import dsp "../../../src/dsp"
+import "lindale:sdk"
+import b "lindale:bridge"
+import dsp "lindale:dsp"
 
 @(export)
 get_plugin_api :: proc() -> sdk.PluginApi {
