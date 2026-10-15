@@ -27,7 +27,7 @@ I'm using the Odin language, which I find a perfect fit for audio programming. B
 - You can pass `-release` to the `build` or `hotbuild` commands to build an optimized build with no debug symbols.
 
 ## Creating a new plugin
-Start with the `plugins/template` folder, copy it and rename the folder to your plugin name, and rename the internal plugin odin file. Rename all the data definitions and procedures. If you want to vendor Lindale as a subdirectory, after setting up a git repo you can run `git submodule add https://github.com/jagnat/lindale.git lindale`. Otherwise, create `lindale_collection.txt` in the plugin root directory, and point it to your local Lindale directory. You can then run the build scripts to build your plugin.
+Start with the `plugins/template` folder, copy it and rename the folder to your plugin name, and rename the internal plugin odin file. Rename all the data definitions and procedures in the plugin odin file, and in the plugin.ini manifest. If you want to vendor Lindale as a subdirectory, after setting up a git repo you can run `git submodule add https://github.com/jagnat/lindale.git lindale`. Otherwise, create `lindale_collection.txt` in the plugin root directory, and point it to your local Lindale directory. You can then run the build scripts to build your plugin.
 
 ## On AI
 

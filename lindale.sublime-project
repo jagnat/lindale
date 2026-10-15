@@ -5,32 +5,6 @@
 			"path": ".",
 		}
 	],
-	"build_systems":
-	[
-		{
-			"name": "Build Plugin",
-			"working_dir": "${project_path}",
-			"shell_cmd": "odin run . -- build"
-		},
-		{
-			"name": "Build Hotload Plugin",
-			"working_dir": "${project_path}",
-			"shell_cmd": "odin run . -- hotbuild"
-		},
-		{
-			"name": "Check all plugins",
-			"working_dir": "${project_path}",
-			"shell_cmd": "odin run . -- check"
-		},
-		{
-			"name": "Odin test",
-			"shell_cmd": "odin build $project_path/src -debug -build-mode:test -out:$project_path/test.exe",
-		},
-		{
-			"name": "Odin Run File",
-			"cmd": ["odin", "run", "$file", "-file"],
-		}
-	],
 	"settings":
 	{
 		"LSP":
@@ -39,10 +13,6 @@
 			"odin":
 			{
 				"enabled": true
-			},
-			"zig":
-			{
-				"enabled": false
 			}
 		}
 	},

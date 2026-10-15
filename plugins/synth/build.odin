@@ -1,4 +1,4 @@
-package synth
+package shim
 
 import "lindale:build"
 

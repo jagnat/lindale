@@ -71,7 +71,6 @@ AudioProcessContext :: struct {
 PluginProcessor :: struct {
 	host: ^b.HostContext,
 
-	// Lin
 	controller_peer: ^PluginController,
 
 	// User code state allocated by plugin

@@ -1,7 +1,7 @@
-package facet
+package shim
 
 import "lindale:build"
 
 main :: proc() {
-	build.execute(version = "0.1.0")
+	build.execute()
 }

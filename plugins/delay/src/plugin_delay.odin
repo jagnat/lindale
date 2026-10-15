@@ -66,12 +66,15 @@ DELAY_PARAM_GAIN  :: sdk.ParamIndex(3)
 
 delay_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
-		name         = "Lindale Delay",
-		vendor       = "JagI",
-		version      = "0.0.1",
-		plugin_type  = .Effect,
-		params       = delay_param_table[:],
-		max_channels = 2,
+		.Effect,
+		delay_param_table[:],
+		2, // max channels
+		sdk.ViewConfig {
+			default_width = 640,
+			default_height = 480,
+			min_width = 320, min_height = 240,
+			resizable = true,
+		}
 	}
 }
 

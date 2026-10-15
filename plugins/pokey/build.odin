@@ -1,4 +1,4 @@
-package pokey
+package shim
 
 import "lindale:build"
 

@@ -52,7 +52,7 @@ hotload_init :: proc() {
 		get_config().runtime_folder_path,
 		"hot",
 		filepath.SEPARATOR,
-		PLUGIN_NAME, "Hot.",
+		PLUGIN_ID, "Hot.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 	log.info("hotload dll:", ctx.lindale_hot_dll)
 
@@ -61,7 +61,7 @@ hotload_init :: proc() {
 		get_config().runtime_folder_path,
 		"hot",
 		filepath.SEPARATOR,
-		PLUGIN_NAME, "Hot%03d.",
+		PLUGIN_ID, "Hot%03d.",
 		dynlib.LIBRARY_FILE_EXTENSION, sep="")
 
 	ctx.dll_suffix = 1

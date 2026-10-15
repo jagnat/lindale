@@ -48,7 +48,7 @@ jobs:
       # static layer once (picks up per-OS platform code)
       - name: Check host layer
         working-directory: plugins/facet
-        run: odin check vst3 -collection:lindale=../../src -define:PLUGIN_NAME=facet -define:HOT_DLL=true -no-entry-point
+        run: odin check vst3 -collection:lindale=../../src -define:PLUGIN_ID=facet -define:HOT_DLL=true -no-entry-point
 
       - name: Test dsp
         run: odin test src/dsp

@@ -18,8 +18,6 @@ _register :: proc "contextless" () {
 	sdk.register_plugin(facet_api)
 }
 
-PLUGIN_VERSION :: #config(PLUGIN_VERSION, "0.0.0")
-
 MAX_FFT_SIZE :: 8192
 RING_SIZE :: MAX_FFT_SIZE * 2
 MAX_CHANNELS :: 8
@@ -136,15 +134,11 @@ AnalysisFrame :: struct {
 }
 
 facet_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
-	return {
-		name = "Facet",
-		vendor = "JagI",
-		version = PLUGIN_VERSION,
-		plugin_type = .Effect,
-		params = facet_param_table[:],
-		max_channels = MAX_CHANNELS,
-
-		view = sdk.ViewConfig {
+	return sdk.PluginDescriptor {
+		.Effect,
+		facet_param_table[:],
+		MAX_CHANNELS,
+		sdk.ViewConfig {
 			default_width = 640,
 			default_height = 480,
 			min_width = 320, min_height = 240,

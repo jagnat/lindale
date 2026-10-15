@@ -8,7 +8,7 @@ import "core:encoding/hex"
 import "core:os"
 import "core:flags"
 import "core:dynlib"
-import "core:path/filepath"
+import "core:encoding/ini"
 
 Mode :: enum {
 	build,
@@ -23,8 +23,7 @@ opts : struct {
 	no_hot: bool `usage:"No hotloading"`,
 }
 
-// right now this is the WD we were invoked from but it should eventually
-// come from some plugin config state (maybe in the code)
+// id from plugin.ini, names output files and seeds the class IDs
 plugin: string
 
 // Used for mac only rn
@@ -33,24 +32,21 @@ sign_identity: string
 // Build-specific ID that can be used in the code
 build_id: string
 
-// Plugin version passed by the plugin's build shim
-// Becomes a PLUGIN_VERSION define and into the Info.plist
-plugin_version: string
+// Plugin identity from plugin.ini, passed to the code as PLUGIN_* defines read by sdk
+manifest: map[string]string
+identity_defines: [6]string
 
 // Lets plugin code import the framework as lindale:sdk etc
 // wherever this checkout lives relative to the plugin
 LINDALE_COLLECTION :: "-collection:lindale=" + #directory + ".."
 
-execute :: proc(version := "0.0.0") {
+execute :: proc() {
 	flags.parse_or_exit(&opts, os.args)
 
-	plugin_version = version
+	load_manifest()
 	gen_build_id()
 
 	sign_identity = os.get_env("LINDALE_SIGN_IDENTITY", context.allocator)
-
-	cwd, _ := os.get_working_directory(context.allocator)
-	plugin = filepath.base(cwd)
 
 	switch opts.mode {
 		case .build:
@@ -118,12 +114,12 @@ build_vst3_dylib :: proc(out_path: string, target: string = "") {
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "vst3",
 		LINDALE_COLLECTION,
-		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
+		fmt.tprintf("-define:PLUGIN_ID='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
-		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:%s", out_path),
 		opts.release ? "-o:speed" : "-debug")
+	append(&args, ..identity_defines[:])
 	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
 	if target != "" do append(&args, fmt.tprintf("-target:%s", target))
 	when ODIN_OS == .Darwin {
@@ -165,7 +161,7 @@ BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundleGetInfoString</key>
 	<string>%s %s</string>
 	<key>CFBundleIdentifier</key>
-	<string>quest.jagi.%s.vst3</string>
+	<string>%s.%s.vst3</string>
 	<key>CFBundleName</key>
 	<string>%s</string>
 	<key>CFBundleShortVersionString</key>
@@ -176,7 +172,7 @@ BUNDLE_INFO :: `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 		err := os.write_entire_file(fmt.tprintf("out/%s.vst3/Contents/Info.plist", plugin),
-			fmt.tprintf(BUNDLE_INFO, plugin, plugin, plugin_version, plugin, plugin, plugin_version, plugin_version))
+			fmt.tprintf(BUNDLE_INFO, plugin, plugin, manifest["version"], manifest["vendor_id"], plugin, plugin, manifest["version"], manifest["version"]))
 		if err != nil {
 			fmt.println("Failed to write info.plist!")
 			os.exit(1)
@@ -204,11 +200,11 @@ build_standalone :: proc() {
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "standalone",
 		LINDALE_COLLECTION,
-		fmt.tprintf("-define:PLUGIN_NAME='%s'", plugin),
+		fmt.tprintf("-define:PLUGIN_ID='%s'", plugin),
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
-		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		fmt.tprintf("-out:%s", exe),
 		opts.release ? "-o:speed" : "-debug")
+	append(&args, ..identity_defines[:])
 	if !opts.no_hot do append(&args, "-define:HOT_DLL=true")
 	ps: os.Process_State
 	exec(args[:], ps = &ps)
@@ -231,16 +227,16 @@ build_hotloaded :: proc() {
 	}
 
 	// Build hot dll
-	ps: os.Process_State
-	exec({
-		"odin", "build", "src",
+	args := make([dynamic]string, allocator = context.temp_allocator)
+	append(&args, "odin", "build", "src",
 		LINDALE_COLLECTION,
 		fmt.tprintf("-define:BUILD_ID='%s'", build_id),
-		fmt.tprintf("-define:PLUGIN_VERSION='%s'", plugin_version),
 		"-build-mode:dynamic",
 		fmt.tprintf("-out:out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION),
-		opts.release ? "-o:speed" : "-debug",
-	}, ps = &ps)
+		opts.release ? "-o:speed" : "-debug")
+	append(&args, ..identity_defines[:])
+	ps: os.Process_State
+	exec(args[:], ps = &ps)
 	if !ps.success do os.exit(1)
 
 	// Code sign on mac
@@ -284,12 +280,12 @@ symlink_hot_runtime :: proc() {
 
 	when ODIN_OS == .Darwin {
 		home := os.get_env("HOME", context.allocator)
-		runtime_dir := fmt.tprintf("%s/Library/Application Support/jagi/%s", home, plugin)
+		runtime_dir := fmt.tprintf("%s/Library/Application Support/%s/%s", home, manifest["vendor_id"], plugin)
 		os.make_directory_all(runtime_dir)
 		exec({"ln", "-sfn", fmt.tprintf("%s/out/hot", cwd), fmt.tprintf("%s/hot", runtime_dir)})
 		fmt.println("Linked", fmt.tprintf("%s/hot", runtime_dir))
 	} else when ODIN_OS == .Windows {
-		runtime_dir := fmt.tprintf("%s\\jagi\\%s", os.get_env("APPDATA", context.allocator), plugin)
+		runtime_dir := fmt.tprintf("%s\\%s\\%s", os.get_env("APPDATA", context.allocator), manifest["vendor_id"], plugin)
 		os.make_directory_all(runtime_dir)
 		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\hot", runtime_dir)})
 		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\hot", runtime_dir), fmt.tprintf("%s\\out\\hot", cwd)})
@@ -308,6 +304,31 @@ check_plugin :: proc() {
 		os.exit(1)
 	}
 	fmt.println(plugin, "SUCCEEDED")
+}
+
+load_manifest :: proc() {
+	m, _, ok := ini.load_map_from_path("plugin.ini", context.allocator)
+	if !ok {
+		fmt.println("Missing plugin.ini in the plugin directory")
+		os.exit(1)
+	}
+	manifest = m[""]
+	for key in ([?]string{"id", "version", "vendor", "vendor_id"}) {
+		if manifest[key] == "" {
+			fmt.printfln("plugin.ini needs a %s", key)
+			os.exit(1)
+		}
+	}
+	plugin = manifest["id"]
+	if manifest["name"] == "" do manifest["name"] = plugin
+	identity_defines = {
+		fmt.aprintf("-define:PLUGIN_NAME='%s'", manifest["name"]),
+		fmt.aprintf("-define:PLUGIN_VERSION='%s'", manifest["version"]),
+		fmt.aprintf("-define:PLUGIN_VENDOR='%s'", manifest["vendor"]),
+		fmt.aprintf("-define:PLUGIN_VENDOR_ID='%s'", manifest["vendor_id"]),
+		fmt.aprintf("-define:PLUGIN_URL='%s'", manifest["url"]),
+		fmt.aprintf("-define:PLUGIN_EMAIL='%s'", manifest["email"]),
+	}
 }
 
 gen_build_id :: proc() {

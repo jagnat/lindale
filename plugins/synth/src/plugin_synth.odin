@@ -139,12 +139,10 @@ PARAM_ARP_RATE  :: sdk.ParamIndex(10)
 
 synth_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
-		name = "Lindale Synth",
-		vendor = "JagI",
-		version = "0.0.1",
-		plugin_type = .Instrument,
-		params = synth_param_table[:],
-		max_channels = 2,
+		.Instrument,
+		synth_param_table[:],
+		2, // Max channels
+		sdk.ViewConfig {}
 	}
 }
 

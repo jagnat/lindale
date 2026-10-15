@@ -6,6 +6,7 @@ import "lindale:sdk"
 get_plugin_api :: proc() -> sdk.PluginApi {
 	return sdk.FALLBACK_API
 }
+
 @(init)
 _register :: proc "contextless" () {
 	sdk.register_plugin(template_api)
@@ -20,13 +21,10 @@ _register :: proc "contextless" () {
 
 template_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
-		name = "Template",
-		vendor = "JagI",
-		version = "0.0.1",
-		plugin_type = .Effect,
-		params = template_param_table[:],
-		max_channels = 2,
-		view = {
+		.Effect, // Plugin type
+		template_param_table[:], // params
+		2, // Max channels
+		sdk.ViewConfig {
 			min_width = 640, min_height = 480,
 			resizable = true,
 		}
@@ -54,16 +52,16 @@ template_setup_processor :: proc(plug: ^sdk.PluginProcessor) -> rawptr {
 
 template_api :: sdk.PluginApi {
 	get_plugin_descriptor = template_get_plugin_descriptor,
-	process_audio         = template_process_audio,
-	draw                  = template_draw,
+	process_audio = template_process_audio,
+	draw = template_draw,
 
-	setup_controller      = template_setup_controller,
-	view_attached         = nil,
-	view_removed          = nil,
-	view_resized          = nil,
+	setup_controller = template_setup_controller,
+	view_attached = nil,
+	view_removed = nil,
+	view_resized = nil,
 
-	setup_processor       = template_setup_processor,
-	get_latency_samples   = nil,
-	get_tail_samples      = nil,
-	reset                 = nil,
+	setup_processor = template_setup_processor,
+	get_latency_samples = nil,
+	get_tail_samples = nil,
+	reset = nil,
 }

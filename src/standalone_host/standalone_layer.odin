@@ -72,9 +72,9 @@ run :: proc() {
 	if opts.sample_rate <= 0 do opts.sample_rate = 48000
 	if opts.block_size <= 0 do opts.block_size = 512
 
-	hs.mutex_log_init(hs.get_config().runtime_folder_path, hs.PLUGIN_NAME)
+	hs.mutex_log_init(hs.get_config().runtime_folder_path, hs.PLUGIN_ID)
 	context.logger = hs.get_mutex_logger(.PluginFactory)
-	log.info("Standalone host starting:", hs.PLUGIN_NAME)
+	log.info("Standalone host starting:", hs.PLUGIN_ID)
 
 	hs.hotload_init()
 	plugin_api = hs.hotload_api()
@@ -84,7 +84,7 @@ run :: proc() {
 	host.block_size = i32(opts.block_size)
 	init_host(&host)
 
-	window := window_create(host.desc.name, host.view_config)
+	window := window_create(sdk.PLUGIN_NAME, host.view_config)
 	attach_view(&host, window.parent_view)
 
 	if !opts.no_audio {

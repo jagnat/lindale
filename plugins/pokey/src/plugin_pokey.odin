@@ -129,13 +129,10 @@ PARAM_MACHINE :: sdk.ParamIndex(12)
 
 pokey_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
-		name = "Pokey Player",
-		vendor = "JagI",
-		version = "0.0.1",
-		plugin_type = .Instrument,
-		params = pokey_param_table[:],
-		max_channels = MAX_CHANNELS,
-		view = {
+		.Instrument,
+		pokey_param_table[:],
+		MAX_CHANNELS,
+		sdk.ViewConfig {
 			min_width = 890, min_height = 400,
 			resizable = true,
 		}
@@ -416,6 +413,15 @@ pokey_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 
 // UI
 
+pokey_draw_waveform_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
+	sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
+		x = comp.calc_bounds.x, y = comp.calc_bounds.y,
+		width = comp.calc_bounds.w, height = comp.calc_bounds.h,
+		color = {255, 0, 0, 255},
+		corner_rad = 10,
+	})
+}
+
 pokey_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_set_clear_color(plug.draw, plug.ui.theme.bg_color)
 	sdk.draw_clear(plug.draw)
@@ -435,6 +441,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 						sdk.ui_knob_param_labeled(ui, PARAM_DECAY)
 						sdk.ui_knob_param_labeled(ui, PARAM_SUSTAIN)
 						sdk.ui_knob_param_labeled(ui, PARAM_RELEASE)
+						// sdk.ui_canvas(ui, pokey_draw_waveform_canvas, nil)
 					}
 				}
 			}

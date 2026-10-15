@@ -22,7 +22,7 @@ import "base:builtin"
 import "base:intrinsics"
 import "core:log"
 import "core:time"
-import "core:hash"
+import "core:crypto/hash"
 import "core:sys/windows"
 import vm "core:mem/virtual"
 
@@ -39,14 +39,14 @@ lindale_controller_cid := vst3.SMTG_INLINE_UID(0x1DD0528c, 0x269247AA, 0x8521005
 // Used in establishing connection between processor and controller.
 lindale_connection_cid := vst3.SMTG_INLINE_UID(0xf51b3ac9, 0xb51e4e72, 0xbf2e3049, 0x787e8d4f)
 
-// Per-plugin UID: byte [13] marks the Lindale family, bytes [14..16)
-// carry a hash of the plugin token so each plugin reports distinct class UIDs.
+// Per-plugin UID: base UID xor SHA-256 of "<vendor_id>.<id>", so ids are namespaced per vendor
 patch_cid_for_plugin :: proc(cid: ^vst3.TUID, plugin: string) {
-	h := hash.fnv32a(transmute([]byte)plugin)
-	h16 := u16(h) ~ u16(h >> 16)
-	cid[13] = 0x4C // 'L': Lindalë framework family
-	cid[14] = u8(h16 >> 8)
-	cid[15] = u8(h16)
+	ctx: hash.Context
+	digest: [32]byte
+	hash.init(&ctx, .SHA256)
+	for part in ([?]string{sdk.PLUGIN_VENDOR_ID, ".", plugin}) do hash.update(&ctx, transmute([]byte)part)
+	hash.final(&ctx, digest[:])
+	for &b, i in cid do b ~= digest[i]
 }
 
 LindalePluginFactory :: struct {
@@ -524,7 +524,7 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 	lp_ap_canProcessSampleSize :: proc "system" (this: rawptr, sss: vst3.SymbolicSampleSize) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IAudioProcessor)this, LindaleProcessor, "audio_processor")
 		context = processor.ctx
-		log.info("lp_ap_canProcessSampleSize")
+		// log.info("lp_ap_canProcessSampleSize")
 		if sss == .Sample32 {
 			return vst3.kResultOk
 		}
@@ -1719,7 +1719,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 
 @export GetPluginFactory :: proc "system" () -> ^vst3.IPluginFactory3 {
 	context = runtime.default_context()
-	hs.mutex_log_init(hs.get_config().runtime_folder_path, hs.PLUGIN_NAME)
+	hs.mutex_log_init(hs.get_config().runtime_folder_path, hs.PLUGIN_ID)
 	context.logger = hs.get_mutex_logger(.PluginFactory)
 
 	log.info("GetPluginFactory")
@@ -1754,9 +1754,9 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 		pf_getFactoryInfo :: proc "system" (this: rawptr, info: ^vst3.PFactoryInfo) -> vst3.TResult {
 			context = plugin_factory.ctx
 			log.info("getFactoryInfo")
-			copy(info.vendor[:], "JagI")
-			copy(info.url[:], "jagi.quest")
-			copy(info.email[:], "jagi@jagi.quest")
+			copy(info.vendor[:], sdk.PLUGIN_VENDOR)
+			copy(info.url[:], sdk.PLUGIN_URL)
+			copy(info.email[:], sdk.PLUGIN_EMAIL)
 			info.flags = 0
 			return vst3.kResultOk
 		}
@@ -1788,7 +1788,7 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 				copy(info.category[:], "Component Controller Class")
 			}
 
-			copy(info.name[:], plugin_factory.desc.name)
+			copy(info.name[:], sdk.PLUGIN_NAME)
 
 			return vst3.kResultOk
 		}
@@ -1882,10 +1882,10 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 				copy(info.category[:], "Component Controller Class")
 			}
 
-			copy(info.name[:], desc.name)
+			copy(info.name[:], sdk.PLUGIN_NAME)
 			copy(info.subCategories[:], subcat)
-			copy(info.vendor[:], desc.vendor)
-			copy(info.version[:], desc.version)
+			copy(info.vendor[:], sdk.PLUGIN_VENDOR)
+			copy(info.version[:], sdk.PLUGIN_VERSION)
 			copy(info.sdkVersion[:], "VST 3.7.0")
 
 			return vst3.kResultOk
@@ -1920,10 +1920,10 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 				copy(info.category[:], "Component Controller Class")
 			}
 
-			utf16.encode_string(info.name[:], desc.name)
+			utf16.encode_string(info.name[:], sdk.PLUGIN_NAME)
 			copy(info.subCategories[:], subcat)
-			utf16.encode_string(info.vendor[:], desc.vendor)
-			utf16.encode_string(info.version[:], desc.version)
+			utf16.encode_string(info.vendor[:], sdk.PLUGIN_VENDOR)
+			utf16.encode_string(info.version[:], sdk.PLUGIN_VERSION)
 			utf16.encode_string(info.sdkVersion[:], "VST 3.7.0")
 
 			return vst3.kResultOk
@@ -1955,9 +1955,9 @@ clamp_to_view_config :: proc(rect: ^vst3.ViewRect, cur_w, cur_h: i32, cfg: sdk.V
 		plugin_api = hs.hotload_api()
 		plugin_factory.desc = plugin_api.get_plugin_descriptor()
 
-		patch_cid_for_plugin(&lindale_processor_cid, hs.PLUGIN_NAME)
-		patch_cid_for_plugin(&lindale_controller_cid, hs.PLUGIN_NAME)
-		patch_cid_for_plugin(&lindale_connection_cid, hs.PLUGIN_NAME)
+		patch_cid_for_plugin(&lindale_processor_cid, hs.PLUGIN_ID)
+		patch_cid_for_plugin(&lindale_controller_cid, hs.PLUGIN_ID)
+		patch_cid_for_plugin(&lindale_connection_cid, hs.PLUGIN_ID)
 
 		plugin_factory.initialized = true
 	}

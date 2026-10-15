@@ -1,0 +1,7 @@
+{
+	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
+	"collections": [
+		{ "name": "lindale", "path": "src" }
+	],
+	"enable_semantic_tokens": true
+}

@@ -14,7 +14,7 @@ Each plugin lives in `plugins/<name>/`. `cd` into it and run its build script: `
 
 Flags: `-release` (else `-debug`), `-no-hot`.
 
-A plugin's identity is its folder name (the build derives `PLUGIN_NAME` from it); the build tool lives in `src/build/`. Each plugin dir holds `build.sh`/`build.bat`, a `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/scopey/src/plugin_scopey.odin`).
+A plugin's identity lives in its `plugin.ini` (`id`, display `name`, `version`, `vendor`, `vendor_id`, optional `url`/`email`), which the build tool in `src/build/` turns into `PLUGIN_*` defines; `id` names output files and seeds the VST3 class IDs. Each plugin dir holds `build.sh`/`build.bat`, a `plugin.ini`, an identical `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/facet/src/plugin_facet.odin`).
 
 ## Style
 

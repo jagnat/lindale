@@ -1,6 +1,5 @@
 // Start here when implementing a new plugin.
-// This is where you select the 'active' plugin,
-// and contains the specification of what you need
+// This contains the specification of what you need
 // to provide for a plugin implementation.
 
 package sdk
@@ -12,10 +11,15 @@ PluginType :: enum {
 	Instrument,
 }
 
+// set from the plugin's plugin.ini by the build tool
+PLUGIN_NAME :: #config(PLUGIN_NAME, "") // display name shown by hosts
+PLUGIN_VERSION :: #config(PLUGIN_VERSION, "0.0.0")
+PLUGIN_VENDOR :: #config(PLUGIN_VENDOR, "")
+PLUGIN_VENDOR_ID :: #config(PLUGIN_VENDOR_ID, "") // reverse-DNS, used for the bundle id and runtime folder
+PLUGIN_URL :: #config(PLUGIN_URL, "")
+PLUGIN_EMAIL :: #config(PLUGIN_EMAIL, "")
+
 PluginDescriptor :: struct {
-	name: string,
-	vendor: string,
-	version: string,
 	plugin_type: PluginType,
 	params: []b.ParamDescriptor,
 	max_channels: int,
