@@ -1,5 +1,6 @@
 package dsp
 
+import "core:math"
 import "core:testing"
 
 POKEY_CHANNELS :: 4
@@ -284,12 +285,18 @@ pokey_render_mix :: proc(banks: []Pokey, out: []f32, sample_rate: f64) {
 	}
 }
 
+// low enough to leave 16-bit bass notes near 13Hz mostly intact
+POKEY_DC_BLOCK_HZ :: 5
+
+// Output coupling cap. The DAC code is unipolar, so without this every volume step is a DC step
+// TODO: machine-specific low-pass, drive/saturation
 PokeyAnalog :: struct {
-	// TODO: output high-pass / DC block, machine-specific low-pass, drive/saturation
+	dc: DCBlocker,
 }
 
-pokey_analog_process :: proc(a: ^PokeyAnalog, buf: []f32) {
-	// TODO: passthrough until modeled
+pokey_analog_process :: proc(a: ^PokeyAnalog, buf: []f32, sample_rate: f64) {
+	a.dc.r = f32(math.exp(-TAU * POKEY_DC_BLOCK_HZ / sample_rate))
+	dc_blocker_process_buf(&a.dc, buf)
 }
 
 @(private)
