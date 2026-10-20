@@ -22,7 +22,7 @@ A plugin's identity lives in its `plugin.ini` (`id`, display `name`, `version`, 
 - This is Odin — not C, not Go.
 - Prefer extending existing files over creating new ones.
 - No space-padded vertical alignment anywhere — one space between tokens, even if surrounding code does otherwise. Vtable struct declarations are the only exception.
-- Route virtually all allocations through `HostContext`'s allocators — don't fall back to the default. `persistent_allocator` survives hot-reloads (lives until component destruction), `session_allocator` is freed on hot-reload or view close, `frame_allocator` is cleared per frame (controller) or per process call (processor).
+- Route virtually all allocations through `HostContext`'s allocators — don't fall back to the default. `persistent_allocator` survives hot-reloads (lives until component destruction), `session_allocator` is freed on hot-reload, `frame_allocator` is cleared per frame (controller) or per process call (processor).
 
 ### Comments
 

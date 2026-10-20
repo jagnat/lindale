@@ -16,4 +16,23 @@
 			}
 		}
 	},
+	"build_systems":
+	[
+		{
+			"name": "Lindale Plugin",
+			"env": {"MODE": "hotbuild"},
+			"file_regex": "^(.+?)\\((\\d+):(\\d+)\\) (.*)$",
+			"windows": {
+				"shell_cmd": "if not \"${file/^(.*\\\\plugins\\\\[^\\\\]+)\\\\.*$|.*/$1/}\"==\"\" (cd /d \"${file/^(.*\\\\plugins\\\\[^\\\\]+)\\\\.*$|.*/$1/}\" && build.bat %MODE%)",
+			},
+			"osx": {
+				"shell_cmd": "d=\"${file/^(.*\\/plugins\\/[^\\/]+)\\/.*$|.*/$1/}\"; if [ -n \"\\$d\" ]; then cd \"\\$d\" && sh build.sh \\$MODE; fi",
+			},
+			"variants":
+			[
+				{"name": "Build", "env": {"MODE": "build"}},
+				{"name": "Check", "env": {"MODE": "check"}},
+			],
+		},
+	],
 }
