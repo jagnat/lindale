@@ -123,14 +123,14 @@ THEME_JQ : UITheme : {
 	toggle_thumb_color = {0xeb, 0xed, 0xe9, 0xff},
 	text_color = {0xe9, 0xe6, 0xde, 0xff},
 	border_color = {0xe9, 0xe6, 0xde, 0xff},
-	panel_border_color = {0xff, 0xff, 0xff, 0xff},
+	panel_border_color = {0x50, 0x50, 0x50, 0xff},
 
 	padding = 10,
 	item_spacing = 10,
 	corner_radius = 10,
 	border_width = 1.2,
 	font_size = FONT_SIZE_DEFAULT,
-	panel_border_width = 0.4,
+	panel_border_width = 1.2,
 
 	slider_width = 20,
 	slider_rail_width = 4,

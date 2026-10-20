@@ -2,6 +2,7 @@ package sdk
 
 import "core:fmt"
 import "core:os"
+import "base:runtime"
 import stbtt "vendor:stb/truetype"
 import stbi "vendor:stb/image"
 import fs "vendor:fontstash"
@@ -13,11 +14,14 @@ FONT_SIZE_DEFAULT :: 22
 
 FontState :: struct {
 	font_context: fs.FontContext,
-	scale:      f32,
+	scale: f32,
+	alloc: runtime.Allocator,
 }
 
-font_init :: proc(ctx: ^FontState) {
+font_init :: proc(ctx: ^FontState, alloc: runtime.Allocator) {
 	ctx.scale = 1.0
+	ctx.alloc = alloc
+	context.allocator = alloc
 	fs.Init(&ctx.font_context, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE, .TOPLEFT)
 	fs.AddFontMem(&ctx.font_context, "Noto Sans", font_noto_sans, false)
 }
@@ -74,6 +78,7 @@ font_get_vertical_metrics :: proc(ctx: ^FontState, size: f32) -> (ascender, desc
 font_set_scale :: proc(ctx: ^FontState, scale: f32) {
 	if abs(scale - ctx.scale) < 0.01 do return
 	ctx.scale = scale
+	context.allocator = ctx.alloc
 	fs.ResetAtlas(&ctx.font_context, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
 	font_invalidate_texture(ctx)
 }

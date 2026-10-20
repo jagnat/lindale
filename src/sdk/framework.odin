@@ -130,19 +130,20 @@ framework_draw :: proc(plug: ^PluginController) {
 // Optional procs: framework does its own work, then delegates if the plugin opted in.
 
 framework_setup_controller :: proc(plug: ^PluginController) -> rawptr {
+	// TODO: this is temp solution to rebuild draw state since font texture, etc. cannot outlive hot dll
+	plug.draw = new(DrawContext, plug.host.session_allocator)
+	plug.draw.plugin = plug
+	plug.draw.clear_color = {0, 0, 0, 1}
+	font_init(&plug.draw.font_state, plug.host.session_allocator)
+	plug.draw.initialized = true
+
 	plug.state = nil
 	if plugin_api().setup_controller != nil do plug.state = plugin_api().setup_controller(plug)
 	return plug.state
 }
 
 framework_view_attached :: proc(plug: ^PluginController) {
-	if plug.draw == nil {
-		plug.draw = new(DrawContext)
-		plug.draw.plugin = plug
-		plug.draw.clear_color = {0, 0, 0, 1}
-		font_init(&plug.draw.font_state)
-		plug.draw.initialized = true
-	}
+	font_invalidate_texture(&plug.draw.font_state)
 	if plug.ui == nil {
 		plug.ui = new(UIContext)
 		plug.ui.plugin = plug
