@@ -370,6 +370,11 @@ _load_api :: proc() -> bool {
 
 	buf:[512]u8
 	next_dll := fmt.bprintf(buf[:], ctx.hotloaded_dll_fmt, ctx.dll_suffix)
+	// if for some reason we can't delete an old dll stuck in use, just skip it
+	for os.exists(next_dll) && os.remove(next_dll) != nil {
+		ctx.dll_suffix += 1
+		next_dll = fmt.bprintf(buf[:], ctx.hotloaded_dll_fmt, ctx.dll_suffix)
+	}
 	log.info("next dll:", next_dll)
 
 	next_idx := (ctx.idx + 1) % NUM_DLLS

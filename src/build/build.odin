@@ -111,6 +111,9 @@ build_plugin :: proc () {
 }
 
 build_vst3_dylib :: proc(out_path: string, target: string = "") {
+	move_aside_if_locked(out_path)
+	move_aside_if_locked(fmt.tprintf("%s.pdb", out_path[:len(out_path) - len(".vst3")]))
+
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "vst3",
 		LINDALE_COLLECTION,
@@ -226,6 +229,9 @@ build_hotloaded :: proc() {
 		os.exit(1)
 	}
 
+	move_aside_if_locked(fmt.tprintf("out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION))
+	move_aside_if_locked(fmt.tprintf("out/hot/%sHot.pdb", plugin))
+
 	// Build hot dll
 	args := make([dynamic]string, allocator = context.temp_allocator)
 	append(&args, "odin", "build", "src",
@@ -242,6 +248,22 @@ build_hotloaded :: proc() {
 	// Code sign on mac
 	when ODIN_OS == .Darwin {
 		codesign(fmt.tprintf("out/hot/%sHot.%s", plugin, dynlib.LIBRARY_FILE_EXTENSION))
+	}
+}
+
+// a crashed host can linger as a zombie that keeps its dlls mapped until reboot
+// mapped files can't be overwritten or deleted but can still be renamed
+move_aside_if_locked :: proc(path: string) {
+	when ODIN_OS == .Windows {
+		if !os.exists(path) || os.remove(path) == nil do return
+		for i in 0..<1000 {
+			stale := fmt.tprintf("%s.stale%d", path, i)
+			if os.exists(stale) && os.remove(stale) != nil do continue
+			if os.rename(path, stale) == nil {
+				fmt.println("Moved locked", path, "to", stale)
+				return
+			}
+		}
 	}
 }
 
