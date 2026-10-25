@@ -19,7 +19,7 @@ jobs:
       - name: Install Odin
         uses: laytan/setup-odin@v2
         with:
-          release: dev-2026-05
+          release: dev-2026-10
 
       # Type-check every plugin except the template through its build script
       - name: Check plugins
