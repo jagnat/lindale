@@ -23,7 +23,6 @@ import "base:intrinsics"
 import "core:log"
 import "core:time"
 import "core:crypto/hash"
-import "core:sys/windows"
 import vm "core:mem/virtual"
 
 import "../thirdparty/vst3"

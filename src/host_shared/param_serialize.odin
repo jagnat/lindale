@@ -5,7 +5,6 @@ import "core:log"
 
 import "../bridge"
 
-// Serializes parameter values to a JSON byte slice.
 serialize_params :: proc(
 	param_descs: []bridge.ParamDescriptor,
 	param_values: ^bridge.ParamValues,
@@ -24,8 +23,7 @@ serialize_params :: proc(
 	return data, true
 }
 
-// Deserializes parameter values from a JSON byte slice into param_values.
-// Unrecognized keys are ignored. Missing keys stay at their default values.
+// Unrecognized keys are ignored, missing keys stay at their default values.
 deserialize_params :: proc(
 	param_descs: []bridge.ParamDescriptor,
 	param_values: ^bridge.ParamValues,

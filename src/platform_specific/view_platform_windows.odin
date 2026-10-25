@@ -24,7 +24,7 @@ foreign kernel32 {
 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT :: 0x00000002
 GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS       :: 0x00000004
 
-shader_source := #load("../shaders/shader.hlsl", string)
+shader_source := #load("shader.hlsl", string)
 
 @(private="file")
 window_class_atom: win.ATOM

@@ -27,7 +27,7 @@ foreign ObjCRuntime {
 @(objc_class="NSTrackingArea")
 NSTrackingArea :: struct { using _: intrinsics.objc_object }
 
-shader_source := #load("../shaders/shader.metal")
+shader_source := #load("shader.metal")
 
 TextureSlot :: struct {
 	texture: ^MTL.Texture,

@@ -3,10 +3,7 @@ package platform_specific
 import "core:os"
 import "core:strings"
 
-// Returns "%APPDATA%\<org>\<app>\" and ensures the directory exists, creating
-// org + app levels as needed. A freshly-installed .vst3 may run before any
-// build script has touched the filesystem, so the plugin owns this. Errors
-// (typically "already exists") are ignored.
+// Returns "%APPDATA%\<org>\<app>\" and ensures the directory exists. Errors ignored.
 get_pref_path :: proc(org, app: string) -> string {
 	appdata := os.get_env("APPDATA", context.allocator)
 	if appdata == "" do return ""
