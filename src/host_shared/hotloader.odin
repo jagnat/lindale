@@ -93,6 +93,7 @@ hotload_api :: proc() -> sdk.PluginApi {
 		buffer_view_attached,
 		buffer_view_removed,
 		buffer_view_resized,
+		buffer_state_changed,
 
 		buffer_setup_processor,
 		buffer_get_latency_samples,
@@ -172,6 +173,19 @@ hotload_api :: proc() -> sdk.PluginApi {
 				sdk.FALLBACK_API.view_resized(plug, rect)
 			} else {
 				ctx.apis[idx].view_resized(plug, rect)
+			}
+		}
+	}
+
+	buffer_state_changed :: proc(plug: ^sdk.PluginController) {
+		when !HOT_DLL {
+			sdk.FALLBACK_API.state_changed(plug)
+		} else {
+			idx := intrinsics.atomic_load_explicit(&ctx.idx, .Acquire)
+			if idx < 0 || idx >= len(ctx.apis) || ctx.apis[idx].state_changed == nil {
+				sdk.FALLBACK_API.state_changed(plug)
+			} else {
+				ctx.apis[idx].state_changed(plug)
 			}
 		}
 	}
@@ -391,7 +405,17 @@ _load_api :: proc() -> bool {
 		if found {
 			log.info("Loaded get_plugin_api symbol")
 			get_plugin_api := cast(proc() -> sdk.PluginApi)ptr
-			ctx.apis[next_idx] = get_plugin_api()
+			api := get_plugin_api()
+			// live instances locked their param tables, so a reload can't change them
+			cur := ctx.apis[ctx.idx]
+			if cur.get_plugin_descriptor != nil && !param_descs_compatible(cur.get_plugin_descriptor().params, api.get_plugin_descriptor().params) {
+				log.error("Hot reload refused! Params changed, which requires the plugin to be restarted")
+				dynlib.unload_library(lib)
+				// don't retry until the next build
+				ctx.dll_last_mod_time = modification_time
+				return false
+			}
+			ctx.apis[next_idx] = api
 			ctx.libs[next_idx] = lib
 			ctx.suffixes[next_idx] = ctx.dll_suffix
 			ctx.dll_suffix += 1

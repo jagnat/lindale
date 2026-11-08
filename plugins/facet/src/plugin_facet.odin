@@ -66,13 +66,16 @@ CONTROL_TEXT_COLOR : sdk.ColorU8 : {126, 126, 126, 255}
 CONTROL_BORDER_COLOR : sdk.ColorU8 : {60, 60, 60, 255}
 CONTROL_HOVER_COLOR : sdk.ColorU8 : {0x40, 0x42, 0x40, CONTROL_BG_ALPHA}
 
-PARAM_FFT_SIZE :: sdk.ParamIndex(0)
-PARAM_FFT_MODE :: sdk.ParamIndex(1)
-@(rodata) facet_param_table := [?]b.ParamDescriptor {
-	{ name = "FFT Size", short_name = "fftsz", min = 0, max = 3, default_value = 2,
+Param :: enum {
+	FFTSize,
+	FFTMode,
+}
+
+@(rodata) facet_param_table := [Param]b.ParamDescriptor {
+	.FFTSize = { id = "fft_size", name = "FFT Size", short_name = "fftsz", min = 0, max = 3, default_value = 2,
 		step_count = 3, unit = .None, flags = {.List, .Hidden}, smooth_ms = sdk.NO_SMOOTHING,
 	},
-	{ name = "FFT Mode", short_name = "fftmd", min = 0, max = 4, default_value = 0,
+	.FFTMode = { id = "fft_mode", name = "FFT Mode", short_name = "fftmd", min = 0, max = 4, default_value = 0,
 		step_count = 4, unit = .None, flags = {.List, .Hidden}, smooth_ms = sdk.NO_SMOOTHING,
 	},
 }
@@ -136,7 +139,7 @@ AnalysisFrame :: struct {
 facet_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return sdk.PluginDescriptor {
 		.Effect,
-		facet_param_table[:],
+		sdk.param_table(&facet_param_table),
 		MAX_CHANNELS,
 		sdk.ViewConfig {
 			default_width = 640,
@@ -726,9 +729,9 @@ facet_draw :: proc(plug: ^sdk.PluginController) {
 					float_offset = {-SPECTRUM_CONTROLS_INSET, SPECTRUM_CONTROLS_INSET},
 					padding = 0, child_gaps = 6, skip_draw = true) {
 					sdk.ui_label(plug.ui, "FFT Size:", align_y = .Center)
-					sdk.ui_drop_down_param(plug.ui, PARAM_FFT_SIZE, enum_to_string = fft_size_label)
+					sdk.ui_drop_down_param(plug.ui, Param.FFTSize, enum_to_string = fft_size_label)
 					sdk.ui_label(plug.ui, "Mode:", align_y = .Center)
-					sdk.ui_drop_down_param(plug.ui, PARAM_FFT_MODE, enum_to_string = fft_mode_label)
+					sdk.ui_drop_down_param(plug.ui, Param.FFTMode, enum_to_string = fft_mode_label)
 				}
 			}
 		}
@@ -738,7 +741,7 @@ facet_draw :: proc(plug: ^sdk.PluginController) {
 }
 
 get_fft_size :: proc(params: ^b.ParamValues) -> u32 {
-	fft_exp: u32 = u32(params.values[PARAM_FFT_SIZE])
+	fft_exp: u32 = u32(params.values[Param.FFTSize])
 	return 1 << (fft_exp + 10) // 2^(10 + fft_exp)
 }
 
@@ -761,7 +764,7 @@ fft_mode_label :: proc(val: f64) -> string {
 }
 
 get_fft_mode :: proc(params: ^b.ParamValues) -> FFTMode {
-	return FFTMode(int(params.values[PARAM_FFT_MODE] + 0.5))
+	return FFTMode(int(params.values[Param.FFTMode] + 0.5))
 }
 
 TraceStyle :: struct {

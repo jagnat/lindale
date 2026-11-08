@@ -1,5 +1,6 @@
 package sdk
 
+import "base:intrinsics"
 import "core:math"
 import "core:log"
 import "core:testing"
@@ -536,7 +537,8 @@ ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orienta
 	ui_close_component(ctx)
 }
 
-ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
+ui_slider_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
+	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -550,7 +552,8 @@ ui_slider_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_
 	ui_close_component(ctx)
 }
 
-ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
+ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
+	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -622,7 +625,8 @@ ui_drop_down :: proc(ctx: ^UIContext, label: string, choices: []string, binding:
 }
 
 // Choices come from the param's step_count, formatted through enum_to_string
-ui_drop_down_param :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
+ui_drop_down_param :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
+	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	count := int(desc.step_count) + 1
 	choices := make([]string, count, allocator = ctx.plugin.host.frame_allocator)
@@ -645,7 +649,8 @@ ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding, loc :=
 	ui_close_component(ctx)
 }
 
-ui_toggle_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, loc := #caller_location) {
+ui_toggle_param_labeled :: proc(ctx: ^UIContext, param: $P, loc := #caller_location) where intrinsics.type_is_enum(P) {
+	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -670,7 +675,8 @@ ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: 
 	ui_close_component(ctx)
 }
 
-ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) {
+ui_knob_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
+	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	comp := ui_open_component(ctx)
 	comp.data = PanelData{skip_draw = true}
@@ -686,6 +692,7 @@ ui_knob_param_labeled :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_st
 
 // Returns the width of the widest possible formatted value string for a parameter.
 // Used to pre-size value labels so they don't change width as the value changes.
+// TODO: take a typed enum param like the other param widgets
 ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, enum_to_string: proc(val: f64) -> string = nil) -> f32 {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)

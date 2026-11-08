@@ -11,18 +11,19 @@ Each plugin lives in `plugins/<name>/`. `cd` into it and run its build script: `
 - `hotbuild` — rebuild only the hot-reloadable DLL. Use this during dev.
 - `build` — full VST3 plugin + hot DLL, then symlinks into the system VST3 folder.
 - `check` — `odin check` this plugin.
+- `standalone` — build the standalone executable from the plugin's `standalone/` package.
 
 Flags: `-release` (else `-debug`), `-no-hot`.
 
-A plugin's identity lives in its `plugin.ini` (`id`, display `name`, `version`, `vendor`, `vendor_id`, optional `url`/`email`), which the build tool in `src/build/` turns into `PLUGIN_*` defines; `id` names output files and seeds the VST3 class IDs. Each plugin dir holds `build.sh`/`build.bat`, a `plugin.ini`, an identical `build.odin` shim, a `vst3/` entry package, and the implementation in a fixed `src/` subpackage (e.g. `plugins/facet/src/plugin_facet.odin`).
+A plugin's identity lives in its `plugin.ini` (`id`, display `name`, `version`, `vendor`, `vendor_id`, optional `url`/`email`), which the build tool in `src/build/` turns into `PLUGIN_*` defines; `id` names output files and seeds the VST3 class IDs. Each plugin dir holds `build.sh`/`build.bat`, a `plugin.ini`, an identical `build.odin` shim, a `vst3/` entry package (plus `standalone/` for plugins with a standalone build), and the implementation in a fixed `src/` subpackage (e.g. `plugins/facet/src/plugin_facet.odin`).
 
 ## Style
 
 - Tabs, not spaces.
-- This is Odin — not C, not Go.
+- This is Odin, not C or Go.
 - Prefer extending existing files over creating new ones.
-- No space-padded vertical alignment anywhere — one space between tokens, even if surrounding code does otherwise. Vtable struct declarations are the only exception.
-- Route virtually all allocations through `HostContext`'s allocators — don't fall back to the default. `persistent_allocator` survives hot-reloads (lives until component destruction), `session_allocator` is freed on hot-reload, `frame_allocator` is cleared per frame (controller) or per process call (processor).
+- No space-padded vertical alignment anywhere. One space between tokens, even if surrounding code does otherwise. Vtable struct declarations are the only exception.
+- Route virtually all allocations through `HostContext`'s allocators. Don't fall back to the default. `persistent_allocator` survives hot-reloads (lives until component destruction), `session_allocator` is freed on hot-reload, `frame_allocator` is cleared per frame (controller) or per process call (processor).
 
 ### Comments
 
@@ -30,18 +31,20 @@ A plugin's identity lives in its `plugin.ini` (`id`, display `name`, `version`, 
 - Don't restate identifiers. Field `uniformBuffer` doesn't need `// Uniform buffer`.
 - Keep only non-obvious info: `// 1MB instance buffer`, `// physical pixels`.
 - Section headers stay plain: `// Renderer lifecycle`. No boxes or separator lines.
-- `// TODO:` for incomplete work — not hedges like "if needed".
+- `// TODO:` for incomplete work.
 - Minimal punctuation. No trailing periods unless multiple sentences.
 - ASCII only. No non-ASCII symbols (no √, ², ×, →, etc.) — write `sqrt`, `^2`, `x`, `->`.
 
 ## Architecture (summary)
 
-Four packages enforce the hot-reload boundary:
+Package imports enforce the hot-reload boundary:
 
 - `src/bridge/` — shared types and vtables. Imports only Odin core. The dependency root.
-- `src/sdk/` — the plugin SDK: hot-reloadable framework code (audio, UI, draw, parameters) that plugin code imports. Imports `bridge` and `dsp` only. **Never** imports `vst_host` or `platform_specific` — that rule is what keeps the plugin DLL swappable at runtime.
+- `src/sdk/` — the plugin SDK: hot-reloadable framework code (audio, UI, draw, parameters) that plugin code imports. Imports `bridge` and `dsp` only. **Never** imports a host package (`host_shared`, `vst_host`, `standalone_host`) or `platform_specific` — that rule is what keeps the plugin DLL swappable at runtime.
 - `src/platform_specific/` — GPU renderers (Metal/DX11), timers, filesystem. Imports `bridge` only.
-- `src/vst_host/` — static VST3 layer and composition root. The only package that imports across the others.
+- `src/host_shared/` — static host code shared by both hosts: hotloader, state, config, logging.
+- `src/vst_host/` — static VST3 layer and composition root for the VST3 build.
+- `src/standalone_host/` — composition root for the standalone build.
 
 Plugin implementations live outside `src/`, under `plugins/<name>/src/`, and import `sdk` (plus `bridge`/`dsp`) through the `lindale` collection (`import "lindale:sdk"`).
 

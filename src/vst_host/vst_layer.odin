@@ -120,10 +120,12 @@ LindaleProcessor :: struct {
 
 	plugin: sdk.PluginProcessor,
 	host_ctx: bridge.HostContext,
-	param_descs: []bridge.ParamDescriptor,
+	params: hs.ParamTable,
 	param_values: bridge.ParamValues,
 	bypass_param_idx: int,
 	bypassed: bool,
+	state: hs.StateStore,
+	state_dirty: bool, // set by setState, consumed by process
 
 	input_arrangement: vst3.SpeakerArrangement,
 	output_arrangement: vst3.SpeakerArrangement,
@@ -139,7 +141,7 @@ LindaleProcessor :: struct {
 }
 
 BYPASS_PARAM_DESC :: bridge.ParamDescriptor {
-	name = "Bypass", short_name = "Byp",
+	id = "lindale.bypass", name = "Bypass", short_name = "Byp",
 	min = 0.0, max = 1.0, default_value = 0.0,
 	step_count = 1, unit = .Normalized,
 	flags = {.Automatable},
@@ -221,14 +223,12 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 	processor.ctx = context
 	processor.ctx.logger = hs.get_mutex_logger(.Processor)
 
-	// Init params, and append bypass parameter
-	descs := plugin_api.get_plugin_descriptor().params
-	processor.param_descs = make([]bridge.ParamDescriptor, len(descs) + 1)
-	copy(processor.param_descs, descs)
-	processor.bypass_param_idx = len(descs)
-	processor.param_descs[processor.bypass_param_idx] = BYPASS_PARAM_DESC
-	processor.param_values.values = make([]f64, len(processor.param_descs))
-	for desc, i in processor.param_descs {
+	// Params are locked here, bypass is appended after the plugin's
+	params_ok := hs.param_table_init(&processor.params, plugin_api.get_plugin_descriptor().params, {BYPASS_PARAM_DESC})
+	assert(params_ok, "invalid param table, see log")
+	processor.bypass_param_idx = processor.params.plugin_count
+	processor.param_values.values = make([]f64, len(processor.params.descs))
+	for desc, i in processor.params.descs {
 		processor.param_values.values[i] = desc.default_value
 	}
 
@@ -243,6 +243,7 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 	processor.host_ctx.session_allocator = vm.arena_allocator(&processor.session_arena)
 
 	processor.host_ctx.params = &processor.param_values
+	hs.state_store_init(&processor.state)
 	processor.plugin.host = &processor.host_ctx
 	sdk.plugin_init_processor(&processor.plugin)
 
@@ -276,6 +277,8 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		this.ref_count -= 1
 		if this.ref_count == 0 {
 			log.info("LindaleProcessor teardown")
+			// in case the host released without disconnecting
+			unlink_peers(this, this.controller_link)
 			if this.host_application != nil {
 				this.host_application->release()
 			}
@@ -428,14 +431,14 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		defer delete(data)
 		bytes_read: i32
 		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
-		hs.deserialize_params(processor.param_descs, &processor.param_values, data[:bytes_read])
+		if !hs.deserialize_state(&processor.params, &processor.param_values, &processor.state, data[:bytes_read]) do return vst3.kResultFalse
+		intrinsics.atomic_store(&processor.state_dirty, true)
 		return vst3.kResultOk
 	}
 	lp_comp_getState :: proc "system" (this: rawptr, state: ^vst3.IBStream) -> vst3.TResult {
 		processor := container_of(cast(^vst3.IComponent)this, LindaleProcessor, "component")
 		context = processor.ctx
-		data, ok := hs.serialize_params(processor.param_descs, &processor.param_values)
-		if !ok do return vst3.kResultFalse
+		data := hs.serialize_state(&processor.params, &processor.param_values, &processor.state)
 		defer delete(data)
 		written: i32
 		state.write(state, raw_data(data), i32(len(data)), &written)
@@ -559,7 +562,7 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		outputs := data.outputs
 		inputs := data.inputs
 
-		param_changes := make([][64]sdk.ParameterChange, len(processor.param_descs), context.temp_allocator)
+		param_changes := make([][64]sdk.ParameterChange, len(processor.params.descs), context.temp_allocator)
 
 		audio_context := processor.plugin.audio_processor
 		if data.processContext != nil {
@@ -620,8 +623,8 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 			for i in 0..<param_count {
 				param_queue := data.inputParameterChanges->getParameterData(i)
 				if param_queue != nil && param_queue.lpVtbl != nil {
-					param_idx := int(param_queue->getParameterId())
-					if param_idx < 0 || param_idx >= len(processor.param_descs) do continue
+					param_idx, known := hs.param_index_by_host_id(&processor.params, param_queue->getParameterId())
+					if !known do continue
 
 					// Bypass param is handled by the static layer, not forwarded
 					if param_idx == processor.bypass_param_idx {
@@ -644,7 +647,7 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 							norm_param : f64
 							result := param_queue->getPoint(i, &sample_offs, &norm_param)
 							if result == vst3.kResultOk {
-								plain_val := bridge.normalized_to_param(norm_param, processor.param_descs[param_idx])
+								plain_val := bridge.normalized_to_param(norm_param, processor.params.descs[param_idx])
 								processor.param_values.values[param_idx] = plain_val
 								param_changes[param_idx][actual_count] = sdk.ParameterChange {
 									sample_offset = sample_offs,
@@ -656,6 +659,16 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 						audio_context.param_changes[param_idx] = param_changes[param_idx][:actual_count]
 					}
 				}
+			}
+		}
+
+		// Restored state reaches smoothers as a change at sample 0, unless the host also moved the param this block
+		if intrinsics.atomic_exchange(&processor.state_dirty, false) {
+			processor.bypassed = processor.param_values.values[processor.bypass_param_idx] > 0.5
+			for i in 0 ..< len(audio_context.param_changes) {
+				if len(audio_context.param_changes[i]) > 0 do continue
+				param_changes[i][0] = {sample_offset = 0, value = processor.param_values.values[i]}
+				audio_context.param_changes[i] = param_changes[i][:1]
 			}
 		}
 
@@ -888,6 +901,7 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 		context = processor.ctx
 		log.info("lp_cp_disconnect")
 		processor.peer = nil
+		unlink_peers(processor, processor.controller_link)
 		return vst3.kResultOk
 	}
 	// Notify may run on any thread: funnel anything bound for the audio path through a
@@ -915,6 +929,18 @@ create_lindale_processor :: proc() -> ^LindaleProcessor {
 	}
 }
 
+// Clears both directions so neither side keeps a pointer into a released peer
+unlink_peers :: proc(processor: ^LindaleProcessor, controller: ^LindaleController) {
+	if processor != nil {
+		processor.controller_link = nil
+		processor.plugin.controller_peer = nil
+	}
+	if controller != nil {
+		controller.processor_link = nil
+		controller.plugin.processor_peer = nil
+	}
+}
+
 LindaleController :: struct {
 	edit_controller: vst3.IEditController,
 	edit_controller_vtable: vst3.IEditControllerVtbl,
@@ -931,7 +957,7 @@ LindaleController :: struct {
 	host_ctx: bridge.HostContext,
 	platform_api: bridge.PlatformApi,
 	host_api: bridge.HostApi,
-	param_descs: []bridge.ParamDescriptor,
+	params: hs.ParamTable,
 	param_values: bridge.ParamValues,
 	bypass_param_idx: int,
 
@@ -1002,14 +1028,12 @@ create_lindale_controller :: proc () -> ^LindaleController {
 	controller.ctx = context
 	controller.ctx.logger = hs.get_mutex_logger(.Controller)
 
-	// Init params, and append bypass parameter
-	descs := plugin_api.get_plugin_descriptor().params
-	controller.param_descs = make([]bridge.ParamDescriptor, len(descs) + 1)
-	copy(controller.param_descs, descs)
-	controller.bypass_param_idx = len(descs)
-	controller.param_descs[controller.bypass_param_idx] = BYPASS_PARAM_DESC
-	controller.param_values.values = make([]f64, len(controller.param_descs))
-	for desc, i in controller.param_descs {
+	// Params are locked here, bypass is appended after the plugin's
+	params_ok := hs.param_table_init(&controller.params, plugin_api.get_plugin_descriptor().params, {BYPASS_PARAM_DESC})
+	assert(params_ok, "invalid param table, see log")
+	controller.bypass_param_idx = controller.params.plugin_count
+	controller.param_values.values = make([]f64, len(controller.params.descs))
+	for desc, i in controller.params.descs {
 		controller.param_values.values[i] = desc.default_value
 	}
 
@@ -1029,6 +1053,8 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		param_edit_start = lc_host_param_edit_start,
 		param_edit_change = lc_host_param_edit_change,
 		param_edit_end = lc_host_param_edit_end,
+		state_set = lc_host_state_set,
+		state_get = lc_host_state_get,
 	}
 	controller.host_ctx.host_api = &controller.host_api
 	controller.plugin.host = &controller.host_ctx
@@ -1036,30 +1062,57 @@ create_lindale_controller :: proc () -> ^LindaleController {
 	controller.view_config = sdk.resolve_view_config(plugin_api.get_plugin_descriptor().view)
 	controller.plugin.view_bounds = {0, 0, controller.view_config.default_width, controller.view_config.default_height}
 
-	sdk.plugin_init_controller(&controller.plugin)
 	plugin_api.setup_controller(&controller.plugin)
 
 	return controller
 
-	lc_host_param_edit_start :: proc(ctx: bridge.HostHandle, param_id: i32) {
-		controller := cast(^LindaleController)ctx
-		context = controller.ctx
-		if controller.component_handler == nil do return
-		controller.component_handler->beginEdit(u32(param_id))
+	lc_lookup_host_id :: proc(controller: ^LindaleController, param_index: i32) -> (u32, bool) {
+		if param_index < 0 || int(param_index) >= len(controller.params.host_ids) {
+			log.errorf("param index %v out of range", param_index)
+			return 0, false
+		}
+		return controller.params.host_ids[param_index], true
 	}
 
-	lc_host_param_edit_change :: proc(ctx: bridge.HostHandle, param_id: i32, normalized_value: f64) {
+	lc_host_param_edit_start :: proc(ctx: bridge.HostHandle, param_index: i32) {
 		controller := cast(^LindaleController)ctx
 		context = controller.ctx
 		if controller.component_handler == nil do return
-		controller.component_handler->performEdit(u32(param_id), normalized_value)
+		id, ok := lc_lookup_host_id(controller, param_index)
+		if ok do controller.component_handler->beginEdit(id)
 	}
 
-	lc_host_param_edit_end :: proc(ctx: bridge.HostHandle, param_id: i32) {
+	lc_host_param_edit_change :: proc(ctx: bridge.HostHandle, param_index: i32, normalized_value: f64) {
 		controller := cast(^LindaleController)ctx
 		context = controller.ctx
 		if controller.component_handler == nil do return
-		controller.component_handler->endEdit(u32(param_id))
+		id, ok := lc_lookup_host_id(controller, param_index)
+		if ok do controller.component_handler->performEdit(id, normalized_value)
+	}
+
+	lc_host_param_edit_end :: proc(ctx: bridge.HostHandle, param_index: i32) {
+		controller := cast(^LindaleController)ctx
+		context = controller.ctx
+		if controller.component_handler == nil do return
+		id, ok := lc_lookup_host_id(controller, param_index)
+		if ok do controller.component_handler->endEdit(id)
+	}
+
+	// the store lives on the processor, which writes it into the component state
+	lc_host_state_set :: proc(ctx: bridge.HostHandle, key: string, bytes: []u8) {
+		controller := cast(^LindaleController)ctx
+		context = controller.ctx
+		if controller.processor_link == nil {
+			log.warnf("state_set %q before the processor is connected, dropped", key)
+			return
+		}
+		hs.state_store_set(&controller.processor_link.state, key, bytes)
+	}
+
+	lc_host_state_get :: proc(ctx: bridge.HostHandle, key: string) -> []u8 {
+		controller := cast(^LindaleController)ctx
+		if controller.processor_link == nil do return nil
+		return hs.state_store_get(&controller.processor_link.state, key)
 	}
 
 	lc_queryInterface :: proc (this: ^LindaleController, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
@@ -1082,6 +1135,8 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		this.ref_count -= 1
 		if this.ref_count == 0 {
 			log.info("LindaleController teardown")
+			// in case the host released without disconnecting
+			unlink_peers(this.processor_link, this)
 			if this.host_application != nil {
 				this.host_application->release()
 			}
@@ -1145,7 +1200,9 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		defer delete(data)
 		bytes_read: i32
 		state.read(state, raw_data(data), i32(end_pos), &bytes_read)
-		hs.deserialize_params(controller.param_descs, &controller.param_values, data[:bytes_read])
+		// the processor already holds the state_get data, the controller only needs params
+		if !hs.deserialize_state(&controller.params, &controller.param_values, nil, data[:bytes_read]) do return vst3.kResultFalse
+		plugin_api.state_changed(&controller.plugin)
 		return vst3.kResultOk
 	}
 	lc_ec_setState :: proc "system" (this: rawptr, state: ^ vst3.IBStream) -> vst3.TResult {
@@ -1156,17 +1213,17 @@ create_lindale_controller :: proc () -> ^LindaleController {
 	}
 	lc_ec_getParameterCount :: proc "system" (this: rawptr) -> i32 {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
-		return i32(len(controller.param_descs))
+		return i32(len(controller.params.descs))
 	}
 	lc_ec_getParameterInfo :: proc "system" (this: rawptr, paramIndex: i32, info: ^vst3.ParameterInfo) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
 
-		if int(paramIndex) >= len(controller.param_descs) {
+		if paramIndex < 0 || int(paramIndex) >= len(controller.params.descs) {
 			return vst3.kInvalidArgument
 		}
 
-		desc := controller.param_descs[paramIndex]
+		desc := controller.params.descs[paramIndex]
 
 		flags := vst3.ParameterFlagSet{}
 		if .Automatable in desc.flags do flags += {.kCanAutomate}
@@ -1179,7 +1236,7 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		}
 
 		info^ = vst3.ParameterInfo {
-			id = u32(paramIndex),
+			id = controller.params.host_ids[paramIndex],
 			stepCount = desc.step_count,
 			defaultNormalizedValue = bridge.param_to_normalized(desc.default_value, desc),
 			unitId = vst3.kRootUnitId,
@@ -1196,8 +1253,9 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
 
-		if int(id) >= len(controller.param_descs) do return vst3.kInvalidArgument
-		desc := controller.param_descs[id]
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return vst3.kInvalidArgument
+		desc := controller.params.descs[idx]
 
 		buffer: [128]u8
 		plain_val := bridge.normalized_to_param(valueNormalized, desc)
@@ -1210,8 +1268,9 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
 
-		if int(id) >= len(controller.param_descs) do return vst3.kInvalidArgument
-		desc := controller.param_descs[id]
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return vst3.kInvalidArgument
+		desc := controller.params.descs[idx]
 
 		buffer: [128]u8
 		utf16.decode_to_utf8(buffer[:], str[:128])
@@ -1224,26 +1283,30 @@ create_lindale_controller :: proc () -> ^LindaleController {
 	lc_ec_normalizedParamToPlain :: proc "system" (this: rawptr, id: vst3.ParamID, valueNormalized: vst3.ParamValue) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
-		if int(id) >= len(controller.param_descs) do return valueNormalized
-		return bridge.normalized_to_param(valueNormalized, controller.param_descs[id])
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return valueNormalized
+		return bridge.normalized_to_param(valueNormalized, controller.params.descs[idx])
 	}
 	lc_ec_plainParamToNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, plainValue: vst3.ParamValue) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
-		if int(id) >= len(controller.param_descs) do return plainValue
-		return bridge.param_to_normalized(plainValue, controller.param_descs[id])
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return plainValue
+		return bridge.param_to_normalized(plainValue, controller.params.descs[idx])
 	}
 	lc_ec_getParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID) -> vst3.ParamValue {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
-		if int(id) >= len(controller.param_descs) do return 0
-		return bridge.param_to_normalized(controller.param_values.values[id], controller.param_descs[id])
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return 0
+		return bridge.param_to_normalized(controller.param_values.values[idx], controller.params.descs[idx])
 	}
 	lc_ec_setParamNormalized :: proc "system" (this: rawptr, id: vst3.ParamID, value: vst3.ParamValue) -> vst3.TResult {
 		controller := container_of(cast(^vst3.IEditController)this, LindaleController, "edit_controller")
 		context = controller.ctx
-		if int(id) >= len(controller.param_descs) do return vst3.kInvalidArgument
-		controller.param_values.values[id] = bridge.normalized_to_param(value, controller.param_descs[id])
+		idx, known := hs.param_index_by_host_id(&controller.params, id)
+		if !known do return vst3.kInvalidArgument
+		controller.param_values.values[idx] = bridge.normalized_to_param(value, controller.params.descs[idx])
 		return vst3.kResultOk
 	}
 	lc_ec_setComponentHandler :: proc "system" (this: rawptr, handler: ^vst3.IComponentHandler) -> vst3.TResult {
@@ -1334,6 +1397,7 @@ create_lindale_controller :: proc () -> ^LindaleController {
 			controller.plugin.processor_peer = &controller.processor_link.plugin
 			controller.processor_link.plugin.controller_peer = &controller.plugin
 			log.info("lc_cp_connect: Connection with processor established.")
+			plugin_api.state_changed(&controller.plugin)
 		} else { // Query interface on processor failed - send message to processor instead
 			send_int_message(controller.host_application, controller.peer, "LindaleVST3EditController", transmute(i64)uintptr(controller))
 		}
@@ -1344,6 +1408,7 @@ create_lindale_controller :: proc () -> ^LindaleController {
 		context = controller.ctx
 		log.info("lc_cp_disconnect")
 		controller.peer = nil
+		unlink_peers(controller.processor_link, controller)
 		return vst3.kResultOk
 	}
 	// notify may run on any thread: route UI mutations through the same channel as
@@ -1424,6 +1489,7 @@ timer_proc :: proc (timer: ^plat.Timer) {
 		view.controller.last_generation = gen
 		vm.arena_free_all(&view.controller.session_arena)
 		plugin_api.setup_controller(&view.controller.plugin)
+		if view.controller.processor_link != nil do plugin_api.state_changed(&view.controller.plugin)
 	}
 
 	update_frame_dt(view.plugin)
@@ -1444,6 +1510,7 @@ repaint_callback :: proc "c" (data: rawptr) {
 		view.controller.last_generation = gen
 		vm.arena_free_all(&view.controller.session_arena)
 		plugin_api.setup_controller(&view.controller.plugin)
+		if view.controller.processor_link != nil do plugin_api.state_changed(&view.controller.plugin)
 	}
 
 	update_frame_dt(view.plugin)

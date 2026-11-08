@@ -36,6 +36,7 @@ PendingParamChange :: struct {
 StandaloneHost :: struct {
 	desc: sdk.PluginDescriptor,
 	param_descs: []bridge.ParamDescriptor,
+	state: hs.StateStore, // not saved, the standalone has no project
 
 	processor: sdk.PluginProcessor,
 	processor_host_ctx: bridge.HostContext,
@@ -142,11 +143,14 @@ init_host :: proc(host: ^StandaloneHost) {
 	assert(sess_err == .None)
 	host.controller_host_ctx.session_allocator = vm.arena_allocator(&host.controller_session_arena)
 	host.controller_host_ctx.params = &host.controller_params
+	hs.state_store_init(&host.state)
 	host.host_api = bridge.HostApi {
 		ctx = bridge.HostHandle(host),
 		param_edit_start = sa_param_edit_start,
 		param_edit_change = sa_param_edit_change,
 		param_edit_end = sa_param_edit_end,
+		state_set = sa_state_set,
+		state_get = sa_state_get,
 	}
 	host.controller_host_ctx.host_api = &host.host_api
 	host.controller.host = &host.controller_host_ctx
@@ -157,8 +161,8 @@ init_host :: proc(host: ^StandaloneHost) {
 
 	host.view_config = sdk.resolve_view_config(host.desc.view)
 	host.controller.view_bounds = {0, 0, host.view_config.default_width, host.view_config.default_height}
-	sdk.plugin_init_controller(&host.controller)
 	plugin_api.setup_controller(&host.controller)
+	plugin_api.state_changed(&host.controller)
 	host.controller_generation = hs.hotload_generation()
 
 	host.processor.controller_peer = &host.controller
@@ -197,15 +201,25 @@ attach_view :: proc(host: ^StandaloneHost, parent_view: rawptr) {
 	}
 }
 
-sa_param_edit_start :: proc(ctx: bridge.HostHandle, param_id: i32) {
+sa_param_edit_start :: proc(ctx: bridge.HostHandle, param_index: i32) {
 }
 
-sa_param_edit_change :: proc(ctx: bridge.HostHandle, param_id: i32, normalized_value: f64) {
+sa_param_edit_change :: proc(ctx: bridge.HostHandle, param_index: i32, normalized_value: f64) {
 	host := cast(^StandaloneHost)ctx
-	dsp.ring_try_write(&host.pending, PendingParamChange{param_id, normalized_value})
+	dsp.ring_try_write(&host.pending, PendingParamChange{param_index, normalized_value})
 }
 
-sa_param_edit_end :: proc(ctx: bridge.HostHandle, param_id: i32) {
+sa_param_edit_end :: proc(ctx: bridge.HostHandle, param_index: i32) {
+}
+
+sa_state_set :: proc(ctx: bridge.HostHandle, key: string, bytes: []u8) {
+	host := cast(^StandaloneHost)ctx
+	hs.state_store_set(&host.state, key, bytes)
+}
+
+sa_state_get :: proc(ctx: bridge.HostHandle, key: string) -> []u8 {
+	host := cast(^StandaloneHost)ctx
+	return hs.state_store_get(&host.state, key)
 }
 
 sa_frame :: proc(host: ^StandaloneHost) {
@@ -217,6 +231,7 @@ sa_frame :: proc(host: ^StandaloneHost) {
 		host.controller_generation = gen
 		vm.arena_free_all(&host.controller_session_arena)
 		plugin_api.setup_controller(&host.controller)
+		plugin_api.state_changed(&host.controller)
 	}
 
 	// poll the renderer for window resizes

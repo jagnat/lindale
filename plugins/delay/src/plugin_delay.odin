@@ -30,31 +30,37 @@ DelayControlState :: struct {}
 
 // Parameters
 
-PARAM_DELAY_TIME  :: sdk.ParamIndex(0)
-PARAM_FEEDBACK    :: sdk.ParamIndex(1)
-PARAM_MIX         :: sdk.ParamIndex(2)
-DELAY_PARAM_GAIN  :: sdk.ParamIndex(3)
+Param :: enum {
+	DelayTime,
+	Feedback,
+	Mix,
+	Gain,
+}
 
-@(rodata) delay_param_table := [?]b.ParamDescriptor {
-	{
+@(rodata) delay_param_table := [Param]b.ParamDescriptor {
+	.DelayTime = {
+		id = "delay_time",
 		name = "Delay Time", short_name = "Delay",
 		min = 1.0, max = 2000.0, default_value = 250.0,
 		step_count = 0, unit = .Milliseconds,
 		flags = {.Automatable},
 	},
-	{
+	.Feedback = {
+		id = "feedback",
 		name = "Feedback", short_name = "Fdbk",
 		min = 0.0, max = 99.0, default_value = 30.0,
 		step_count = 0, unit = .Percentage,
 		flags = {.Automatable},
 	},
-	{
+	.Mix = {
+		id = "mix",
 		name = "Mix", short_name = "Mix",
 		min = 0.0, max = 100.0, default_value = 50.0,
 		step_count = 0, unit = .Percentage,
 		flags = {.Automatable},
 	},
-	{
+	.Gain = {
+		id = "gain",
 		name = "Gain", short_name = "Gain",
 		min = -60.0, max = 12.0, default_value = 0.0,
 		step_count = 0, unit = .Decibel,
@@ -67,7 +73,7 @@ DELAY_PARAM_GAIN  :: sdk.ParamIndex(3)
 delay_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		.Effect,
-		delay_param_table[:],
+		sdk.param_table(&delay_param_table),
 		2, // max channels
 		sdk.ViewConfig {
 			default_width = 640,
@@ -116,10 +122,10 @@ delay_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 	for s in 0 ..< num_samples {
 		sdk.advance_smoothers(actx, s)
 
-		delay_ms := sdk.smoothed_read(actx, PARAM_DELAY_TIME)
-		feedback := sdk.smoothed_read(actx, PARAM_FEEDBACK) / 100.0
-		mix := sdk.smoothed_read(actx, PARAM_MIX) / 100.0
-		gain := dsp.db_to_linear(sdk.smoothed_read(actx, DELAY_PARAM_GAIN))
+		delay_ms := sdk.smoothed_read(actx, Param.DelayTime)
+		feedback := sdk.smoothed_read(actx, Param.Feedback) / 100.0
+		mix := sdk.smoothed_read(actx, Param.Mix) / 100.0
+		gain := dsp.db_to_linear(sdk.smoothed_read(actx, Param.Gain))
 		delay_samples := delay_ms * sample_rate / 1000.0
 
 		for c in 0 ..< num_channels {
@@ -150,10 +156,10 @@ delay_draw :: proc(plug: ^sdk.PluginController) {
 
 	if sdk.ui_frame_scoped(plug.ui) {
 		if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10) {
-			sdk.ui_knob_param_labeled(plug.ui, PARAM_DELAY_TIME)
-			sdk.ui_knob_param_labeled(plug.ui, PARAM_FEEDBACK)
-			sdk.ui_knob_param_labeled(plug.ui, PARAM_MIX)
-			sdk.ui_knob_param_labeled(plug.ui, DELAY_PARAM_GAIN)
+			sdk.ui_knob_param_labeled(plug.ui, Param.DelayTime)
+			sdk.ui_knob_param_labeled(plug.ui, Param.Feedback)
+			sdk.ui_knob_param_labeled(plug.ui, Param.Mix)
+			sdk.ui_knob_param_labeled(plug.ui, Param.Gain)
 		}
 	}
 

@@ -12,8 +12,11 @@ _register :: proc "contextless" () {
 	sdk.register_plugin(template_api)
 }
 
-@(rodata) template_param_table := [?]sdk.ParamDescriptor {
-	{
+Param :: enum { TestParam }
+
+@(rodata) template_param_table := [Param]sdk.ParamDescriptor {
+	.TestParam = {
+		id = "test_param",
 		name = "Test Param", short_name = "tp", min = 0, max = 100, default_value = 0,
 		unit = .Percentage, flags = {.Automatable},
 	},
@@ -22,7 +25,7 @@ _register :: proc "contextless" () {
 template_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		.Effect, // Plugin type
-		template_param_table[:], // params
+		sdk.param_table(&template_param_table), // params
 		2, // Max channels
 		sdk.ViewConfig {
 			min_width = 640, min_height = 480,

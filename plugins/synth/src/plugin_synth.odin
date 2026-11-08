@@ -76,60 +76,73 @@ SynthControlState :: struct {
 
 // Parameters
 
-PARAM_OSC1_WAVE :: sdk.ParamIndex(0)
-PARAM_OSC2_WAVE :: sdk.ParamIndex(1)
-PARAM_OSC_MIX   :: sdk.ParamIndex(2)
-PARAM_OSC2_DET  :: sdk.ParamIndex(3)
-PARAM_ATTACK    :: sdk.ParamIndex(4)
-PARAM_DECAY     :: sdk.ParamIndex(5)
-PARAM_SUSTAIN   :: sdk.ParamIndex(6)
-PARAM_RELEASE   :: sdk.ParamIndex(7)
-PARAM_GAIN      :: sdk.ParamIndex(8)
-PARAM_ARP_ON    :: sdk.ParamIndex(9)
-PARAM_ARP_RATE  :: sdk.ParamIndex(10)
+Param :: enum {
+	Osc1Wave,
+	Osc2Wave,
+	OscMix,
+	Osc2Det,
+	Attack,
+	Decay,
+	Sustain,
+	Release,
+	Gain,
+	ArpOn,
+	ArpRate,
+}
 
-@(rodata) synth_param_table := [?]b.ParamDescriptor {
-	{
+@(rodata) synth_param_table := [Param]b.ParamDescriptor {
+	.Osc1Wave = {
+		id = "osc1_wave",
 		name = "Osc1 Wave", short_name = "Osc1", min = 0, max = 4, default_value = 0,
 		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
-	{
+	.Osc2Wave = {
+		id = "osc2_wave",
 		name = "Osc2 Wave", short_name = "Osc2", min = 0, max = 4, default_value = 1,
 		step_count = 4, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
-	{
+	.OscMix = {
+		id = "osc_mix",
 		name = "Osc Mix", short_name = "Mix", min = -1, max = 1, default_value = 0,
 		unit = .None, flags = {.Automatable},
 	},
-	{
+	.Osc2Det = {
+		id = "osc2_det",
 		name = "Osc2 Detune", short_name = "Det", min = -100, max = 100, default_value = 7,
 		step_count = 0, unit = .None, flags = {.Automatable},
 	},
-	{
+	.Attack = {
+		id = "attack",
 		name = "Attack", short_name = "Atk", min = 1, max = 5000, default_value = 10,
 		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
-	{
+	.Decay = {
+		id = "decay",
 		name = "Decay", short_name = "Dec", min = 1, max = 5000, default_value = 100,
 		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
-	{
+	.Sustain = {
+		id = "sustain",
 		name = "Sustain", short_name = "Sus", min = 0, max = 100, default_value = 70,
 		step_count = 0, unit = .Percentage, flags = {.Automatable},
 	},
-	{
+	.Release = {
+		id = "release",
 		name = "Release", short_name = "Rel", min = 1, max = 10000, default_value = 200,
 		step_count = 0, unit = .Milliseconds, flags = {.Automatable},
 	},
-	{
+	.Gain = {
+		id = "gain",
 		name = "Gain", short_name = "Gain", min = -60, max = 12, default_value = -6,
 		step_count = 0, unit = .Decibel, flags = {.Automatable},
 	},
-	{
+	.ArpOn = {
+		id = "arp_on",
 		name = "Arp On", short_name = "Arp", min = 0, max = 1, default_value = 0,
 		step_count = 1, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
-	{
+	.ArpRate = {
+		id = "arp_rate",
 		name = "Arp Rate", short_name = "Rate", min = 0, max = 3, default_value = 1,
 		step_count = 3, unit = .None, flags = {.Automatable, .List}, smooth_ms = sdk.NO_SMOOTHING,
 	},
@@ -140,7 +153,7 @@ PARAM_ARP_RATE  :: sdk.ParamIndex(10)
 synth_get_plugin_descriptor :: proc() -> sdk.PluginDescriptor {
 	return {
 		.Instrument,
-		synth_param_table[:],
+		sdk.param_table(&synth_param_table),
 		2, // Max channels
 		sdk.ViewConfig {}
 	}
@@ -269,7 +282,7 @@ synth_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 
 	it := sdk.make_block_iterator(actx.events, num_samples)
 	for block in sdk.next_block(&it) {
-		arp_on := sdk.smoothed_read(actx, PARAM_ARP_ON) > 0.5
+		arp_on := sdk.smoothed_read(actx, Param.ArpOn) > 0.5
 
 		for &evt in block.events {
 			switch evt.kind {
@@ -299,8 +312,8 @@ synth_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 			abs_sample := block.sample_offset + s
 			sdk.advance_smoothers(actx, abs_sample)
 
-			arp_on = sdk.smoothed_read(actx, PARAM_ARP_ON) > 0.5
-			arp_rate := sdk.smoothed_read(actx, PARAM_ARP_RATE)
+			arp_on = sdk.smoothed_read(actx, Param.ArpOn) > 0.5
+			arp_rate := sdk.smoothed_read(actx, Param.ArpRate)
 
 			if arp_on && state.arp_note_count > 0 {
 				step_dur := arp_step_samples(arp_rate, tempo, sample_rate)
@@ -322,15 +335,15 @@ synth_process_audio :: proc(plug: ^sdk.PluginProcessor) {
 				state.arp_step = 0
 			}
 
-			osc1_wave := waveform_from_param(sdk.smoothed_read(actx, PARAM_OSC1_WAVE))
-			osc2_wave := waveform_from_param(sdk.smoothed_read(actx, PARAM_OSC2_WAVE))
-			osc2_detune_cents := sdk.smoothed_read(actx, PARAM_OSC2_DET)
-			attack := sdk.smoothed_read(actx, PARAM_ATTACK) / 1000.0
-			decay := sdk.smoothed_read(actx, PARAM_DECAY) / 1000.0
-			sustain := sdk.smoothed_read(actx, PARAM_SUSTAIN) / 100.0
-			release := sdk.smoothed_read(actx, PARAM_RELEASE) / 1000.0
-			osc_mix := (sdk.smoothed_read(actx, PARAM_OSC_MIX) + 1.0) / 2.0
-			gain := dsp.db_to_linear(sdk.smoothed_read(actx, PARAM_GAIN))
+			osc1_wave := waveform_from_param(sdk.smoothed_read(actx, Param.Osc1Wave))
+			osc2_wave := waveform_from_param(sdk.smoothed_read(actx, Param.Osc2Wave))
+			osc2_detune_cents := sdk.smoothed_read(actx, Param.Osc2Det)
+			attack := sdk.smoothed_read(actx, Param.Attack) / 1000.0
+			decay := sdk.smoothed_read(actx, Param.Decay) / 1000.0
+			sustain := sdk.smoothed_read(actx, Param.Sustain) / 100.0
+			release := sdk.smoothed_read(actx, Param.Release) / 1000.0
+			osc_mix := (sdk.smoothed_read(actx, Param.OscMix) + 1.0) / 2.0
+			gain := dsp.db_to_linear(sdk.smoothed_read(actx, Param.Gain))
 
 			bend_semitones := state.pitch_bend * PITCH_BEND_RANGE
 			for &v in state.voices {
@@ -519,25 +532,25 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 40, padding = 10) {
 			// Envelope params
 			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_ATTACK)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_DECAY)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_SUSTAIN)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_RELEASE)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_GAIN)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Attack)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Decay)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Sustain)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Release)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Gain)
 			}
 			// Oscillator param
 			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 0, skip_draw = true) {
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC1_WAVE, enum_to_string = sdk.enum_label(dsp.Waveform))
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_WAVE, enum_to_string = sdk.enum_label(dsp.Waveform))
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC_MIX)
-				sdk.ui_knob_param_labeled(plug.ui, PARAM_OSC2_DET)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Osc1Wave, enum_to_string = sdk.enum_label(dsp.Waveform))
+				sdk.ui_knob_param_labeled(plug.ui, Param.Osc2Wave, enum_to_string = sdk.enum_label(dsp.Waveform))
+				sdk.ui_knob_param_labeled(plug.ui, Param.OscMix)
+				sdk.ui_knob_param_labeled(plug.ui, Param.Osc2Det)
 			}
 			sdk.ui_canvas(plug.ui, scope_draw, &fft_data)
 			
 			// Arp controls
 			if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
-				sdk.ui_toggle_param_labeled(plug.ui, PARAM_ARP_ON)
-				sdk.ui_slider_h_param_labeled(plug.ui, PARAM_ARP_RATE, enum_to_string = arp_rate_to_string)
+				sdk.ui_toggle_param_labeled(plug.ui, Param.ArpOn)
+				sdk.ui_slider_h_param_labeled(plug.ui, Param.ArpRate, enum_to_string = arp_rate_to_string)
 			}
 		}
 	}

@@ -2,7 +2,9 @@ package bridge
 
 import "core:math"
 import "core:fmt"
+import "core:hash"
 import "core:strconv"
+import "core:testing"
 
 ParamUnit :: enum {
 	Decibel,
@@ -32,6 +34,8 @@ ParamFlag :: enum {
 ParamFlagSet :: bit_set[ParamFlag]
 
 ParamDescriptor :: struct {
+	// id, min/max, step_count, unit and list order should never change after being defined
+	id: string,
 	name: string,
 	short_name: string,
 	min: f64,
@@ -41,6 +45,14 @@ ParamDescriptor :: struct {
 	unit: ParamUnit,
 	flags: ParamFlagSet,
 	smooth_ms: f32,
+}
+
+// reserved prefix that framework param ids and state keys start with
+RESERVED_ID_PREFIX :: "lindale."
+
+// hash with the top bit cleared, because VST3 reserves ids >= 0x80000000
+param_host_id :: proc(id: string) -> u32 {
+	return hash.fnv32a(transmute([]u8)id) & 0x7FFFFFFF
 }
 
 ParamValues :: struct {
@@ -121,4 +133,40 @@ param_parse_value :: proc(str: string, desc: ParamDescriptor) -> (f64, bool) {
 	n, _, ok := strconv.parse_f64_prefix(str)
 	if !ok do return 0, false
 	return n, true
+}
+
+@test
+test_param_host_id_pinned :: proc(t: ^testing.T) {
+	// changing these breaks saved automation
+	testing.expect_value(t, param_host_id("gain"), 0x1b5426fe)
+	testing.expect_value(t, param_host_id("lindale.bypass"), 0x742ac08a)
+	testing.expect_value(t, param_host_id("delay_time"), 0x72a2f2a4)
+}
+
+@test
+test_param_to_norm_and_back_hertz :: proc(t: ^testing.T) {
+	desc := ParamDescriptor{
+		min = 20.0,
+		max = 20000.0,
+		unit = .Hertz,
+	}
+
+	test_values := [?]f64{20.0, 100.0, 500, 1000.0, 5000.0, 10000.0, 20000.0}
+	tolerance := 1e-9
+
+	for val in test_values {
+		norm := param_to_normalized(val, desc)
+		back := normalized_to_param(norm, desc)
+		diff := math.abs(val - back)
+		testing.expect(t, diff <= tolerance)
+	}
+
+	test_norms := [?]f64{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
+
+	for val in test_norms {
+		norm := normalized_to_param(val, desc)
+		back := param_to_normalized(norm, desc)
+		diff := math.abs(val - back)
+		testing.expect(t, diff <= tolerance)
+	}
 }

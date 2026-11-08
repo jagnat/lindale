@@ -52,6 +52,9 @@ PluginApi :: struct {
 	view_attached:       proc(plug: ^PluginController),
 	view_removed:        proc(plug: ^PluginController),
 	view_resized:        proc(plug: ^PluginController, rect: RectI32),
+	// state_get data became available or was replaced:
+	// on connect, project or preset load, and hot reload
+	state_changed:       proc(plug: ^PluginController),
 
 	// Returns a reference to the processor state
 	setup_processor:     proc(plug: ^PluginProcessor) -> rawptr,

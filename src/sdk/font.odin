@@ -7,7 +7,7 @@ import stbtt "vendor:stb/truetype"
 import stbi "vendor:stb/image"
 import fs "vendor:fontstash"
 
-font_noto_sans := #load("../../resources/MapleMono-SemiBold.ttf")
+font_ttf := #load("../../resources/MapleMono-SemiBold.ttf")
 
 FONT_ATLAS_SIZE :: 1024
 FONT_SIZE_DEFAULT :: 22
@@ -18,12 +18,12 @@ FontState :: struct {
 	alloc: runtime.Allocator,
 }
 
-font_init :: proc(ctx: ^FontState, alloc: runtime.Allocator) {
+font_init :: proc(ctx: ^FontState, ttf: []u8, alloc: runtime.Allocator) {
 	ctx.scale = 1.0
 	ctx.alloc = alloc
 	context.allocator = alloc
 	fs.Init(&ctx.font_context, FONT_ATLAS_SIZE, FONT_ATLAS_SIZE, .TOPLEFT)
-	fs.AddFontMem(&ctx.font_context, "Noto Sans", font_noto_sans, false)
+	fs.AddFontMem(&ctx.font_context, "Noto Sans", ttf, false)
 }
 
 font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, size: f32, rects: []DrawInstance) -> int {

@@ -1,6 +1,12 @@
 package sdk
 
+import "base:intrinsics"
 import "core:mem"
+import "core:log"
+import "core:reflect"
+import "core:slice"
+import "core:strings"
+import "core:testing"
 import "core:time"
 import b "../bridge"
 import dsp "../dsp"
@@ -16,6 +22,25 @@ plugin_api :: proc() -> PluginApi {
 }
 
 ParamDescriptor :: b.ParamDescriptor
+
+ParamIndex :: distinct int
+
+// Flattens a [Param]ParamDescriptor table for PluginDescriptor
+// Enum order can change between versions, saved state and host ids come from ParamDescriptor.id
+param_table :: proc(table: ^[$E]b.ParamDescriptor) -> []b.ParamDescriptor where intrinsics.type_enum_is_contiguous(E) {
+	#assert(int(min(E)) == 0)
+	return slice.enumerated_array(table)
+}
+
+// Convert .List flagged parameter's values to their string labels
+enum_label :: proc($E: typeid) -> proc(val: f64) -> string {
+	return proc(val: f64) -> string {
+		names := reflect.enum_field_names(E)
+		i := int(val + 0.5)
+		if i < 0 || i >= len(names) do return ""
+		return names[i]
+	}
+}
 
 ParameterChange :: struct {
 	sample_offset: i32,
@@ -105,6 +130,7 @@ FALLBACK_API :: PluginApi {
 	view_attached          = framework_view_attached,
 	view_removed           = framework_view_removed,
 	view_resized           = framework_view_resized,
+	state_changed          = framework_state_changed,
 
 	setup_processor        = framework_setup_processor,
 	process_audio          = framework_process_audio,
@@ -130,11 +156,11 @@ framework_draw :: proc(plug: ^PluginController) {
 // Optional procs: framework does its own work, then delegates if the plugin opted in.
 
 framework_setup_controller :: proc(plug: ^PluginController) -> rawptr {
-	// TODO: this is temp solution to rebuild draw state since font texture, etc. cannot outlive hot dll
+	// fontstash points at font bytes in the hot dll, so its state is rebuilt each session
 	plug.draw = new(DrawContext, plug.host.session_allocator)
 	plug.draw.plugin = plug
 	plug.draw.clear_color = {0, 0, 0, 1}
-	font_init(&plug.draw.font_state, plug.host.session_allocator)
+	font_init(&plug.draw.font_state, font_ttf, plug.host.session_allocator)
 	plug.draw.initialized = true
 
 	plug.state = nil
@@ -162,6 +188,10 @@ framework_view_removed :: proc(plug: ^PluginController) {
 framework_view_resized :: proc(plug: ^PluginController, rect: RectI32) {
 	plug.view_bounds = rect
 	if plugin_api().view_resized != nil do plugin_api().view_resized(plug, rect)
+}
+
+framework_state_changed :: proc(plug: ^PluginController) {
+	if plugin_api().state_changed != nil do plugin_api().state_changed(plug)
 }
 
 framework_setup_processor :: proc(plug: ^PluginProcessor) -> rawptr {
@@ -216,6 +246,25 @@ framework_reset :: proc(plug: ^PluginProcessor) {
 	}
 }
 
+// Instance state, saved with projects and presets. Controller thread only
+// Not available in setup_controller, read it in state_changed. A missing key means use the default
+// Returned bytes stay valid until the next state_set of that key or a state load
+
+state_set :: proc(plug: ^PluginController, key: string, bytes: []u8) {
+	if strings.has_prefix(key, b.RESERVED_ID_PREFIX) {
+		log.errorf("state key %q uses the reserved prefix %q", key, b.RESERVED_ID_PREFIX)
+		return
+	}
+	api := plug.host.host_api
+	if api != nil && api.state_set != nil do api.state_set(api.ctx, key, bytes)
+}
+
+state_get :: proc(plug: ^PluginController, key: string) -> []u8 {
+	api := plug.host.host_api
+	if api == nil || api.state_get == nil do return nil
+	return api.state_get(api.ctx, key)
+}
+
 // default_* falls back to min_*, then DEFAULT_VIEW_*. min_*/max_* stay zero
 resolve_view_config :: proc(v: ViewConfig) -> (cfg: ViewConfig) {
 	cfg = v
@@ -234,11 +283,6 @@ plugin_init_processor :: proc(plugin: ^PluginProcessor) {
 	if plugin.audio_processor.param_changes == nil {
 		plugin.audio_processor.param_changes = make([][]ParameterChange, len(desc.params))
 	}
-}
-
-plugin_init_controller :: proc(plugin: ^PluginController) {
-	desc := plugin_api().get_plugin_descriptor()
-	param_init(desc.params)
 }
 
 
@@ -309,8 +353,8 @@ advance_smoothers :: proc(actx: ^AudioProcessContext, sample: int) {
 	}
 }
 
-smoothed_read :: proc(actx: ^AudioProcessContext, index: ParamIndex) -> f32 {
-	return actx.smoothers[int(index)].current
+smoothed_read :: proc(actx: ^AudioProcessContext, param: $P) -> f32 where intrinsics.type_is_enum(P) {
+	return actx.smoothers[int(param)].current
 }
 
 // Wet/dry utilities
@@ -330,4 +374,18 @@ apply_wet_dry :: proc(outputs: [][]f32, dry: [][]f32, mix: f32, num_samples: int
 			outputs[c][s] = dry[c][s] * (1 - mix) + outputs[c][s] * mix
 		}
 	}
+}
+
+@test
+test_param_table_follows_enum_order :: proc(t: ^testing.T) {
+	TestParam :: enum { First, Second }
+	// rows out of order on purpose
+	table := [TestParam]b.ParamDescriptor {
+		.Second = {name = "second"},
+		.First = {name = "first"},
+	}
+	params := param_table(&table)
+	testing.expect_value(t, len(params), 2)
+	testing.expect_value(t, params[TestParam.First].name, "first")
+	testing.expect_value(t, params[TestParam.Second].name, "second")
 }
