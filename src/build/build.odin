@@ -66,6 +66,8 @@ build_plugin :: proc () {
 		subdir = "x86_64-win"
 	} else when ODIN_OS == .Darwin {
 		subdir = "MacOS"
+	} else when ODIN_OS == .Linux {
+		subdir = "x86_64-linux"
 	} else {
 		#assert(false, "Unsupported OS")
 	}
@@ -73,7 +75,9 @@ build_plugin :: proc () {
 	// Make vst3 dir if not exist
 	os.make_directory_all(fmt.tprintf("out/%s.vst3/Contents/%s", plugin, subdir))
 
-	out_dylib := fmt.tprintf("out/%s.vst3/Contents/%s/%s.vst3", plugin, subdir, plugin)
+	// Linux hosts look for <id>.so inside the bundle
+	ext := ODIN_OS == .Linux ? "so" : "vst3"
+	out_dylib := fmt.tprintf("out/%s.vst3/Contents/%s/%s.%s", plugin, subdir, plugin, ext)
 	when ODIN_OS == .Darwin {
 		if opts.release {
 			// Universal binary lipo'd together, support apple silicon and old intel
@@ -287,6 +291,12 @@ symlink_plugin :: proc() {
 		os.make_directory_all(vst3_dir)
 		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\%s.vst3", vst3_dir, plugin)})
 		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\%s.vst3", vst3_dir, plugin), fmt.tprintf("%s\\out\\%s.vst3", cwd, plugin)})
+	} else when ODIN_OS == .Linux {
+		vst3_dir := fmt.tprintf("%s/.vst3", os.get_env("HOME", context.allocator))
+		os.make_directory_all(vst3_dir)
+		vst3_link := fmt.tprintf("%s/%s.vst3", vst3_dir, plugin)
+		exec({"ln", "-sfn", fmt.tprintf("%s/out/%s.vst3", cwd, plugin), vst3_link})
+		fmt.println("Linked", vst3_link)
 	}
 
 	symlink_hot_runtime()
@@ -311,6 +321,14 @@ symlink_hot_runtime :: proc() {
 		os.make_directory_all(runtime_dir)
 		exec({"cmd", "/c", "rmdir", fmt.tprintf("%s\\hot", runtime_dir)})
 		exec({"cmd", "/c", "mklink", "/J", fmt.tprintf("%s\\hot", runtime_dir), fmt.tprintf("%s\\out\\hot", cwd)})
+	} else when ODIN_OS == .Linux {
+		// Must match get_pref_path in filesys_linux.odin
+		data_home := os.get_env("XDG_DATA_HOME", context.allocator)
+		if data_home == "" do data_home = fmt.tprintf("%s/.local/share", os.get_env("HOME", context.allocator))
+		runtime_dir := fmt.tprintf("%s/%s/%s", data_home, manifest["vendor_id"], plugin)
+		os.make_directory_all(runtime_dir)
+		exec({"ln", "-sfn", fmt.tprintf("%s/out/hot", cwd), fmt.tprintf("%s/hot", runtime_dir)})
+		fmt.println("Linked", fmt.tprintf("%s/hot", runtime_dir))
 	}
 }
 

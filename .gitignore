@@ -13,3 +13,4 @@
 *.exp
 out/
 lindale_collection.txt
+.direnv/
