@@ -435,15 +435,16 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
+	// with CS_DBLCLKS the second press arrives as DBLCLK instead of BUTTONDOWN
+	case win.WM_LBUTTONDBLCLK:
+		renderer.mouse.double_clicked += {.Left}
+		fallthrough
 	case win.WM_LBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Left}
 		renderer.mouse.pressed += {.Left}
 		win.SetCapture(hwnd)
 		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
-
-	case win.WM_LBUTTONDBLCLK:
-		renderer.mouse.double_clicked += {.Left}
 
 	case win.WM_LBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
@@ -452,15 +453,15 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		if renderer.mouse.down == {} do win.ReleaseCapture()
 		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
+	case win.WM_RBUTTONDBLCLK:
+		renderer.mouse.double_clicked += {.Right}
+		fallthrough
 	case win.WM_RBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Right}
 		renderer.mouse.pressed += {.Right}
 		win.SetCapture(hwnd)
 		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
-
-	case win.WM_RBUTTONDBLCLK:
-	renderer.mouse.double_clicked += {.Right}
 
 	case win.WM_RBUTTONUP:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
@@ -469,6 +470,9 @@ lindale_wndproc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wParam: win.WPA
 		if renderer.mouse.down == {} do win.ReleaseCapture()
 		if renderer.on_repaint != nil do renderer.on_repaint(renderer.on_repaint_data)
 
+	case win.WM_MBUTTONDBLCLK:
+		renderer.mouse.double_clicked += {.Middle}
+		fallthrough
 	case win.WM_MBUTTONDOWN:
 		renderer.mouse.pos = get_mouse_pos(renderer, lParam)
 		renderer.mouse.down += {.Middle}
