@@ -103,6 +103,7 @@ iid_IPlugView                            := SMTG_INLINE_UID (0x5BC32507, 0xD0604
 iid_IPlugFrame                           := SMTG_INLINE_UID (0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3)
 iid_Linux_IEventHandler                  := SMTG_INLINE_UID (0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983)
 iid_Linux_IRunLoop                       := SMTG_INLINE_UID (0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389)
+iid_Linux_ITimerHandler                  := SMTG_INLINE_UID (0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9)
 iid_IBStream                             := SMTG_INLINE_UID (0xC3BF6EA2, 0x30994752, 0x9B6BF990, 0x1EE33E9B)
 iid_ISizeableStream                      := SMTG_INLINE_UID (0x04F9549E, 0xE02F4E6E, 0x87E86A87, 0x47F4E17F)
 iid_INoteExpressionController            := SMTG_INLINE_UID (0xB7F8F859, 0x41234872, 0x91169581, 0x4F3721A3)
@@ -664,6 +665,43 @@ IPlugViewVtbl :: struct {
 
 IPlugView :: struct {
 	using lpVtbl: ^IPlugViewVtbl
+}
+
+/////////////////////////////////////////////////
+Linux_IEventHandlerVtbl :: struct {
+	using funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Linux_IEventHandler": */
+	onFDIsSet : proc "system" (this: rawptr, fd: c.int),
+}
+
+Linux_IEventHandler :: struct {
+	using lpVtbl: ^Linux_IEventHandlerVtbl
+}
+
+Linux_ITimerHandlerVtbl :: struct {
+	using funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Linux_ITimerHandler": */
+	onTimer : proc "system" (this: rawptr),
+}
+
+Linux_ITimerHandler :: struct {
+	using lpVtbl: ^Linux_ITimerHandlerVtbl
+}
+
+Linux_IRunLoopVtbl :: struct {
+	using funknown: FUnknownVtbl,
+
+	/* methods defined in "Steinberg_Linux_IRunLoop": */
+	registerEventHandler   : proc "system" (this: rawptr, handler: ^Linux_IEventHandler, fd: c.int) -> TResult,
+	unregisterEventHandler : proc "system" (this: rawptr, handler: ^Linux_IEventHandler) -> TResult,
+	registerTimer          : proc "system" (this: rawptr, handler: ^Linux_ITimerHandler, milliseconds: u64) -> TResult,
+	unregisterTimer        : proc "system" (this: rawptr, handler: ^Linux_ITimerHandler) -> TResult,
+}
+
+Linux_IRunLoop :: struct {
+	using lpVtbl: ^Linux_IRunLoopVtbl
 }
 
 /////////////////////////////////////////////////
