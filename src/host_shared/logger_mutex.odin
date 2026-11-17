@@ -193,6 +193,7 @@ test_start_mutex_thread :: proc() {
 
 @(test)
 test_mutex_logger :: proc(t: ^testing.T) {
+	when !LOG_ENABLED do return
 
 	mutex_log_init("", "test")
 	defer {
