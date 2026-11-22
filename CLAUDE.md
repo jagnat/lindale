@@ -12,6 +12,7 @@ Each plugin lives in `plugins/<name>/`. `cd` into it and run its build script: `
 - `build` — full VST3 plugin + hot DLL, then symlinks into the system VST3 folder.
 - `check` — `odin check` this plugin.
 - `standalone` — build the standalone executable from the plugin's `standalone/` package.
+- `unlink` — remove this plugin's link from the system VST3 folder.
 
 Flags: `-release` (else `-debug`), `-no-hot`.
 

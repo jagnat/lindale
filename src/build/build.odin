@@ -15,10 +15,11 @@ Mode :: enum {
 	hotbuild,
 	check,
 	standalone,
+	unlink,
 }
 
 opts : struct {
-	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check | standalone"`,
+	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check | standalone | unlink"`,
 	release: bool `usage:"Specify a release build"`,
 	no_hot: bool `usage:"No hotloading"`,
 }
@@ -57,6 +58,8 @@ execute :: proc() {
 			check_plugin()
 		case .standalone:
 			build_standalone()
+		case .unlink:
+			unlink_plugin()
 	}
 }
 
@@ -300,6 +303,23 @@ symlink_plugin :: proc() {
 	}
 
 	symlink_hot_runtime()
+}
+
+// removes only the link, out/ is left alone
+unlink_plugin :: proc() {
+	vst3_link: string
+	when ODIN_OS == .Darwin {
+		vst3_link = fmt.tprintf("%s/Library/Audio/Plug-Ins/VST3/%s.vst3", os.get_env("HOME", context.allocator), plugin)
+		exec({"rm", "-f", vst3_link})
+	} else when ODIN_OS == .Windows {
+		// rmdir on a junction removes just the junction
+		vst3_link = fmt.tprintf("%s\\Programs\\Common\\VST3\\%s.vst3", os.get_env("LOCALAPPDATA", context.allocator), plugin)
+		exec({"cmd", "/c", "rmdir", vst3_link})
+	} else when ODIN_OS == .Linux {
+		vst3_link = fmt.tprintf("%s/.vst3/%s.vst3", os.get_env("HOME", context.allocator), plugin)
+		exec({"rm", "-f", vst3_link})
+	}
+	fmt.println("Unlinked", vst3_link)
 }
 
 // link the hot dir at out/hot so the hotloader finds fresh DLLs
