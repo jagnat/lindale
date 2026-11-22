@@ -1457,6 +1457,11 @@ LindaleView :: struct {
 	timer: ^plat.Timer,
 
 	renderer: bridge.Renderer,
+
+	// Linux has no UI thread timer, so platform timers are polled from the host's run loop
+	run_loop: ^vst3.Linux_IRunLoop,
+	timer_handler: vst3.Linux_ITimerHandler,
+	timer_handler_vtable: vst3.Linux_ITimerHandlerVtbl,
 }
 
 MS_PER_FRAME :: 16
@@ -1539,6 +1544,13 @@ create_lindale_view :: proc(view: ^LindaleView, plug: ^sdk.PluginController) -> 
 		checkSizeConstraint = lv_checkSizeConstraint,
 	}
 	view.plugin_view.lpVtbl = &view.plugin_view_vtable
+	view.timer_handler_vtable = {
+		queryInterface = th_queryInterface,
+		addRef = th_addRef,
+		release = th_release,
+		onTimer = th_onTimer,
+	}
+	view.timer_handler.lpVtbl = &view.timer_handler_vtable
 	view.ctx = context
 	view.plugin = plug
 	view.timer = plat.timer_create(MS_PER_FRAME, timer_proc, view)
@@ -1651,6 +1663,14 @@ create_lindale_view :: proc(view: ^LindaleView, plug: ^sdk.PluginController) -> 
 			log.info("Timer already running")
 		}
 
+		when ODIN_OS == .Linux {
+			if view.run_loop == nil {
+				log.error("lv_attached: host provided no IRunLoop, view will not update")
+			} else if view.run_loop->registerTimer(&view.timer_handler, MS_PER_FRAME) != vst3.kResultOk {
+				log.error("lv_attached: registerTimer failed")
+			}
+		}
+
 		log.info("lv_attached created window")
 		return vst3.kResultOk
 	}
@@ -1658,6 +1678,10 @@ create_lindale_view :: proc(view: ^LindaleView, plug: ^sdk.PluginController) -> 
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "plugin_view")
 		context = view.ctx
 		log.info("lv_removed")
+
+		when ODIN_OS == .Linux {
+			if view.run_loop != nil do view.run_loop->unregisterTimer(&view.timer_handler)
+		}
 
 		plat.renderer_destroy(view.renderer)
 
@@ -1723,7 +1747,41 @@ create_lindale_view :: proc(view: ^LindaleView, plug: ^sdk.PluginController) -> 
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "plugin_view")
 		context = view.ctx
 		log.info("lv_setFrame")
+
+		when ODIN_OS == .Linux {
+			if view.run_loop != nil {
+				view.run_loop->release()
+				view.run_loop = nil
+			}
+			if frame != nil {
+				obj: rawptr
+				if frame->queryInterface(&vst3.iid_Linux_IRunLoop, &obj) == vst3.kResultOk {
+					view.run_loop = cast(^vst3.Linux_IRunLoop)obj
+				}
+			}
+		}
 		return vst3.kResultOk
+	}
+	th_queryInterface :: proc "system" (this: rawptr, iid: ^vst3.TUID, obj: ^rawptr) -> vst3.TResult {
+		if iid^ == vst3.iid_FUnknown || iid^ == vst3.iid_Linux_ITimerHandler {
+			obj^ = this
+			return vst3.kResultOk
+		}
+		obj^ = nil
+		return vst3.kNoInterface
+	}
+	th_addRef :: proc "system" (this: rawptr) -> u32 {
+		return 1
+	}
+	th_release :: proc "system" (this: rawptr) -> u32 {
+		return 1
+	}
+	th_onTimer :: proc "system" (this: rawptr) {
+		view := container_of(cast(^vst3.Linux_ITimerHandler)this, LindaleView, "timer_handler")
+		context = view.ctx
+		when ODIN_OS == .Linux {
+			plat.timer_poll()
+		}
 	}
 	lv_canResize :: proc "system" (this: rawptr) -> vst3.TResult {
 		view := container_of(cast(^vst3.IPlugView)this, LindaleView, "plugin_view")
