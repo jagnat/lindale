@@ -19,7 +19,7 @@ Mode :: enum {
 }
 
 opts : struct {
-	mode: Mode `args:"pos=0,required" usage:"build | hotbuild | check | standalone | unlink"`,
+	mode: Mode `args:"pos=0" usage:"build (default) | hotbuild | check | standalone | unlink"`,
 	release: bool `usage:"Specify a release build"`,
 	no_hot: bool `usage:"No hotloading"`,
 }
