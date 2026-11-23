@@ -155,7 +155,7 @@ delay_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10) {
+		if sdk.ui_box(plug.ui, {w = sdk.ui_grow(), h = sdk.ui_grow(), padding = sdk.ui_pad(10), gap = 10}) {
 			sdk.ui_knob_param_labeled(plug.ui, Param.DelayTime)
 			sdk.ui_knob_param_labeled(plug.ui, Param.Feedback)
 			sdk.ui_knob_param_labeled(plug.ui, Param.Mix)

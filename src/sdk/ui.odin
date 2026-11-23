@@ -163,13 +163,39 @@ ui_set_theme :: proc(ctx: ^UIContext, theme: UITheme) {
 	ctx.theme = theme
 }
 
-LayoutDirection :: enum { Vertical, Horizontal, }
+// zero values are the defaults
+LayoutDirection :: enum { Horizontal, Vertical }
 SliderOrientation :: enum { Vertical, Horizontal }
 
 AlignX :: enum { Left, Center, Right, }
 AlignY :: enum { Top, Center, Bottom, }
-SizingType :: enum { Fixed, Fit, Grow, Percent }
 
+// grow is content size plus a weighted share of leftover space
+SizingType :: enum { Fit, Fixed, Grow, Percent }
+
+AxisSizing :: struct {
+	type: SizingType,
+	value: f32, // fixed: pixels, percent: 0..1
+	min, max: f32, // 0 is unbounded
+	weight: f32, // grow share relative to sibling grow children, 0 means 1
+}
+
+Padding :: struct {
+	left, top, right, bottom: f32,
+}
+
+// container owns child alignment on both axes
+Layout :: struct {
+	dir: LayoutDirection,
+	w, h: AxisSizing,
+	padding: Padding,
+	gap: f32,
+	align_x: AlignX,
+	align_y: AlignY,
+}
+
+// inside aligns it within the parent's padding, like an overlay
+// outside places it past one edge of the parent, like a popup aligned along that edge
 FloatingAnchor :: enum {
 	Inside,
 	OutsideBottom,
@@ -178,13 +204,48 @@ FloatingAnchor :: enum {
 	OutsideRight,
 }
 
-AxisSizing :: struct {
-	type: SizingType,
-	value: f32, // Fixed: pixels; Percent: 0..1 fraction of parent content box
-	min, max: f32, // for grow/fit/percent
-	weight: f32, // grow share relative to sibling grow children, 0 means 1
-	padding: f32,
+// placement of floating component relative to parent
+FloatPlacement :: struct {
+	anchor: FloatingAnchor,
+	offset: Vec2f, // inside: nudge. outside: gap from the edge, plus nudge along it
+	align_x: AlignX,
+	align_y: AlignY,
+	flip: bool, // outside: use the opposite edge if it would leave the root
 }
+
+// set through ui_next_*, nil fields keep the widget's own values
+ComponentOverrides :: struct {
+	w, h: Maybe(AxisSizing),
+	align_x: Maybe(AlignX),
+	align_y: Maybe(AlignY),
+	float: Maybe(FloatPlacement),
+}
+
+ui_fixed :: proc(pixels: f32) -> AxisSizing {
+	return {type = .Fixed, value = pixels}
+}
+
+ui_fit :: proc(min: f32 = 0, max: f32 = 0) -> AxisSizing {
+	return {type = .Fit, min = min, max = max}
+}
+
+ui_grow :: proc(weight: f32 = 1, min: f32 = 0, max: f32 = 0) -> AxisSizing {
+	return {type = .Grow, weight = weight, min = min, max = max}
+}
+
+ui_percent :: proc(fraction: f32, min: f32 = 0, max: f32 = 0) -> AxisSizing {
+	return {type = .Percent, value = fraction, min = min, max = max}
+}
+
+ui_pad_all :: proc(all: f32) -> Padding {
+	return {all, all, all, all}
+}
+
+ui_pad_xy :: proc(x, y: f32) -> Padding {
+	return {x, y, x, y}
+}
+
+ui_pad :: proc {ui_pad_all, ui_pad_xy}
 
 ComponentType :: enum {
 	Panel,
@@ -199,13 +260,14 @@ ComponentType :: enum {
 }
 
 PanelData :: struct {
-	skip_draw: bool,
+	background: bool,
 	popup: bool,
 }
 
 LabelData :: struct {
 	text: string,
 	size: f32,
+	text_align: AlignX,
 }
 
 ButtonData :: struct {
@@ -282,24 +344,20 @@ ComponentData :: union {
 Component :: struct {
 	type: ComponentType,
 	id: u32, // zero = doesn't want input
-	sizing_horiz, sizing_vert: AxisSizing,
+	layout: Layout,
+	// overrides parent cross-axis alignment
+	align_self_x: Maybe(AlignX),
+	align_self_y: Maybe(AlignY),
 
-	direction: LayoutDirection,
-	child_gaps: f32,
-	align_x: AlignX,
-	align_y: AlignY,
-
-	// Floating components are excluded from flow layout, drawn on top, clamped to the root.
-	// Inside positions against the parent content box, Outside* against its border box
+	// out of flow, drawn on top, clamped to root
 	floating: bool,
-	float_offset: Vec2f, // Outside*: gap on the anchor axis, nudge on the cross axis
-	float_anchor: FloatingAnchor,
-	float_flip: bool, // use the opposite side when the preferred one is clipped
+	float: FloatPlacement,
 	blocks_input: bool, // swallows hover for anything underneath
 
-	// w and h are calculated first, then finally x and y
+	// sized at frame end, widths before heights
 	calc_bounds: RectF32,
-	cursor: Vec2f, // Used for positioning pass
+	cursor: Vec2f, // positioning pass scratch
+	grow_frozen: bool, // grow pass scratch
 
 	parent: ^Component,
 	first_child: ^Component,
@@ -329,6 +387,13 @@ UIContext :: struct {
 
 	root: ^Component,
 	current_component: ^Component,
+
+	next: ComponentOverrides,
+	next_pending: bool,
+
+	// overrides beat the defaults a widget writes in between (applied at close)
+	override_stack: [UI_MAX_DEPTH]ComponentOverrides,
+	override_count: int,
 
 	// Hit testing
 	hovered_id: u32,
@@ -402,6 +467,34 @@ _ui_id_scope_end :: proc(ctx: ^UIContext, label: string) {
 	ui_pop_id(ctx)
 }
 
+// ui_next_* targets the next opened component, for composites the outer panel
+
+ui_next_w :: proc(ctx: ^UIContext, sizing: AxisSizing) {
+	ctx.next.w = sizing
+	ctx.next_pending = true
+}
+
+ui_next_h :: proc(ctx: ^UIContext, sizing: AxisSizing) {
+	ctx.next.h = sizing
+	ctx.next_pending = true
+}
+
+// cross axis only
+ui_next_align_x :: proc(ctx: ^UIContext, align: AlignX) {
+	ctx.next.align_x = align
+	ctx.next_pending = true
+}
+
+ui_next_align_y :: proc(ctx: ^UIContext, align: AlignY) {
+	ctx.next.align_y = align
+	ctx.next_pending = true
+}
+
+ui_next_float :: proc(ctx: ^UIContext, placement: FloatPlacement) {
+	ctx.next.float = placement
+	ctx.next_pending = true
+}
+
 // Exponential approach toward target
 ui_animate :: proc(ctx: ^UIContext, id: u32, target: f32, rate: f32 = 14) -> f32 {
 	slot: ^UIAnimState
@@ -435,70 +528,71 @@ ui_frame_scoped :: proc(ctx: ^UIContext) -> bool {
 	return true
 }
 
+// invisible
 @(deferred_in = _ui_panel_close)
-ui_panel :: proc(ctx: ^UIContext,
-	dir: LayoutDirection = .Horizontal,
-	child_gaps: f32 = 10,
-	padding: f32 = 10,
-	sizing_horiz: AxisSizing = {type = .Fit},
-	sizing_vert: AxisSizing = {type = .Fit},
-	skip_draw: bool = false,
-	align_x: AlignX = .Left,
-	align_y: AlignY = .Top,
-	floating: bool = false,
-	float_offset: Vec2f = {}) -> bool {
+ui_panel :: proc(ctx: ^UIContext, layout: Layout) -> bool {
 	comp := ui_open_component(ctx)
-	comp.data = PanelData{skip_draw = skip_draw}
-	comp.direction = dir
-	comp.sizing_horiz = sizing_horiz
-	comp.sizing_horiz.padding = padding
-	comp.sizing_vert = sizing_vert
-	comp.sizing_vert.padding = padding
-	comp.child_gaps = child_gaps
-	comp.align_x = align_x
-	comp.align_y = align_y
-	comp.floating = floating
-	comp.float_offset = float_offset
+	comp.layout = layout
+	comp.data = PanelData{}
 	return true
 }
-_ui_panel_close :: proc(ctx: ^UIContext,
-	dir: LayoutDirection = .Horizontal,
-	child_gaps: f32 = 10,
-	padding: f32 = 10,
-	sizing_horiz: AxisSizing = {type = .Fit},
-	sizing_vert: AxisSizing = {type = .Fit},
-	skip_draw: bool = false,
-	align_x: AlignX = .Left,
-	align_y: AlignY = .Top,
-	floating: bool = false,
-	float_offset: Vec2f = {}) {
+_ui_panel_close :: proc(ctx: ^UIContext, layout: Layout) {
 	ui_close_component(ctx)
 }
 
-ui_canvas :: proc(ctx: ^UIContext,
-	draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr),
-	data: rawptr,
-	sizing_horiz: AxisSizing = {type = .Grow},
-	sizing_vert: AxisSizing = {type = .Grow},)
-{
+// draws the theme panel background
+@(deferred_in = _ui_box_close)
+ui_box :: proc(ctx: ^UIContext, layout: Layout) -> bool {
+	comp := ui_open_component(ctx)
+	comp.layout = layout
+	comp.data = PanelData{background = true}
+	return true
+}
+_ui_box_close :: proc(ctx: ^UIContext, layout: Layout) {
+	ui_close_component(ctx)
+}
+
+// spacers run along the parent main axis
+ui_spacer_grow :: proc(ctx: ^UIContext) {
+	ui_spacer_on_main_axis(ctx, ui_grow())
+}
+
+ui_spacer_fixed :: proc(ctx: ^UIContext, pixels: f32) {
+	ui_spacer_on_main_axis(ctx, ui_fixed(pixels))
+}
+
+ui_spacer :: proc {ui_spacer_grow, ui_spacer_fixed}
+
+@(private="file")
+ui_spacer_on_main_axis :: proc(ctx: ^UIContext, sizing: AxisSizing) {
+	comp := ui_open_component(ctx)
+	comp.data = PanelData{}
+	if comp.parent.layout.dir == .Horizontal {
+		comp.layout.w = sizing
+	} else {
+		comp.layout.h = sizing
+	}
+	ui_close_component(ctx)
+}
+
+// grows on both axes by default
+ui_canvas :: proc(ctx: ^UIContext, draw_proc: proc(ctx: ^UIContext, this: ^Component, data: rawptr), data: rawptr) {
 	comp := ui_open_component(ctx)
 	comp.type = .Canvas
 	comp.data = CanvasData{draw_proc, data}
-	comp.sizing_horiz = sizing_horiz
-	comp.sizing_vert = sizing_vert
+	comp.layout.w = ui_grow()
+	comp.layout.h = ui_grow()
 	ui_close_component(ctx)
 }
 
-ui_label :: proc(ctx: ^UIContext, text: string, align_x: AlignX = .Left, align_y: AlignY = .Top, min_width: f32 = 0, size: f32 = 0) {
+ui_label :: proc(ctx: ^UIContext, text: string, size: f32 = 0, text_align: AlignX = .Left) {
 	comp := ui_open_component(ctx)
 	comp.type = .Label
-	comp.align_x = align_x
-	comp.align_y = align_y
 	resolved_size := size if size > 0 else ctx.theme.font_size
 	text_size := draw_measure_text(ctx.plugin.draw, text, resolved_size)
-	comp.sizing_horiz = {type = .Fixed, value = math.max(text_size.x, min_width)}
-	comp.sizing_vert = {type = .Fixed, value = text_size.y}
-	comp.data = LabelData{text = text, size = resolved_size}
+	comp.layout.w = ui_fixed(text_size.x)
+	comp.layout.h = ui_fixed(text_size.y)
+	comp.data = LabelData{text = text, size = resolved_size, text_align = text_align}
 	ui_close_component(ctx)
 }
 
@@ -511,59 +605,54 @@ ui_button :: proc(ctx: ^UIContext, label: string, loc := #caller_location) -> bo
 	comp.type = .Button
 	text_size := draw_measure_text(ctx.plugin.draw, label, ctx.theme.font_size)
 	ascent, descent, _ := font_get_vertical_metrics(&ctx.plugin.draw.font_state, ctx.theme.font_size)
-	comp.sizing_horiz = {type = .Fixed, value = text_size.x + ctx.theme.padding * 2}
-	comp.sizing_vert = {type = .Fixed, value = (ascent - descent) + ctx.theme.padding * 2}
+	comp.layout.w = ui_fixed(text_size.x + ctx.theme.padding * 2)
+	comp.layout.h = ui_fixed((ascent - descent) + ctx.theme.padding * 2)
 	comp.id = id
 	comp.data = ButtonData{label = label}
 	ui_close_component(ctx)
 	return clicked
 }
 
-ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .Vertical, align_x: AlignX = .Center, align_y: AlignY = .Center, loc := #caller_location) {
+ui_slider :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, orientation: SliderOrientation = .Vertical, loc := #caller_location) {
 	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Slider
 	if orientation == .Vertical {
-		comp.align_x = align_x
-		comp.sizing_horiz = {type = .Fixed, value = ctx.theme.slider_width}
-		comp.sizing_vert = {type = .Grow, value = 200, min = 200, max = 500}
+		comp.layout.w = ui_fixed(ctx.theme.slider_width)
+		comp.layout.h = ui_grow(min = 200, max = 500)
 	} else {
-		comp.align_y = align_y
-		comp.sizing_horiz = {type = .Grow, min = 100, max = 500}
-		comp.sizing_vert = {type = .Fixed, value = ctx.theme.slider_width}
+		comp.layout.w = ui_grow(min = 100, max = 500)
+		comp.layout.h = ui_fixed(ctx.theme.slider_width)
 	}
 	comp.id = id
 	comp.data = SliderData{orientation, binding}
 	ui_close_component(ctx)
 }
 
+@(private="file")
+ui_open_composite :: proc(ctx: ^UIContext, layout: Layout) {
+	comp := ui_open_component(ctx)
+	comp.layout = layout
+	comp.data = PanelData{}
+}
+
 ui_slider_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
 	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skip_draw = true}
-	comp.direction = .Vertical
-	comp.child_gaps = 5
-	comp.sizing_horiz = {type = .Fit}
-	comp.sizing_vert = {type = .Grow}
+	ui_open_composite(ctx, {dir = .Vertical, h = ui_grow(), gap = 5, align_x = .Center})
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_slider(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
-	ui_label(ctx, desc.name, align_x = .Center)
+	ui_label(ctx, desc.name)
 	ui_close_component(ctx)
 }
 
 ui_slider_h_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
 	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skip_draw = true}
-	comp.direction = .Horizontal
-	comp.child_gaps = 5
-	comp.sizing_horiz = {type = .Grow}
-	comp.sizing_vert = {type = .Fit}
+	ui_open_composite(ctx, {w = ui_grow(), gap = 5, align_y = .Center})
 	ui_label(ctx, desc.name)
 	ui_slider(ctx, desc.name, ParamBinding{param_idx}, orientation = .Horizontal, loc = loc)
-	ui_param_value_label(ctx, param_idx, enum_to_string, align_x = .Right)
+	ui_param_value_label(ctx, param_idx, enum_to_string, text_align = .Right)
 	ui_close_component(ctx)
 }
 
@@ -580,8 +669,8 @@ ui_drop_down :: proc(ctx: ^UIContext, label: string, choices: []string, binding:
 	box := ui_open_component(ctx)
 	box.type = .DropDown
 	box.id = id
-	box.sizing_horiz = {type = .Fixed, value = item_w + ctx.theme.chevron_size + ctx.theme.padding}
-	box.sizing_vert = {type = .Fixed, value = ctx.theme.menu_item_height}
+	box.layout.w = ui_fixed(item_w + ctx.theme.chevron_size + ctx.theme.padding)
+	box.layout.h = ui_fixed(ctx.theme.menu_item_height)
 	box.data = DropDownData{choices = choices, binding = binding}
 
 	if open {
@@ -589,15 +678,10 @@ ui_drop_down :: proc(ctx: ^UIContext, label: string, choices: []string, binding:
 		popup := ui_open_component(ctx)
 		popup.type = .Panel
 		popup.data = PanelData{popup = true}
-		popup.direction = .Vertical
+		popup.layout = {dir = .Vertical, padding = ui_pad(ctx.theme.menu_gap)}
 		popup.floating = true
-		popup.float_anchor = .OutsideBottom
-		popup.float_flip = true
+		popup.float = {anchor = .OutsideBottom, flip = true, offset = {0, ctx.theme.menu_gap}}
 		popup.blocks_input = true
-		popup.float_offset = {0, ctx.theme.menu_gap}
-		popup.child_gaps = 0
-		popup.sizing_horiz = {type = .Fit, padding = ctx.theme.menu_gap}
-		popup.sizing_vert = {type = .Fit, padding = ctx.theme.menu_gap}
 
 		ui_push_id_string(ctx, label)
 		for choice, i in choices {
@@ -605,8 +689,8 @@ ui_drop_down :: proc(ctx: ^UIContext, label: string, choices: []string, binding:
 			item := ui_open_component(ctx)
 			item.type = .DropDownItem
 			item.id = ui_make_id(ctx, choice)
-			item.sizing_horiz = {type = .Fixed, value = item_w}
-			item.sizing_vert = {type = .Fixed, value = ctx.theme.menu_item_height}
+			item.layout.w = ui_fixed(item_w)
+			item.layout.h = ui_fixed(ctx.theme.menu_item_height)
 			item.data = DropDownItemData {
 				owner_id = id,
 				index = i,
@@ -642,8 +726,8 @@ ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding, loc :=
 	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Toggle
-	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.toggle_width}
-	comp.sizing_vert = {type = .Fixed, value = ctx.theme.toggle_height}
+	comp.layout.w = ui_fixed(ctx.theme.toggle_width)
+	comp.layout.h = ui_fixed(ctx.theme.toggle_height)
 	comp.id = id
 	comp.data = ToggleData{binding = binding}
 	ui_close_component(ctx)
@@ -652,24 +736,18 @@ ui_toggle :: proc(ctx: ^UIContext, label: string, binding: ToggleBinding, loc :=
 ui_toggle_param_labeled :: proc(ctx: ^UIContext, param: $P, loc := #caller_location) where intrinsics.type_is_enum(P) {
 	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skip_draw = true}
-	comp.direction = .Horizontal
-	comp.child_gaps = 6
-	comp.sizing_horiz = {type = .Fit}
-	comp.sizing_vert = {type = .Fit}
+	ui_open_composite(ctx, {gap = 6})
 	ui_toggle(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
 	ui_label(ctx, desc.name)
 	ui_close_component(ctx)
 }
 
-ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: AlignX = .Center, loc := #caller_location) {
+ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, loc := #caller_location) {
 	id := ui_make_id(ctx, label, loc)
 	comp := ui_open_component(ctx)
 	comp.type = .Knob
-	comp.align_x = align_x
-	comp.sizing_horiz = {type = .Fixed, value = ctx.theme.knob_size}
-	comp.sizing_vert = {type = .Fixed, value = ctx.theme.knob_size}
+	comp.layout.w = ui_fixed(ctx.theme.knob_size)
+	comp.layout.h = ui_fixed(ctx.theme.knob_size)
 	comp.id = id
 	comp.data = KnobData{binding}
 	ui_close_component(ctx)
@@ -678,13 +756,8 @@ ui_knob :: proc(ctx: ^UIContext, label: string, binding: ValueBinding, align_x: 
 ui_knob_param_labeled :: proc(ctx: ^UIContext, param: $P, enum_to_string: proc(val: f64) -> string = nil, loc := #caller_location) where intrinsics.type_is_enum(P) {
 	param_idx := ParamIndex(param)
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
-	comp := ui_open_component(ctx)
-	comp.data = PanelData{skip_draw = true}
-	comp.direction = .Vertical
-	comp.child_gaps = 4
-	comp.sizing_horiz = {type = .Fit}
-	comp.sizing_vert = {type = .Fit}
-	ui_label(ctx, desc.name, align_x = .Center)
+	ui_open_composite(ctx, {dir = .Vertical, gap = 4, align_x = .Center})
+	ui_label(ctx, desc.name)
 	ui_knob(ctx, desc.name, ParamBinding{param_idx}, loc = loc)
 	ui_param_value_label(ctx, param_idx, enum_to_string)
 	ui_close_component(ctx)
@@ -718,12 +791,15 @@ ui_slider_param_max_value_width :: proc(ctx: ^UIContext, param_idx: ParamIndex, 
 @(private="file")
 ui_param_value_label :: proc(ctx: ^UIContext, param_idx: ParamIndex,
                              enum_to_string: proc(val: f64) -> string = nil,
-                             align_x: AlignX = .Center) {
+                             text_align: AlignX = .Center) {
 	desc := plugin_api().get_plugin_descriptor().params[param_idx]
 	max_w := ui_slider_param_max_value_width(ctx, param_idx, enum_to_string)
 	buf := make([]byte, 40, allocator = ctx.plugin.host.frame_allocator)
 	str := b.param_format_value_with_unit(ctx.plugin.host.params.values[param_idx], desc, buf, enum_to_string)
-	ui_label(ctx, str, align_x = align_x, min_width = max_w)
+	// widest value so layout doesn't shift
+	w := math.max(max_w, draw_measure_text(ctx.plugin.draw, str, ctx.theme.font_size).x)
+	ui_next_w(ctx, ui_fixed(w))
+	ui_label(ctx, str, text_align = text_align)
 }
 
 @(private="file")
@@ -846,24 +922,32 @@ ui_add_child_component :: proc(parent, child: ^Component) {
 }
 
 ui_open_component :: proc(ctx: ^UIContext) -> ^Component {
+	assert(ctx.override_count < UI_MAX_DEPTH)
 	comp := ui_alloc_component(ctx)
 	parent := ctx.current_component
 	ui_add_child_component(parent, comp)
 	ctx.current_component = comp
+	ctx.override_stack[ctx.override_count] = ctx.next
+	ctx.override_count += 1
+	ctx.next = {}
+	ctx.next_pending = false
 	return comp
 }
 
 ui_close_component :: proc(ctx: ^UIContext) {
-	current_comp := ctx.current_component
-	#partial switch current_comp.sizing_horiz.type {
-		case .Fixed: current_comp.calc_bounds.w = current_comp.sizing_horiz.value
-		case .Fit: ui_size_fit_on_axis(ctx, true)
+	assert(ctx.override_count > 0)
+	comp := ctx.current_component
+	ctx.override_count -= 1
+	over := ctx.override_stack[ctx.override_count]
+	if w, ok := over.w.?; ok do comp.layout.w = w
+	if h, ok := over.h.?; ok do comp.layout.h = h
+	if x, ok := over.align_x.?; ok do comp.align_self_x = x
+	if y, ok := over.align_y.?; ok do comp.align_self_y = y
+	if f, ok := over.float.?; ok {
+		comp.floating = true
+		comp.float = f
 	}
-	#partial switch current_comp.sizing_vert.type {
-		case .Fixed: current_comp.calc_bounds.h = current_comp.sizing_vert.value
-		case .Fit: ui_size_fit_on_axis(ctx, false)
-	}
-	ctx.current_component = current_comp.parent
+	ctx.current_component = comp.parent
 }
 
 ui_frame_begin :: proc(ctx: ^UIContext) {
@@ -875,17 +959,26 @@ ui_frame_begin :: proc(ctx: ^UIContext) {
 	ctx.hovered_id = 0
 	ctx.component_count = 0
 	ctx.id_seed_count = 0
+	ctx.override_count = 0
+	ctx.next = {}
+	ctx.next_pending = false
 	ctx.frame_counter += 1
 	ctx.root = ui_alloc_component(ctx)
-	ctx.root^ = Component{}
 	size := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer)
-	ctx.root.calc_bounds = RectF32 {0, 0, f32(size.logical_width), f32(size.logical_height)}
+	ui_set_root_size(ctx, f32(size.logical_width), f32(size.logical_height))
 	ctx.current_component = ctx.root
 }
 
+ui_set_root_size :: proc(ctx: ^UIContext, w, h: f32) {
+	ctx.root.layout.w = ui_fixed(w)
+	ctx.root.layout.h = ui_fixed(h)
+	ctx.root.calc_bounds = {0, 0, w, h}
+}
+
 ui_frame_end :: proc(ctx: ^UIContext) {
-	ui_size_grow_components(ctx)
-	ui_position_components(ctx)
+	assert(!ctx.next_pending, "ui_next_* override set with no component opened after it")
+	assert(ctx.override_count == 0, "component left open at frame end")
+	ui_layout_components(ctx)
 	ui_snap_components_to_pixels(ctx)
 	ui_hover_components(ctx)
 	ui_interact_components(ctx)
@@ -1032,149 +1125,229 @@ ui_interact_components :: proc(ctx: ^UIContext) {
 	}
 }
 
-ui_size_grow_components :: proc(ctx: ^UIContext) {
-	it := ui_iterate_pre_order(ctx)
+// widths before heights so height can depend on width
+ui_layout_components :: proc(ctx: ^UIContext) {
+	ui_size_fit_pass(ctx, true)
+	ui_size_grow_pass(ctx, true)
+	ui_size_fit_pass(ctx, false)
+	ui_size_grow_pass(ctx, false)
+	ui_position_components(ctx)
+}
 
-	for comp in ui_next_pre_order(&it) {
-		ui_size_grow_on_axis(comp, true)
-		ui_size_grow_on_axis(comp, false)
+@(private="file")
+axis_sizing :: proc(c: ^Component, horiz: bool) -> AxisSizing {
+	return c.layout.w if horiz else c.layout.h
+}
+
+@(private="file")
+axis_size :: proc(c: ^Component, horiz: bool) -> ^f32 {
+	return &c.calc_bounds.w if horiz else &c.calc_bounds.h
+}
+
+@(private="file")
+axis_padding :: proc(c: ^Component, horiz: bool) -> (lo, hi: f32) {
+	if horiz do return c.layout.padding.left, c.layout.padding.right
+	return c.layout.padding.top, c.layout.padding.bottom
+}
+
+@(private="file")
+clamp_sizing :: proc(size: f32, s: AxisSizing) -> f32 {
+	size := size
+	if s.min > 0 do size = math.max(size, s.min)
+	if s.max > 0 do size = math.min(size, s.max)
+	return size
+}
+
+@(private="file")
+grow_weight :: proc(s: AxisSizing) -> f32 {
+	return s.weight if s.weight > 0 else 1
+}
+
+@(private="file")
+ui_content_size :: proc(c: ^Component, horiz: bool) -> f32 {
+	along := (c.layout.dir == .Horizontal) == horiz
+	size: f32
+	count: int
+	it := ui_iterate_children(c)
+	for child in ui_next_child(&it) {
+		if child.floating do continue
+		count += 1
+		child_size := axis_size(child, horiz)^
+		if along {
+			size += child_size
+		} else {
+			size = math.max(size, child_size)
+		}
+	}
+	if along && count > 1 do size += c.layout.gap * f32(count - 1)
+	lo, hi := axis_padding(c, horiz)
+	return size + lo + hi
+}
+
+// bottom-up, grow content size becomes its floor
+@(private="file")
+ui_size_fit_pass :: proc(ctx: ^UIContext, horiz: bool) {
+	it := ui_iterate_post_order(ctx)
+	for c in ui_next_post_order(&it) {
+		if c == ctx.root do continue
+		s := axis_sizing(c, horiz)
+		size: f32
+		switch s.type {
+		case .Fixed: size = s.value
+		case .Fit, .Grow: size = clamp_sizing(ui_content_size(c, horiz), s)
+		case .Percent: size = s.min
+		}
+		axis_size(c, horiz)^ = size
 	}
 }
 
-ui_size_grow_on_axis :: proc(comp: ^Component, horiz: bool) {
-	sizing_along_axis := (comp.direction == .Horizontal) == horiz
-	padding := comp.sizing_horiz.padding if horiz else comp.sizing_vert.padding
-	parent_size := comp.calc_bounds.w if horiz else comp.calc_bounds.h
-	content_size := parent_size - padding * 2
+@(private="file")
+ui_size_grow_pass :: proc(ctx: ^UIContext, horiz: bool) {
+	it := ui_iterate_pre_order(ctx)
+	for comp in ui_next_pre_order(&it) {
+		ui_size_children_on_axis(comp, horiz)
+	}
+}
 
-	child_iter := ui_iterate_children(comp)
-	for c in ui_next_child(&child_iter) {
-		sizing := c.sizing_horiz if horiz else c.sizing_vert
-		size: f32
-		if sizing.type == .Percent {
-			size = sizing.value * content_size
-		} else if sizing.type == .Grow && (c.floating || !sizing_along_axis) {
-			size = content_size
-		} else {
-			continue
-		}
-		if sizing.min > 0 do size = math.max(size, sizing.min)
-		if sizing.max > 0 do size = math.min(size, sizing.max)
-		if horiz {
-			c.calc_bounds.w = size
-		} else {
-			c.calc_bounds.h = size
+@(private="file")
+ui_size_children_on_axis :: proc(comp: ^Component, horiz: bool) {
+	along := (comp.layout.dir == .Horizontal) == horiz
+	lo, hi := axis_padding(comp, horiz)
+	content := axis_size(comp, horiz)^ - lo - hi
+
+	it := ui_iterate_children(comp)
+	for c in ui_next_child(&it) {
+		s := axis_sizing(c, horiz)
+		if s.type == .Percent {
+			axis_size(c, horiz)^ = clamp_sizing(s.value * content, s)
+		} else if s.type == .Grow && (c.floating || !along) {
+			axis_size(c, horiz)^ = math.max(axis_size(c, horiz)^, clamp_sizing(content, s))
 		}
 	}
+	if !along do return
 
-	if !sizing_along_axis do return
-	// main axis
-
-	// distribute remaining space among grow children by weight
-	used: f32
-	weight_sum: f32
-	child_count: int
-
-	child_iter = ui_iterate_children(comp)
-	for c in ui_next_child(&child_iter) {
+	// split leftover by weight, pin anything outside floor or max and re-split
+	free := content
+	count: int
+	it = ui_iterate_children(comp)
+	for c in ui_next_child(&it) {
 		if c.floating do continue
-		child_count += 1
-		sizing := c.sizing_horiz if horiz else c.sizing_vert
-		if sizing.type == .Grow {
-			weight_sum += sizing.weight if sizing.weight > 0 else 1
-		} else {
-			used += c.calc_bounds.w if horiz else c.calc_bounds.h
-		}
+		count += 1
+		c.grow_frozen = false
+		if axis_sizing(c, horiz).type != .Grow do free -= axis_size(c, horiz)^
 	}
+	if count > 1 do free -= comp.layout.gap * f32(count - 1)
 
-	if weight_sum == 0 do return
-
-	if child_count > 1 {
-		used += comp.child_gaps * f32(child_count - 1)
-	}
-	used += padding * 2
-
-	grow_space := parent_size - used
-
-	child_iter = ui_iterate_children(comp)
-	for c in ui_next_child(&child_iter) {
-		if c.floating do continue
-		sizing := &c.sizing_horiz if horiz else &c.sizing_vert
-		if sizing.type != .Grow do continue
-		weight := sizing.weight if sizing.weight > 0 else 1
-		size := grow_space * weight / weight_sum
-		if sizing.min > 0 do size = math.max(size, sizing.min)
-		if sizing.max > 0 do size = math.min(size, sizing.max)
-		if horiz {
-			c.calc_bounds.w = size
-		} else {
-			c.calc_bounds.h = size
+	for {
+		space := free
+		weight_sum: f32
+		it = ui_iterate_children(comp)
+		for c in ui_next_child(&it) {
+			s := axis_sizing(c, horiz)
+			if c.floating || s.type != .Grow do continue
+			if c.grow_frozen {
+				space -= axis_size(c, horiz)^
+			} else {
+				weight_sum += grow_weight(s)
+			}
 		}
+		if weight_sum == 0 do return
+
+		// unfrozen children still hold their floor
+		pinned := false
+		it = ui_iterate_children(comp)
+		for c in ui_next_child(&it) {
+			s := axis_sizing(c, horiz)
+			if c.floating || s.type != .Grow || c.grow_frozen do continue
+			share := space * grow_weight(s) / weight_sum
+			if share < axis_size(c, horiz)^ {
+				c.grow_frozen = true
+				pinned = true
+			} else if s.max > 0 && share > s.max {
+				axis_size(c, horiz)^ = s.max
+				c.grow_frozen = true
+				pinned = true
+			}
+		}
+		if pinned do continue
+
+		it = ui_iterate_children(comp)
+		for c in ui_next_child(&it) {
+			s := axis_sizing(c, horiz)
+			if c.floating || s.type != .Grow || c.grow_frozen do continue
+			axis_size(c, horiz)^ = space * grow_weight(s) / weight_sum
+		}
+		return
+	}
+}
+
+@(private="file")
+align_factor :: proc(align: int) -> f32 {
+	return f32(align) * 0.5
+}
+
+// overflow stays pinned to the start
+@(private="file")
+ui_start_cursor :: proc(c: ^Component) {
+	c.cursor = {c.calc_bounds.x + c.layout.padding.left, c.calc_bounds.y + c.layout.padding.top}
+	horiz := c.layout.dir == .Horizontal
+	free := axis_size(c, horiz)^ - ui_content_size(c, horiz)
+	if free <= 0 do return
+	if horiz {
+		c.cursor.x += free * align_factor(int(c.layout.align_x))
+	} else {
+		c.cursor.y += free * align_factor(int(c.layout.align_y))
 	}
 }
 
 ui_position_components :: proc(ctx: ^UIContext) {
-	ctx.root.cursor = {ctx.root.sizing_horiz.padding, ctx.root.sizing_vert.padding}
+	ui_start_cursor(ctx.root)
 	it := ui_iterate_pre_order(ctx)
 
 	for c in ui_next_pre_order(&it) {
 		if c == ctx.root do continue
 		parent := c.parent
-		content_w := parent.calc_bounds.w - 2 * parent.sizing_horiz.padding
-		content_h := parent.calc_bounds.h - 2 * parent.sizing_vert.padding
+		pb := parent.calc_bounds
+		pad := parent.layout.padding
+		content_w := pb.w - pad.left - pad.right
+		content_h := pb.h - pad.top - pad.bottom
 
 		if c.floating {
-			switch c.float_anchor {
+			f := c.float
+			switch f.anchor {
 			case .Inside: {
-				switch c.align_x {
-				case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
-				case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
-				case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
-				}
-				switch c.align_y {
-				case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
-				case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
-				case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
-				}
-				c.calc_bounds.x += c.float_offset.x
-				c.calc_bounds.y += c.float_offset.y
+				c.calc_bounds.x = pb.x + pad.left + (content_w - c.calc_bounds.w) * align_factor(int(f.align_x)) + f.offset.x
+				c.calc_bounds.y = pb.y + pad.top + (content_h - c.calc_bounds.h) * align_factor(int(f.align_y)) + f.offset.y
 			}
 			case .OutsideBottom, .OutsideTop, .OutsideLeft, .OutsideRight: {
-				pb := parent.calc_bounds
 				root := ctx.root.calc_bounds
-				vertical := c.float_anchor == .OutsideBottom || c.float_anchor == .OutsideTop
+				vertical := f.anchor == .OutsideBottom || f.anchor == .OutsideTop
 
 				main_lo := pb.y if vertical else pb.x
 				main_size := pb.h if vertical else pb.w
 				self_size := c.calc_bounds.h if vertical else c.calc_bounds.w
 				root_lo := root.y if vertical else root.x
 				root_size := root.h if vertical else root.w
-				gap := c.float_offset.y if vertical else c.float_offset.x
+				gap := f.offset.y if vertical else f.offset.x
 
 				pos_after := main_lo + main_size + gap
 				pos_before := main_lo - self_size - gap
 				fits_after := pos_after + self_size <= root_lo + root_size
 				fits_before := pos_before >= root_lo
-				prefer_after := c.float_anchor == .OutsideBottom || c.float_anchor == .OutsideRight
+				prefer_after := f.anchor == .OutsideBottom || f.anchor == .OutsideRight
 
 				pos := pos_after if prefer_after else pos_before
-				if c.float_flip {
+				if f.flip {
 					if prefer_after && !fits_after && fits_before do pos = pos_before
 					if !prefer_after && !fits_before && fits_after do pos = pos_after
 				}
 
-				// AlignX and AlignY are both near/center/far
 				cross_lo := pb.x if vertical else pb.y
 				cross_parent := pb.w if vertical else pb.h
 				cross_self := c.calc_bounds.w if vertical else c.calc_bounds.h
-				cross_align := int(c.align_x) if vertical else int(c.align_y)
-				cross: f32
-				switch cross_align {
-				case 0: cross = cross_lo
-				case 1: cross = cross_lo + (cross_parent - cross_self) * 0.5
-				case 2: cross = cross_lo + cross_parent - cross_self
-				}
-				cross += c.float_offset.x if vertical else c.float_offset.y
+				cross_align := int(f.align_x) if vertical else int(f.align_y)
+				cross := cross_lo + (cross_parent - cross_self) * align_factor(cross_align)
+				cross += f.offset.x if vertical else f.offset.y
 
 				if vertical {
 					c.calc_bounds.y = pos
@@ -1190,25 +1363,19 @@ ui_position_components :: proc(ctx: ^UIContext) {
 			root := ctx.root.calc_bounds
 			c.calc_bounds.x = clamp(c.calc_bounds.x, root.x, math.max(root.x, root.x + root.w - c.calc_bounds.w))
 			c.calc_bounds.y = clamp(c.calc_bounds.y, root.y, math.max(root.y, root.y + root.h - c.calc_bounds.h))
-		} else if parent.direction == .Horizontal {
+		} else if parent.layout.dir == .Horizontal {
+			align := c.align_self_y.? or_else parent.layout.align_y
 			c.calc_bounds.x = parent.cursor.x
-			switch c.align_y {
-			case .Top:    c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding
-			case .Center: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + (content_h - c.calc_bounds.h) * 0.5
-			case .Bottom: c.calc_bounds.y = parent.calc_bounds.y + parent.sizing_vert.padding + content_h - c.calc_bounds.h
-			}
-			parent.cursor.x += c.calc_bounds.w + parent.child_gaps
+			c.calc_bounds.y = pb.y + pad.top + (content_h - c.calc_bounds.h) * align_factor(int(align))
+			parent.cursor.x += c.calc_bounds.w + parent.layout.gap
 		} else {
+			align := c.align_self_x.? or_else parent.layout.align_x
 			c.calc_bounds.y = parent.cursor.y
-			switch c.align_x {
-			case .Left:   c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding
-			case .Center: c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + (content_w - c.calc_bounds.w) * 0.5
-			case .Right:  c.calc_bounds.x = parent.calc_bounds.x + parent.sizing_horiz.padding + content_w - c.calc_bounds.w
-			}
-			parent.cursor.y += c.calc_bounds.h + parent.child_gaps
+			c.calc_bounds.x = pb.x + pad.left + (content_w - c.calc_bounds.w) * align_factor(int(align))
+			parent.cursor.y += c.calc_bounds.h + parent.layout.gap
 		}
 
-		c.cursor = {c.calc_bounds.x + c.sizing_horiz.padding, c.calc_bounds.y + c.sizing_vert.padding}
+		ui_start_cursor(c)
 	}
 }
 
@@ -1220,7 +1387,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 		switch c.type {
 			case .Panel: {
 				d := c.data.(PanelData) or_continue
-				if d.skip_draw do continue
+				if !d.background && !d.popup do continue
 				rect := SimpleUIRect{}
 				rect.x = c.calc_bounds.x
 				rect.y = c.calc_bounds.y
@@ -1236,7 +1403,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				d := c.data.(LabelData) or_continue
 				text_size := draw_measure_text(ctx.plugin.draw, d.text, d.size)
 				text_x := c.calc_bounds.x
-				switch c.align_x {
+				switch d.text_align {
 				case .Left:
 				case .Center: text_x = c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5
 				case .Right:  text_x = c.calc_bounds.x + c.calc_bounds.w - text_size.x
@@ -1477,46 +1644,6 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 	}
 }
 
-ui_size_fit_on_axis :: proc(ctx: ^UIContext, horiz: bool) {
-	comp := ctx.current_component
-	child_iter := ui_iterate_children(comp)
-	sizing_along_axis := (comp.direction == .Horizontal) == horiz
-	size: f32
-	child_count: int
-
-	for c in ui_next_child(&child_iter) {
-		if c.floating do continue
-		child_count += 1
-		child_sizing := c.sizing_horiz if horiz else c.sizing_vert
-		// Grow and Percent children contribute their min to Fit calculation
-		child_size := c.calc_bounds.w if horiz else c.calc_bounds.h
-		if child_sizing.type == .Grow || child_sizing.type == .Percent {
-			child_size = child_sizing.min
-		}
-		if sizing_along_axis {
-			size += child_size
-		} else {
-			size = math.max(size, child_size)
-		}
-	}
-
-	if sizing_along_axis && child_count > 1 {
-		size += comp.child_gaps * f32(child_count - 1)
-	}
-	size += 2 * (horiz ? comp.sizing_horiz.padding : comp.sizing_vert.padding)
-
-	// Clamp to Fit min/max
-	fit_sizing := comp.sizing_horiz if horiz else comp.sizing_vert
-	if fit_sizing.max > 0 do size = math.min(size, fit_sizing.max)
-	if fit_sizing.min > 0 do size = math.max(size, fit_sizing.min)
-
-	if horiz {
-		comp.calc_bounds.w = size
-	} else {
-		comp.calc_bounds.h = size
-	}
-}
-
 ui_component_lastchild :: proc(node: ^Component) -> ^Component {
 	node := node
 	for node.first_child != nil do node = node.first_child
@@ -1614,18 +1741,14 @@ ui_next_draw_order :: proc(it: ^DrawOrderIterator) -> (next: ^Component, cont: b
 test_init_ctx :: proc(ctx: ^UIContext) {
 	ctx.component_count = 0
 	ctx.root = ui_alloc_component(ctx)
-	ctx.root^ = Component{}
-	ctx.root.calc_bounds = {0, 0, 400, 300}
+	ui_set_root_size(ctx, 400, 300)
 	ctx.current_component = ctx.root
 }
 
 @(private = "file")
 test_open_comp :: proc(ctx: ^UIContext, sizing_h, sizing_v: AxisSizing, dir: LayoutDirection = .Horizontal, child_gaps: f32 = 0) -> ^Component {
 	comp := ui_open_component(ctx)
-	comp.sizing_horiz = sizing_h
-	comp.sizing_vert = sizing_v
-	comp.direction = dir
-	comp.child_gaps = child_gaps
+	comp.layout = {dir = dir, w = sizing_h, h = sizing_v, gap = child_gaps}
 	return comp
 }
 
@@ -1656,8 +1779,7 @@ test_fixed_children_horizontal :: proc(t: ^testing.T) {
 	b := test_leaf(&ctx, {type = .Fixed, value = 80}, {type = .Fixed, value = 50})
 	test_close_comp(&ctx)
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	// Fit parent should wrap children: 100 + 10 gap + 80 = 190
 	testing.expect(t, approx(parent.calc_bounds.w, 190), "parent width")
@@ -1675,8 +1797,7 @@ test_grow_fills_parent :: proc(t: ^testing.T) {
 	test_init_ctx(&ctx)
 	child := test_leaf(&ctx, {type = .Grow}, {type = .Grow})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(child.calc_bounds.w, 400), "child width")
 	testing.expect(t, approx(child.calc_bounds.h, 300), "child height")
@@ -1687,12 +1808,11 @@ test_grow_distributes_evenly :: proc(t: ^testing.T) {
 	// Two Grow children split parent evenly
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Horizontal
+	ctx.root.layout.dir = .Horizontal
 	a := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
 	b := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(a.calc_bounds.w, 200), "a width")
 	testing.expect(t, approx(b.calc_bounds.w, 200), "b width")
@@ -1705,13 +1825,12 @@ test_grow_with_fixed_sibling :: proc(t: ^testing.T) {
 	// Fixed child + Grow child, Grow takes remaining space
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Horizontal
-	ctx.root.child_gaps = 10
+	ctx.root.layout.dir = .Horizontal
+	ctx.root.layout.gap = 10
 	fixed := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
 	grow := test_leaf(&ctx, {type = .Grow}, {type = .Fixed, value = 50})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	// 400 - 100 fixed - 10 gap = 290
 	testing.expect(t, approx(fixed.calc_bounds.w, 100), "fixed width")
@@ -1723,15 +1842,12 @@ test_padding :: proc(t: ^testing.T) {
 	// Parent with padding, child positioned inset
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	parent := test_open_comp(&ctx,
-		{type = .Fit, padding = 15},
-		{type = .Fit, padding = 15},
-		.Horizontal)
+	parent := test_open_comp(&ctx, {type = .Fit}, {type = .Fit}, .Horizontal)
+	parent.layout.padding = ui_pad(15)
 	child := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
 	test_close_comp(&ctx)
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	// Fit + padding: 100 + 30 = 130
 	testing.expect(t, approx(parent.calc_bounds.w, 130), "parent width with padding")
@@ -1745,13 +1861,12 @@ test_padding :: proc(t: ^testing.T) {
 test_vertical_layout :: proc(t: ^testing.T) {
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Vertical
-	ctx.root.child_gaps = 5
+	ctx.root.layout.dir = .Vertical
+	ctx.root.layout.gap = 5
 	a := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 30})
 	b := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 40})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(a.calc_bounds.y, 0), "a.y")
 	testing.expect(t, approx(b.calc_bounds.y, 35), "b.y") // 30 + 5 gap
@@ -1762,10 +1877,10 @@ test_grow_min_max_clamp :: proc(t: ^testing.T) {
 	// Grow with min/max clamping
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Horizontal
+	ctx.root.layout.dir = .Horizontal
 	child := test_leaf(&ctx, {type = .Grow, min = 50, max = 150}, {type = .Fixed, value = 50})
 
-	ui_size_grow_components(&ctx)
+	ui_layout_components(&ctx)
 
 	// Parent is 400, but max clamps to 150
 	testing.expect(t, approx(child.calc_bounds.w, 150), "clamped to max")
@@ -1775,11 +1890,10 @@ test_grow_min_max_clamp :: proc(t: ^testing.T) {
 test_percent_of_parent :: proc(t: ^testing.T) {
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Horizontal
+	ctx.root.layout.dir = .Horizontal
 	a := test_leaf(&ctx, {type = .Percent, value = 0.5}, {type = .Percent, value = 0.25})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(a.calc_bounds.w, 200), "50 percent of 400")
 	testing.expect(t, approx(a.calc_bounds.h, 75), "25 percent of 300")
@@ -1790,12 +1904,11 @@ test_grow_weights :: proc(t: ^testing.T) {
 	// Weighted Grow children split 1:3
 	ctx: UIContext
 	test_init_ctx(&ctx)
-	ctx.root.direction = .Horizontal
+	ctx.root.layout.dir = .Horizontal
 	a := test_leaf(&ctx, {type = .Grow, weight = 1}, {type = .Fixed, value = 50})
 	b := test_leaf(&ctx, {type = .Grow, weight = 3}, {type = .Fixed, value = 50})
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(a.calc_bounds.w, 100), "weight 1 of 4")
 	testing.expect(t, approx(b.calc_bounds.w, 300), "weight 3 of 4")
@@ -1810,12 +1923,11 @@ test_floating_skips_flow :: proc(t: ^testing.T) {
 	a := test_leaf(&ctx, {type = .Fixed, value = 100}, {type = .Fixed, value = 50})
 	f := test_open_comp(&ctx, {type = .Fixed, value = 30}, {type = .Fixed, value = 30})
 	f.floating = true
-	f.float_offset = {5, 6}
+	f.float.offset = {5, 6}
 	test_close_comp(&ctx)
 	test_close_comp(&ctx)
 
-	ui_size_grow_components(&ctx)
-	ui_position_components(&ctx)
+	ui_layout_components(&ctx)
 
 	testing.expect(t, approx(parent.calc_bounds.w, 100), "fit parent ignores floating child")
 	testing.expect(t, approx(a.calc_bounds.x, 0), "in-flow child position unchanged")
@@ -1828,16 +1940,15 @@ test_floating_skips_flow :: proc(t: ^testing.T) {
 test_anchored_float :: proc(ctx: ^UIContext, anchor: FloatingAnchor, flip: bool, anchor_bounds: RectF32, w, h: f32) -> ^Component {
 	parent := test_open_comp(ctx, {type = .Fixed, value = anchor_bounds.w}, {type = .Fixed, value = anchor_bounds.h})
 	parent.floating = true
-	parent.float_offset = {anchor_bounds.x, anchor_bounds.y}
+	parent.float.offset = {anchor_bounds.x, anchor_bounds.y}
 	f := test_open_comp(ctx, {type = .Fixed, value = w}, {type = .Fixed, value = h})
 	f.floating = true
-	f.float_anchor = anchor
-	f.float_flip = flip
+	f.float.anchor = anchor
+	f.float.flip = flip
 	test_close_comp(ctx)
 	test_close_comp(ctx)
 
-	ui_size_grow_components(ctx)
-	ui_position_components(ctx)
+	ui_layout_components(ctx)
 	return f
 }
 
@@ -1890,4 +2001,234 @@ test_float_oversized_clamps_to_root_origin :: proc(t: ^testing.T) {
 
 	testing.expect(t, approx(f.calc_bounds.x, 0), "oversized float pinned to root x")
 	testing.expect(t, approx(f.calc_bounds.y, 0), "oversized float pinned to root y")
+}
+
+@(test)
+test_zero_layout_fits_children_in_a_row :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	panel := ui_open_component(&ctx)
+	test_leaf(&ctx, ui_fixed(40), ui_fixed(20))
+	test_leaf(&ctx, ui_fixed(60), ui_fixed(30))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(panel.calc_bounds.w, 100), "zero layout is a horizontal fit")
+	testing.expect(t, approx(panel.calc_bounds.h, 30), "fit height is the tallest child")
+}
+
+@(test)
+test_parent_aligns_children_on_both_axes :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	row := test_open_comp(&ctx, ui_fixed(200), ui_fixed(100), .Horizontal, child_gaps = 10)
+	row.layout.align_x = .Right
+	row.layout.align_y = .Center
+	a := test_leaf(&ctx, ui_fixed(40), ui_fixed(20))
+	b := test_leaf(&ctx, ui_fixed(50), ui_fixed(60))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	// 200 - (40 + 10 + 50) = 100 free on the main axis
+	testing.expect(t, approx(a.calc_bounds.x, 100), "main axis pushed to the end")
+	testing.expect(t, approx(b.calc_bounds.x, 150), "gap kept between aligned children")
+	testing.expect(t, approx(a.calc_bounds.y, 40), "cross axis centered")
+	testing.expect(t, approx(b.calc_bounds.y, 20), "cross axis centered per child")
+}
+
+@(test)
+test_main_axis_center_in_column :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	col := test_open_comp(&ctx, ui_fixed(100), ui_fixed(200), .Vertical)
+	col.layout.align_y = .Center
+	col.layout.padding = {0, 20, 0, 0}
+	a := test_leaf(&ctx, ui_fixed(10), ui_fixed(80))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	// content box is 180 tall starting at 20, child 80 tall
+	testing.expect(t, approx(a.calc_bounds.y, 70), "centered within the padded content box")
+}
+
+@(test)
+test_overflow_stays_pinned_to_start :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	row := test_open_comp(&ctx, ui_fixed(50), ui_fixed(20))
+	row.layout.align_x = .Center
+	a := test_leaf(&ctx, ui_fixed(80), ui_fixed(20))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(a.calc_bounds.x, 0), "overflowing child not shifted before the start")
+}
+
+@(test)
+test_next_overrides_win_over_widget_defaults :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	test_open_comp(&ctx, ui_fixed(200), ui_fixed(200), .Vertical)
+	ui_next_w(&ctx, ui_fixed(120))
+	ui_next_align_x(&ctx, .Right)
+	// widget writes its defaults after opening
+	w := ui_open_component(&ctx)
+	w.layout.w = ui_fixed(30)
+	w.layout.h = ui_fixed(30)
+	test_close_comp(&ctx)
+	plain := test_leaf(&ctx, ui_fixed(30), ui_fixed(30))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(w.calc_bounds.w, 120), "next width replaces the widget default")
+	testing.expect(t, approx(w.calc_bounds.x, 80), "next align overrides the parent cross axis")
+	testing.expect(t, approx(plain.calc_bounds.x, 0), "override consumed by one component only")
+	testing.expect(t, !ctx.next_pending, "nothing left pending")
+}
+
+@(test)
+test_next_targets_outermost_of_composite :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	ui_next_h(&ctx, ui_fixed(90))
+	outer := test_open_comp(&ctx, ui_fit(), ui_fit(), .Vertical)
+	inner := test_leaf(&ctx, ui_fixed(40), ui_fixed(20))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(outer.calc_bounds.h, 90), "outer panel takes the override")
+	testing.expect(t, approx(inner.calc_bounds.h, 20), "inner parts keep their own sizing")
+}
+
+@(test)
+test_next_float_takes_widget_out_of_flow :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	test_open_comp(&ctx, ui_fixed(300), ui_fixed(100))
+	test_leaf(&ctx, ui_fixed(50), ui_fixed(20))
+	ui_next_float(&ctx, {align_x = .Right, align_y = .Bottom, offset = {-5, -5}})
+	f := test_leaf(&ctx, ui_fixed(30), ui_fixed(30))
+	b := test_leaf(&ctx, ui_fixed(50), ui_fixed(20))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(f.calc_bounds.x, 265), "floated to the right edge plus offset")
+	testing.expect(t, approx(f.calc_bounds.y, 65), "floated to the bottom edge plus offset")
+	testing.expect(t, approx(b.calc_bounds.x, 50), "floated widget takes no flow space")
+}
+
+@(test)
+test_grow_cross_axis_stretches_to_tallest_sibling :: proc(t: ^testing.T) {
+	// two sections in a fit row, one taller, both grow vertically
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	row := test_open_comp(&ctx, ui_fit(), ui_fit(), .Horizontal, child_gaps = 10)
+	short := test_open_comp(&ctx, ui_fit(), ui_grow(), .Vertical)
+	short.layout.align_y = .Bottom
+	knob := test_leaf(&ctx, ui_fixed(40), ui_fixed(60))
+	test_close_comp(&ctx)
+	tall := test_open_comp(&ctx, ui_fit(), ui_grow(), .Vertical)
+	test_leaf(&ctx, ui_fixed(40), ui_fixed(20))
+	test_leaf(&ctx, ui_fixed(40), ui_fixed(60))
+	test_close_comp(&ctx)
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(row.calc_bounds.h, 80), "fit row counts grow children content")
+	testing.expect(t, approx(short.calc_bounds.h, 80), "short section stretched to the row")
+	testing.expect(t, approx(tall.calc_bounds.h, 80), "tall section keeps its content")
+	testing.expect(t, approx(knob.calc_bounds.y, 20), "level with the tall section last child")
+}
+
+@(test)
+test_grow_floor_pins_and_redistributes :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	big := test_open_comp(&ctx, ui_grow(), ui_fixed(10))
+	test_leaf(&ctx, ui_fixed(300), ui_fixed(10))
+	test_close_comp(&ctx)
+	a := test_leaf(&ctx, ui_grow(), ui_fixed(10))
+	b := test_leaf(&ctx, ui_grow(), ui_fixed(10))
+
+	ui_layout_components(&ctx)
+
+	// even share 133 is below the 300 floor
+	testing.expect(t, approx(big.calc_bounds.w, 300), "pinned at its content")
+	testing.expect(t, approx(a.calc_bounds.w, 50), "rest split evenly")
+	testing.expect(t, approx(b.calc_bounds.w, 50), "rest split evenly")
+	testing.expect(t, approx(b.calc_bounds.x, 350), "positions follow")
+}
+
+@(test)
+test_grow_max_pins_and_redistributes :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	a := test_leaf(&ctx, ui_grow(max = 50), ui_fixed(10))
+	b := test_leaf(&ctx, ui_grow(), ui_fixed(10))
+	c := test_leaf(&ctx, ui_grow(), ui_fixed(10))
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(a.calc_bounds.w, 50), "capped at max")
+	testing.expect(t, approx(b.calc_bounds.w, 175), "remaining space re-split")
+	testing.expect(t, approx(c.calc_bounds.w, 175), "remaining space re-split")
+}
+
+@(test)
+test_equal_grow_weights_split_evenly_despite_content :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	a := test_open_comp(&ctx, ui_grow(), ui_fixed(10))
+	test_leaf(&ctx, ui_fixed(120), ui_fixed(10))
+	test_close_comp(&ctx)
+	b := test_leaf(&ctx, ui_grow(), ui_fixed(10))
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(a.calc_bounds.w, 200), "content below the share doesn't skew the split")
+	testing.expect(t, approx(b.calc_bounds.w, 200), "content below the share doesn't skew the split")
+}
+
+@(test)
+test_spacers :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	row := test_open_comp(&ctx, ui_fixed(300), ui_fixed(20))
+	test_leaf(&ctx, ui_fixed(50), ui_fixed(20))
+	ui_spacer(&ctx, 25)
+	b := test_leaf(&ctx, ui_fixed(50), ui_fixed(20))
+	ui_spacer(&ctx)
+	c := test_leaf(&ctx, ui_fixed(50), ui_fixed(20))
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(b.calc_bounds.x, 75), "fixed spacer on the main axis")
+	testing.expect(t, approx(c.calc_bounds.x, 250), "grow spacer pushes the rest to the end")
+	testing.expect(t, approx(row.calc_bounds.h, 20), "spacers add nothing on the cross axis")
+}
+
+@(test)
+test_width_resolves_before_height :: proc(t: ^testing.T) {
+	ctx: UIContext
+	test_init_ctx(&ctx)
+	ctx.root.layout.dir = .Vertical
+	p := test_open_comp(&ctx, ui_grow(), ui_percent(0.5))
+	c := test_leaf(&ctx, ui_percent(0.25), ui_grow())
+	test_close_comp(&ctx)
+
+	ui_layout_components(&ctx)
+
+	testing.expect(t, approx(p.calc_bounds.w, 400), "parent grows across")
+	testing.expect(t, approx(p.calc_bounds.h, 150), "parent half the root height")
+	testing.expect(t, approx(c.calc_bounds.w, 100), "child percent of the grown width")
+	testing.expect(t, approx(c.calc_bounds.h, 150), "child grows on the cross axis")
 }

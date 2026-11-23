@@ -529,9 +529,9 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 	}
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 40, padding = 10) {
+		if sdk.ui_box(plug.ui, {dir = .Vertical, w = sdk.ui_grow(), h = sdk.ui_grow(), padding = sdk.ui_pad(10), gap = 40}) {
 			// Envelope params
-			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, {w = sdk.ui_grow(), gap = 6}) {
 				sdk.ui_knob_param_labeled(plug.ui, Param.Attack)
 				sdk.ui_knob_param_labeled(plug.ui, Param.Decay)
 				sdk.ui_knob_param_labeled(plug.ui, Param.Sustain)
@@ -539,7 +539,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 				sdk.ui_knob_param_labeled(plug.ui, Param.Gain)
 			}
 			// Oscillator param
-			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, {w = sdk.ui_grow(), h = sdk.ui_grow(), gap = 10}) {
 				sdk.ui_knob_param_labeled(plug.ui, Param.Osc1Wave, enum_to_string = sdk.enum_label(dsp.Waveform))
 				sdk.ui_knob_param_labeled(plug.ui, Param.Osc2Wave, enum_to_string = sdk.enum_label(dsp.Waveform))
 				sdk.ui_knob_param_labeled(plug.ui, Param.OscMix)
@@ -548,7 +548,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 			sdk.ui_canvas(plug.ui, scope_draw, &fft_data)
 			
 			// Arp controls
-			if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Fit}, child_gaps = 6, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, {dir = .Vertical, w = sdk.ui_grow(), gap = 6}) {
 				sdk.ui_toggle_param_labeled(plug.ui, Param.ArpOn)
 				sdk.ui_slider_h_param_labeled(plug.ui, Param.ArpRate, enum_to_string = arp_rate_to_string)
 			}

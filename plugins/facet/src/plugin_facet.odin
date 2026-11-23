@@ -717,20 +717,21 @@ facet_draw :: proc(plug: ^sdk.PluginController) {
 	sdk.draw_clear(plug.draw)
 
 	if sdk.ui_frame_scoped(plug.ui) {
-		if sdk.ui_panel(plug.ui, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 10, padding = 10, skip_draw = true) {
-			if sdk.ui_panel(plug.ui, dir = .Horizontal, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 1.1}, padding = 0, child_gaps = 10, skip_draw = true) {
-				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a, sizing_horiz = {type = .Grow, weight = 1})
-				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a, sizing_horiz = {type = .Grow, weight = 2})
-				sdk.ui_canvas(plug.ui, draw_meter_canvas, a, sizing_horiz = {type = .Fixed, value = 60})
+		if sdk.ui_panel(plug.ui, {dir = .Vertical, w = sdk.ui_grow(), h = sdk.ui_grow(), padding = sdk.ui_pad(10), gap = 10}) {
+			if sdk.ui_panel(plug.ui, {w = sdk.ui_grow(), h = sdk.ui_grow(1.1), gap = 10}) {
+				sdk.ui_canvas(plug.ui, draw_goniometer_canvas, a)
+				sdk.ui_next_w(plug.ui, sdk.ui_grow(2))
+				sdk.ui_canvas(plug.ui, draw_hilbert_canvas, a)
+				sdk.ui_next_w(plug.ui, sdk.ui_fixed(60))
+				sdk.ui_canvas(plug.ui, draw_meter_canvas, a)
 			}
-			if sdk.ui_panel(plug.ui, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow, weight = 0.9}, padding = 0, skip_draw = true) {
+			if sdk.ui_panel(plug.ui, {w = sdk.ui_grow(), h = sdk.ui_grow(0.9), gap = 10}) {
 				sdk.ui_canvas(plug.ui, draw_spectrum_analyzer_canvas, a)
-				if sdk.ui_panel(plug.ui, floating = true, align_x = .Right, align_y = .Top,
-					float_offset = {-SPECTRUM_CONTROLS_INSET, SPECTRUM_CONTROLS_INSET},
-					padding = 0, child_gaps = 6, skip_draw = true) {
-					sdk.ui_label(plug.ui, "FFT Size:", align_y = .Center)
+				sdk.ui_next_float(plug.ui, {align_x = .Right, offset = {-SPECTRUM_CONTROLS_INSET, SPECTRUM_CONTROLS_INSET}})
+				if sdk.ui_panel(plug.ui, {gap = 6, align_y = .Center}) {
+					sdk.ui_label(plug.ui, "FFT Size:")
 					sdk.ui_drop_down_param(plug.ui, Param.FFTSize, enum_to_string = fft_size_label)
-					sdk.ui_label(plug.ui, "Mode:", align_y = .Center)
+					sdk.ui_label(plug.ui, "Mode:")
 					sdk.ui_drop_down_param(plug.ui, Param.FFTMode, enum_to_string = fft_mode_label)
 				}
 			}

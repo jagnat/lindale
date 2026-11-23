@@ -443,15 +443,15 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 
 	ui := plug.ui
 	if sdk.ui_frame_scoped(ui) {
-		if sdk.ui_panel(ui, skip_draw = true, dir = .Vertical, sizing_horiz = {type = .Grow}, sizing_vert = {type = .Grow}, child_gaps = 14, padding = 14) {
-			if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 14, padding = 0) {
-				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
+		if sdk.ui_panel(ui, {dir = .Vertical, w = sdk.ui_grow(), h = sdk.ui_grow(), padding = sdk.ui_pad(14), gap = 14}) {
+			if sdk.ui_panel(ui, {gap = 14}) {
+				if sdk.ui_box(ui, {dir = .Vertical, padding = sdk.ui_pad(12), gap = 8}) {
 					sdk.ui_label(ui, "Timbre")
 					sdk.ui_knob_param_labeled(ui, Param.Timbre, enum_to_string = sdk.enum_label(PokeyTimbre))
 				}
-				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
+				if sdk.ui_box(ui, {dir = .Vertical, padding = sdk.ui_pad(12), gap = 8}) {
 					sdk.ui_label(ui, "Envelope")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, {gap = 10}) {
 						sdk.ui_knob_param_labeled(ui, Param.Attack)
 						sdk.ui_knob_param_labeled(ui, Param.Decay)
 						sdk.ui_knob_param_labeled(ui, Param.Sustain)
@@ -460,26 +460,26 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 					}
 				}
 			}
-			if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 14, padding = 0) {
-				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
+			if sdk.ui_panel(ui, {gap = 14}) {
+				if sdk.ui_box(ui, {dir = .Vertical, padding = sdk.ui_pad(12), gap = 8}) {
 					sdk.ui_label(ui, "Arpeggio")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, {gap = 10}) {
 						sdk.ui_knob_param_labeled(ui, Param.ArpRate)
 						sdk.ui_knob_param_labeled(ui, Param.ArpStep1)
 						sdk.ui_knob_param_labeled(ui, Param.ArpStep2)
 					}
 				}
-				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
+				if sdk.ui_box(ui, {dir = .Vertical, padding = sdk.ui_pad(12), gap = 8}) {
 					sdk.ui_label(ui, "Vibrato")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, {gap = 10}) {
 						sdk.ui_knob_param_labeled(ui, Param.VibDepth)
 						sdk.ui_knob_param_labeled(ui, Param.VibSpeed)
 						sdk.ui_knob_param_labeled(ui, Param.VibDelay)
 					}
 				}
-				if sdk.ui_panel(ui, dir = .Vertical, child_gaps = 8, padding = 12) {
+				if sdk.ui_box(ui, {dir = .Vertical, padding = sdk.ui_pad(12), gap = 8}) {
 					sdk.ui_label(ui, "Tune")
-					if sdk.ui_panel(ui, skip_draw = true, dir = .Horizontal, child_gaps = 10, padding = 0) {
+					if sdk.ui_panel(ui, {gap = 10}) {
 						sdk.ui_knob_param_labeled(ui, Param.Detune)
 						sdk.ui_knob_param_labeled(ui, Param.Machine, enum_to_string = sdk.enum_label(dsp.PokeyMachine))
 					}
