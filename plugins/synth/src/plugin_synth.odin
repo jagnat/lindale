@@ -524,7 +524,7 @@ synth_draw :: proc(plug: ^sdk.PluginController) {
 			n += 1
 		}
 		if n >= 2 {
-			sdk.draw_polyline(ctx.plugin.draw, pts[:n], thickness = 1)
+			sdk.draw_polyline(ctx.plugin.draw, pts[:n], 1, {fill = {255, 255, 255, 255}})
 		}
 	}
 

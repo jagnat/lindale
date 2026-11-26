@@ -581,14 +581,7 @@ pokey_draw :: proc(plug: ^sdk.PluginController) {
 pokey_draw_waveform_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
 	state := cast(^PokeyControlState)data
 	r := comp.calc_bounds
-	sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
-		x = r.x, y = r.y,
-		width = r.w, height = r.h,
-		color = {0, 0, 0, 0},
-		corner_rad = 10,
-		border_color = {80, 80, 80, 255},
-		border_width = 1.2,
-	})
+	sdk.draw_rect(ctx.plugin.draw, r, {border = {80, 80, 80, 255}, border_width = 1.2}, 10)
 	if state.view_len <= 0 || state.sample_count < 2 do return
 
 	PAD :: 10
@@ -609,7 +602,7 @@ pokey_draw_waveform_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, da
 			r.y + r.h / 2 - (r.h / 2 - PAD) * vals[i] / peak,
 		}
 	}
-	sdk.draw_polyline(ctx.plugin.draw, pts, color = ctx.theme.slider_color, thickness = 1.5)
+	sdk.draw_polyline(ctx.plugin.draw, pts, 1.5, {fill = ctx.theme.slider_color})
 }
 
 // Snapshots the latest samples and picks a view window phase-locked to the scope voice's period

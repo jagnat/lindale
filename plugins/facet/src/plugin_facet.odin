@@ -395,14 +395,7 @@ facet_run_analysis :: proc(plug: ^sdk.PluginController) {
 }
 
 draw_canvas_frame :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component) {
-	sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
-		x = comp.calc_bounds.x, y = comp.calc_bounds.y,
-		width = comp.calc_bounds.w, height = comp.calc_bounds.h,
-		color = {0, 0, 0, 0},
-		corner_rad = 10,
-		border_color = {80, 80, 80, 255},
-		border_width = 1.2,
-	})
+	sdk.draw_rect(ctx.plugin.draw, comp.calc_bounds, {border = {80, 80, 80, 255}, border_width = 1.2}, 10)
 }
 
 spectrum_x :: #force_inline proc(bounds: sdk.RectF32, freq, log_span: f32) -> f32 {
@@ -438,20 +431,20 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 			f := decade.f * f32(k)
 			if f >= FMAX do break
 			x := spectrum_x(bounds, f, log_span)
-			sdk.draw_push_pill(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, GRID_COLOR)
+			sdk.draw_line(ctx.plugin.draw, {x, bounds.y}, {x, bounds.y + bounds.h}, 1, {fill = GRID_COLOR})
 		}
 		x := spectrum_x(bounds, decade.f, log_span)
 		text_w := sdk.draw_measure_text(ctx.plugin.draw, decade.label, LABEL_SIZE).x
-		sdk.draw_text(ctx.plugin.draw, decade.label, x - text_w / 2, bounds.y + bounds.h + 1, color = LABEL_COLOR, size = LABEL_SIZE)
+		sdk.draw_text(ctx.plugin.draw, decade.label, {x - text_w / 2, bounds.y + bounds.h + 1}, color = LABEL_COLOR, size = LABEL_SIZE)
 	}
 
 	// dBFS gridlines and labels every 20db
 	for db := DB_TOP; db >= DB_FLOOR; db -= 20 {
 		y := spectrum_y(bounds, db)
-		if db != DB_TOP do sdk.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, GRID_COLOR)
+		if db != DB_TOP do sdk.draw_line(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, {fill = GRID_COLOR})
 		if db != DB_FLOOR {
 			s := fmt.tprintf("%d", int(db))
-			sdk.draw_text(ctx.plugin.draw, s, bounds.x + 2, y, color = LABEL_COLOR, size = LABEL_SIZE)
+			sdk.draw_text(ctx.plugin.draw, s, {bounds.x + 2, y}, color = LABEL_COLOR, size = LABEL_SIZE)
 		}
 	}
 
@@ -466,7 +459,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 	}
 	lx := bounds.x + (bounds.w - legend_w) / 2
 	for t in 0 ..< a.fft_num_traces {
-		sdk.draw_text(ctx.plugin.draw, styles[t].label, lx, bounds.y + 1, styles[t].color, LABEL_SIZE)
+		sdk.draw_text(ctx.plugin.draw, styles[t].label, {lx, bounds.y + 1}, styles[t].color, LABEL_SIZE)
 		lx += sdk.draw_measure_text(ctx.plugin.draw, styles[t].label, LABEL_SIZE).x + LEGEND_GAP
 	}
 
@@ -518,7 +511,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 			append(&pts, sdk.Vec2f{spectrum_x(bounds, freq, log_span), spectrum_y(bounds, a.fft_smooth_db[c][i])})
 		}
 
-		if len(pts) >= 2 do sdk.draw_polyline(ctx.plugin.draw, pts[:], thickness = 1.8, color = styles[c].color)
+		if len(pts) >= 2 do sdk.draw_polyline(ctx.plugin.draw, pts[:], 1.8, {fill = styles[c].color})
 	}
 
 	// frequency and dB readout at the mouse position
@@ -535,7 +528,7 @@ draw_spectrum_analyzer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component,
 		tsz := sdk.draw_measure_text(ctx.plugin.draw, s, LABEL_SIZE)
 		tx := clamp(mp.x + 14, bounds.x, bounds.x + bounds.w - tsz.x)
 		ty := clamp(mp.y - tsz.y - 6, bounds.y, bounds.y + bounds.h - tsz.y)
-		sdk.draw_text(ctx.plugin.draw, s, tx, ty, CONTROL_TEXT_COLOR, LABEL_SIZE)
+		sdk.draw_text(ctx.plugin.draw, s, {tx, ty}, CONTROL_TEXT_COLOR, LABEL_SIZE)
 	}
 }
 
@@ -568,16 +561,11 @@ draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: 
 	radius := min(radius_v, radius_h)
 	diag := radius * SQRT_HALF
 
-	sdk.draw_push_rect(dc, sdk.SimpleUIRect{
-		x = cx - radius, y = cy - radius,
-		width = radius * 2, height = radius * 2,
-		corner_rad = radius,
-		border_color = GRID_COLOR, border_width = 1,
-	})
-	sdk.draw_push_pill(dc, {cx, cy - radius}, {cx, cy + radius}, 1, GRID_COLOR)
-	sdk.draw_push_pill(dc, {cx - radius, cy}, {cx + radius, cy}, 1, GRID_COLOR)
-	sdk.draw_push_pill(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, GRID_COLOR)
-	sdk.draw_push_pill(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, GRID_COLOR)
+	sdk.draw_circle(dc, {cx, cy}, radius, {border = GRID_COLOR, border_width = 1})
+	sdk.draw_line(dc, {cx, cy - radius}, {cx, cy + radius}, 1, {fill = GRID_COLOR})
+	sdk.draw_line(dc, {cx - radius, cy}, {cx + radius, cy}, 1, {fill = GRID_COLOR})
+	sdk.draw_line(dc, {cx - diag, cy - diag}, {cx + diag, cy + diag}, 1, {fill = GRID_COLOR})
+	sdk.draw_line(dc, {cx + diag, cy - diag}, {cx - diag, cy + diag}, 1, {fill = GRID_COLOR})
 
 	scale := radius * a.gonio_gain
 
@@ -591,16 +579,16 @@ draw_goniometer_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: 
 			y := cy - (l + r) * SQRT_HALF * scale
 			alpha := trail_alpha(f32(k) * inv_n)
 			col := sdk.ColorU8{150, 100, 150, u8(alpha * 255)}
-			sdk.draw_push_pill(dc, {x, y}, {x, y}, 2, col)
+			sdk.draw_line(dc, {x, y}, {x, y}, 2, {fill = col})
 		}
 	}
 
-	sdk.draw_text(dc, "+M", cx - m_plus.x / 2, cy - radius - m_plus.y - LABEL_PAD, LABEL_COLOR, LABEL_SIZE)
-	sdk.draw_text(dc, "-M", cx - m_minus.x / 2, cy + radius + LABEL_PAD, LABEL_COLOR, LABEL_SIZE)
-	sdk.draw_text(dc, "+S", cx + radius + LABEL_PAD, cy - s_plus.y / 2, LABEL_COLOR, LABEL_SIZE)
-	sdk.draw_text(dc, "-S", cx - radius - s_minus.x - LABEL_PAD, cy - s_minus.y / 2, LABEL_COLOR, LABEL_SIZE)
-	sdk.draw_text(dc, "L", cx - diag - l_size.x - LABEL_PAD, cy - diag - l_size.y - LABEL_PAD, LABEL_COLOR, LABEL_SIZE)
-	sdk.draw_text(dc, "R", cx + diag + LABEL_PAD, cy - diag - r_size.y - LABEL_PAD, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "+M", {cx - m_plus.x / 2, cy - radius - m_plus.y - LABEL_PAD}, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "-M", {cx - m_minus.x / 2, cy + radius + LABEL_PAD}, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "+S", {cx + radius + LABEL_PAD, cy - s_plus.y / 2}, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "-S", {cx - radius - s_minus.x - LABEL_PAD, cy - s_minus.y / 2}, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "L", {cx - diag - l_size.x - LABEL_PAD, cy - diag - l_size.y - LABEL_PAD}, LABEL_COLOR, LABEL_SIZE)
+	sdk.draw_text(dc, "R", {cx + diag + LABEL_PAD, cy - diag - r_size.y - LABEL_PAD}, LABEL_COLOR, LABEL_SIZE)
 }
 
 draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawptr) {
@@ -630,7 +618,7 @@ draw_hilbert_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: raw
 		y0 := cy - imag(p0) * scale
 		x1 := cx + real(p1) * scale
 		y1 := cy - imag(p1) * scale
-		sdk.draw_push_pill(ctx.plugin.draw, {x0, y0}, {x1, y1}, thickness, col)
+		sdk.draw_line(ctx.plugin.draw, {x0, y0}, {x1, y1}, thickness, {fill = col})
 	}
 }
 
@@ -662,8 +650,8 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 		y := bounds.y + bounds.h * (1 - (db - MIN_DB) / (MAX_DB - MIN_DB))
 		s := fmt.tprintf("%d", int(db))
 		tsz := sdk.draw_measure_text(ctx.plugin.draw, s, METER_LABEL_SIZE)
-		sdk.draw_text(ctx.plugin.draw, s, bounds.x - tsz.x - 4, y - tsz.y / 2, color = LABEL_COLOR, size = METER_LABEL_SIZE)
-		sdk.draw_push_pill(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, GRID_COLOR)
+		sdk.draw_text(ctx.plugin.draw, s, {bounds.x - tsz.x - 4, y - tsz.y / 2}, color = LABEL_COLOR, size = METER_LABEL_SIZE)
+		sdk.draw_line(ctx.plugin.draw, {bounds.x, y}, {bounds.x + bounds.w, y}, 1, {fill = GRID_COLOR})
 	}
 
 	// Peak first, RMS on top
@@ -679,10 +667,7 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 				h := pix_per_db * (top_db - prev_db)
 				y := bounds.y + bounds.h - pix_per_db * (top_db - MIN_DB)
 				color := is_peak ? seg.peak_color : seg.rms_color
-				sdk.draw_push_rect(ctx.plugin.draw, {
-					x = x, y = y, width = meter_w, height = h,
-					color = color, corner_rad = 2,
-				})
+				sdk.draw_rect(ctx.plugin.draw, {x, y, meter_w, h}, {fill = color}, 2)
 				prev_db = seg.top_db
 			}
 		}
@@ -701,10 +686,7 @@ draw_meter_canvas :: proc(ctx: ^sdk.UIContext, comp: ^sdk.Component, data: rawpt
 		}
 		x := bounds.x + f32(c) * (meter_w + METER_SPACING_PX)
 		y := bounds.y + bounds.h - pix_per_db * (dbs - MIN_DB)
-		sdk.draw_push_rect(ctx.plugin.draw, sdk.SimpleUIRect {
-			x = x, y = y - PEAK_TICK_H / 2, width = meter_w, height = PEAK_TICK_H,
-			color = col, corner_rad = 1,
-		})
+		sdk.draw_rect(ctx.plugin.draw, {x, y - PEAK_TICK_H / 2, meter_w, PEAK_TICK_H}, {fill = col}, 1)
 	}
 }
 

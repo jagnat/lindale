@@ -1389,16 +1389,11 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			case .Panel: {
 				d := c.data.(PanelData) or_continue
 				if !d.background && !d.popup do continue
-				rect := SimpleUIRect{}
-				rect.x = c.calc_bounds.x
-				rect.y = c.calc_bounds.y
-				rect.width = c.calc_bounds.w
-				rect.height = c.calc_bounds.h
-				rect.color = ctx.theme.popup_bg_color if d.popup else ctx.theme.panel_bg_color
-				rect.corner_rad = ctx.theme.corner_radius
-				rect.border_width = ctx.theme.border_width if d.popup else ctx.theme.panel_border_width
-				rect.border_color = ctx.theme.popup_border_color if d.popup else ctx.theme.panel_border_color
-				draw_push_rect(ctx.plugin.draw, rect)
+				draw_rect(ctx.plugin.draw, c.calc_bounds, {
+					fill = ctx.theme.popup_bg_color if d.popup else ctx.theme.panel_bg_color,
+					border = ctx.theme.popup_border_color if d.popup else ctx.theme.panel_border_color,
+					border_width = ctx.theme.border_width if d.popup else ctx.theme.panel_border_width,
+				}, ctx.theme.corner_radius)
 			}
 			case .Label: {
 				d := c.data.(LabelData) or_continue
@@ -1409,26 +1404,23 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				case .Center: text_x = c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5
 				case .Right:  text_x = c.calc_bounds.x + c.calc_bounds.w - text_size.x
 				}
-				draw_text(ctx.plugin.draw, d.text, text_x, c.calc_bounds.y, ctx.theme.text_color, d.size)
+				draw_text(ctx.plugin.draw, d.text, {text_x, c.calc_bounds.y}, ctx.theme.text_color, d.size)
 			}
 			case .Button: {
 				d := c.data.(ButtonData) or_continue
 				hover_t := ui_animate(ctx, c.id, f32(1) if c.id == ctx.hovered_id else f32(0))
 				bg_color := color_u8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
 				if c.id == ctx.active_id do bg_color = ctx.theme.button_active_color
-				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-					x = c.calc_bounds.x, y = c.calc_bounds.y,
-					width = c.calc_bounds.w, height = c.calc_bounds.h,
-					color = bg_color,
-					corner_rad = ctx.theme.corner_radius,
-					border_color = ctx.theme.border_color,
+				draw_rect(ctx.plugin.draw, c.calc_bounds, {
+					fill = bg_color,
+					border = ctx.theme.border_color,
 					border_width = ctx.theme.border_width,
-				})
+				}, ctx.theme.corner_radius)
 				text_size := draw_measure_text(ctx.plugin.draw, d.label, ctx.theme.font_size)
-				draw_text(ctx.plugin.draw, d.label,
+				draw_text(ctx.plugin.draw, d.label, {
 					c.calc_bounds.x + (c.calc_bounds.w - text_size.x) * 0.5,
 					c.calc_bounds.y + (c.calc_bounds.h - text_size.y) * 0.5,
-					ctx.theme.text_color, ctx.theme.font_size)
+				}, ctx.theme.text_color, ctx.theme.font_size)
 			}
 			case .Slider: {
 				bounds := c.calc_bounds
@@ -1446,71 +1438,67 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 					slider_y := norm * track_range
 
 					// Rail background
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
-						y = bounds.y + thumb_r,
-						width = ctx.theme.slider_rail_width,
-						height = track_range,
-						color = ctx.theme.slider_track_color,
-						corner_rad = ctx.theme.slider_rail_width / 2,
-						border_color = ctx.theme.border_color,
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
+						bounds.y + thumb_r,
+						ctx.theme.slider_rail_width,
+						track_range,
+					}, {
+						fill = ctx.theme.slider_track_color,
+						border = ctx.theme.border_color,
 						border_width = ctx.theme.slider_rail_border_width,
-					})
+					}, ctx.theme.slider_rail_width / 2)
 					// Filled portion
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
-						y = bounds.y + thumb_r + (track_range - slider_y),
-						width = ctx.theme.slider_rail_width,
-						height = slider_y,
-						color = ctx.theme.slider_color,
-						corner_rad = ctx.theme.slider_rail_width / 2,
-					})
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + (bounds.w / 2) - (ctx.theme.slider_rail_width / 2),
+						bounds.y + thumb_r + (track_range - slider_y),
+						ctx.theme.slider_rail_width,
+						slider_y,
+					}, {fill = ctx.theme.slider_color}, ctx.theme.slider_rail_width / 2)
 					// Thumb circle
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + (bounds.w / 2) - (ctx.theme.slider_width / 2),
-						y = bounds.y + (track_range - slider_y),
-						width = ctx.theme.slider_width,
-						height = ctx.theme.slider_width,
-						color = thumb_color,
-						corner_rad = ctx.theme.slider_width / 2,
-						border_color = ctx.theme.slider_active_color,
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + (bounds.w / 2) - (ctx.theme.slider_width / 2),
+						bounds.y + (track_range - slider_y),
+						ctx.theme.slider_width,
+						ctx.theme.slider_width,
+					}, {
+						fill = thumb_color,
+						border = ctx.theme.slider_active_color,
 						border_width = ctx.theme.slider_thumb_border_width,
-					})
+					}, ctx.theme.slider_width / 2)
 				} else {
 					track_range := bounds.w - ctx.theme.slider_width
 					slider_x := norm * track_range
 
 					// Rail background
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + thumb_r,
-						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
-						width = track_range,
-						height = ctx.theme.slider_rail_width,
-						color = ctx.theme.slider_track_color,
-						corner_rad = ctx.theme.slider_rail_width / 2,
-						border_color = ctx.theme.border_color,
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + thumb_r,
+						bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
+						track_range,
+						ctx.theme.slider_rail_width,
+					}, {
+						fill = ctx.theme.slider_track_color,
+						border = ctx.theme.border_color,
 						border_width = ctx.theme.slider_rail_border_width,
-					})
+					}, ctx.theme.slider_rail_width / 2)
 					// Filled portion
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + thumb_r,
-						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
-						width = slider_x,
-						height = ctx.theme.slider_rail_width,
-						color = ctx.theme.slider_color,
-						corner_rad = ctx.theme.slider_rail_width / 2,
-					})
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + thumb_r,
+						bounds.y + (bounds.h / 2) - (ctx.theme.slider_rail_width / 2),
+						slider_x,
+						ctx.theme.slider_rail_width,
+					}, {fill = ctx.theme.slider_color}, ctx.theme.slider_rail_width / 2)
 					// Thumb circle
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x + slider_x,
-						y = bounds.y + (bounds.h / 2) - (ctx.theme.slider_width / 2),
-						width = ctx.theme.slider_width,
-						height = ctx.theme.slider_width,
-						color = thumb_color,
-						corner_rad = ctx.theme.slider_width / 2,
-						border_color = ctx.theme.slider_active_color,
+					draw_rect(ctx.plugin.draw, {
+						bounds.x + slider_x,
+						bounds.y + (bounds.h / 2) - (ctx.theme.slider_width / 2),
+						ctx.theme.slider_width,
+						ctx.theme.slider_width,
+					}, {
+						fill = thumb_color,
+						border = ctx.theme.slider_active_color,
 						border_width = ctx.theme.slider_thumb_border_width,
-					})
+					}, ctx.theme.slider_width / 2)
 				}
 			}
 			case .Toggle: {
@@ -1529,18 +1517,13 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				bg_color := color_u8_lerp(ctx.theme.toggle_off_color, ctx.theme.toggle_on_color, t)
 				pill_rad := bounds.h / 2
 				// Pill background
-				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-					x = bounds.x, y = bounds.y,
-					width = bounds.w, height = bounds.h,
-					color = bg_color,
-					corner_rad = pill_rad,
-				})
+				draw_rect(ctx.plugin.draw, bounds, {fill = bg_color}, pill_rad)
 				// Thumb circle
 				margin := ctx.theme.toggle_thumb_margin
 				thumb_r := pill_rad - margin
 				thumb_x := bounds.x + margin + thumb_r + (bounds.w - bounds.h) * t
 				thumb_y := bounds.y + pill_rad
-				draw_circle(ctx.plugin.draw, thumb_x, thumb_y, thumb_r, ctx.theme.toggle_thumb_color)
+				draw_circle(ctx.plugin.draw, {thumb_x, thumb_y}, thumb_r, {fill = ctx.theme.toggle_thumb_color})
 			}
 			case .Knob: {
 				bounds := c.calc_bounds
@@ -1556,22 +1539,22 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				radius := math.min(bounds.w, bounds.h) * 0.5 - ctx.theme.knob_arc_thickness
 
 				// Track arc (full sweep)
-				draw_push_arc(ctx.plugin.draw, center, radius,
+				draw_arc(ctx.plugin.draw, center, radius,
 					ctx.theme.knob_start_angle, ctx.theme.knob_start_angle + ctx.theme.knob_sweep_angle,
-					ctx.theme.knob_track_thickness, ctx.theme.slider_track_color)
+					ctx.theme.knob_track_thickness, {fill = ctx.theme.slider_track_color})
 
 				end_fill := ctx.theme.knob_start_angle + norm * ctx.theme.knob_sweep_angle
 				if norm > 0.001 {
-					draw_push_arc(ctx.plugin.draw, center, radius,
+					draw_arc(ctx.plugin.draw, center, radius,
 						ctx.theme.knob_start_angle, end_fill,
-						ctx.theme.knob_arc_thickness, arc_color)
+						ctx.theme.knob_arc_thickness, {fill = arc_color})
 				}
 
 				// Indicator line + end-cap dot at the current angle
 				dir := Vec2f{math.cos(end_fill), math.sin(end_fill)}
 				inner := Vec2f{center.x + dir.x * ctx.theme.knob_indicator_inset, center.y + dir.y * ctx.theme.knob_indicator_inset}
 				outer := Vec2f{center.x + dir.x * (radius - ctx.theme.knob_arc_thickness - 4), center.y + dir.y * (radius - ctx.theme.knob_arc_thickness - 4)}
-				draw_push_pill(ctx.plugin.draw, inner, outer, ctx.theme.knob_track_thickness, arc_color)
+				draw_line(ctx.plugin.draw, inner, outer, ctx.theme.knob_track_thickness, {fill = arc_color})
 			}
 			case .Canvas: {
 				d := c.data.(CanvasData) or_continue
@@ -1588,23 +1571,20 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				bg_color := color_u8_lerp(ctx.theme.button_color, ctx.theme.button_hover_color, hover_t)
 				if ctx.open_popup_id == c.id do bg_color = ctx.theme.button_active_color
 
-				draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-					x = bounds.x, y = bounds.y,
-					width = bounds.w, height = bounds.h,
-					color = bg_color,
-					corner_rad = ctx.theme.corner_radius,
-					border_color = ctx.theme.border_color,
+				draw_rect(ctx.plugin.draw, bounds, {
+					fill = bg_color,
+					border = ctx.theme.border_color,
 					border_width = ctx.theme.border_width,
-				})
+				}, ctx.theme.corner_radius)
 
 				idx := binding_norm_to_index(ctx, d.binding, len(d.choices))
 				if len(d.choices) > 0 {
 					text := d.choices[clamp(idx, 0, len(d.choices) - 1)]
 					text_size := draw_measure_text(ctx.plugin.draw, text, ctx.theme.font_size)
-					draw_text(ctx.plugin.draw, text,
+					draw_text(ctx.plugin.draw, text, {
 						bounds.x + ctx.theme.padding,
 						bounds.y + (bounds.h - text_size.y) * 0.5,
-						ctx.theme.text_color, ctx.theme.font_size)
+					}, ctx.theme.text_color, ctx.theme.font_size)
 				}
 
 				cs := ctx.theme.chevron_size
@@ -1614,31 +1594,24 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 				left := Vec2f{cx - cs * 0.5, cy - cs * 0.25 * flip}
 				mid := Vec2f{cx, cy + cs * 0.25 * flip}
 				right := Vec2f{cx + cs * 0.5, cy - cs * 0.25 * flip}
-				draw_push_pill(ctx.plugin.draw, left, mid, 1.5, ctx.theme.text_color)
-				draw_push_pill(ctx.plugin.draw, mid, right, 1.5, ctx.theme.text_color)
+				draw_line(ctx.plugin.draw, left, mid, 1.5, {fill = ctx.theme.text_color})
+				draw_line(ctx.plugin.draw, mid, right, 1.5, {fill = ctx.theme.text_color})
 			}
 			case .DropDownItem: {
 				bounds := c.calc_bounds
 				d := c.data.(DropDownItemData) or_continue
 
 				if c.id == ctx.hovered_id {
-					draw_push_rect(ctx.plugin.draw, SimpleUIRect {
-						x = bounds.x, y = bounds.y,
-						width = bounds.w, height = bounds.h,
-						color = ctx.theme.menu_item_hover_color,
-						corner_rad = ctx.theme.corner_radius * 0.5,
-					})
+					draw_rect(ctx.plugin.draw, bounds, {fill = ctx.theme.menu_item_hover_color}, ctx.theme.corner_radius * 0.5)
 				}
 
 				text_size := draw_measure_text(ctx.plugin.draw, d.text, ctx.theme.font_size)
 				text_y := bounds.y + (bounds.h - text_size.y) * 0.5
-				draw_text(ctx.plugin.draw, d.text,
-					bounds.x + ctx.theme.padding * 1.5, text_y,
-					ctx.theme.text_color, ctx.theme.font_size)
+				draw_text(ctx.plugin.draw, d.text, {bounds.x + ctx.theme.padding * 1.5, text_y}, ctx.theme.text_color, ctx.theme.font_size)
 
 				if d.selected {
 					r := ctx.theme.font_size * 0.15
-					draw_circle(ctx.plugin.draw, bounds.x + ctx.theme.padding * 0.75, bounds.y + bounds.h * 0.5, r, ctx.theme.text_color)
+					draw_circle(ctx.plugin.draw, {bounds.x + ctx.theme.padding * 0.75, bounds.y + bounds.h * 0.5}, r, {fill = ctx.theme.text_color})
 				}
 			}
 		}

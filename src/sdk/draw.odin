@@ -33,12 +33,10 @@ RectDrawBatchIterator :: struct {
 	batch: ^RectDrawBatch,
 }
 
-SimpleUIRect :: struct {
-	x, y, width, height: f32,
-	u, v, uw, vh: f32,
-	color: ColorU8,
-	corner_rad: f32,
-	border_color: ColorU8,
+// Border is inset, never grows the shape
+Style :: struct {
+	fill: ColorU8,
+	border: ColorU8,
 	border_width: f32,
 }
 
@@ -146,63 +144,67 @@ draw_remove_scissor :: proc(ctx: ^DrawContext) {
 	draw_set_scissor(ctx, RectF32{0, 0, 0, 0})
 }
 
-// Push a simple colored rectangle
-draw_push_rect :: proc(ctx: ^DrawContext, rect: SimpleUIRect) {
-	cur_batch := draw_get_current_batch(ctx)
-
-	instance : DrawInstance
-	instance.pos0 = {rect.x, rect.y}
-	instance.pos1 = {rect.x + rect.width, rect.y + rect.height}
-	instance.uv0 = {rect.u, rect.v}
-	instance.uv1 = {rect.u + rect.uw, rect.v + rect.vh}
-	instance.color = rect.color
-	instance.shape_param = rect.corner_rad
-	instance.no_texture = 1
-	instance.border_color = rect.border_color
-	instance.border_width = rect.border_width
-	draw_add_instance_to_batch(ctx, cur_batch, instance)
+draw_rect :: proc(ctx: ^DrawContext, rect: RectF32, style: Style, corner_rad: f32 = 0) {
+	draw_instance(ctx, DrawInstance{
+		pos0 = {rect.x, rect.y},
+		pos1 = {rect.x + rect.w, rect.y + rect.h},
+		color = style.fill,
+		border_color = style.border,
+		border_width = style.border_width,
+		shape_param = corner_rad,
+		no_texture = 1,
+		mode = ShaderMode.Rect,
+	})
 }
 
-draw_push_instance :: proc(ctx: ^DrawContext, rect: DrawInstance) {
-	cur_batch := draw_get_current_batch(ctx)
-	draw_add_instance_to_batch(ctx, cur_batch, rect)
+draw_circle :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, style: Style) {
+	draw_rect(ctx, {center.x - radius, center.y - radius, radius * 2, radius * 2}, style, radius)
 }
 
-draw_push_pill :: proc(ctx: ^DrawContext, p0, p1: Vec2f, thickness: f32, color: ColorU8, border_width: f32 = 0, border_color: ColorU8 = {}) {
+// PIll from p0 to p1
+draw_line :: proc(ctx: ^DrawContext, p0, p1: Vec2f, thickness: f32, style: Style) {
 	r := thickness * 0.5 + 1.0
-	instance := DrawInstance{
-		pos0       = {min(p0.x, p1.x) - r, min(p0.y, p1.y) - r},
-		pos1       = {max(p0.x, p1.x) + r, max(p0.y, p1.y) + r},
-		uv0        = p0,
-		uv1        = p1,
-		color      = color,
-		border_color = border_color,
-		border_width = border_width,
+	draw_instance(ctx, DrawInstance{
+		pos0 = {min(p0.x, p1.x) - r, min(p0.y, p1.y) - r},
+		pos1 = {max(p0.x, p1.x) + r, max(p0.y, p1.y) + r},
+		uv0 = p0,
+		uv1 = p1,
+		color = style.fill,
+		border_color = style.border,
+		border_width = style.border_width,
 		shape_param = thickness,
-		no_texture  = 1,
-		mode       = ShaderMode.Pill,
-	}
-	cur_batch := draw_get_current_batch(ctx)
-	draw_add_instance_to_batch(ctx, cur_batch, instance)
+		no_texture = 1,
+		mode = ShaderMode.Pill,
+	})
 }
 
-draw_push_arc :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, start_angle, end_angle: f32, thickness: f32, color: ColorU8, border_width: f32 = 0, border_color: ColorU8 = {}) {
-	margin := radius + thickness * 0.5 + 1.0
-	instance := DrawInstance{
-		pos0        = {center.x - margin, center.y - margin},
-		pos1        = {center.x + margin, center.y + margin},
-		uv0         = center,
-		uv1         = {start_angle, end_angle},
-		color       = color,
-		border_color = border_color,
-		border_width = border_width,
-		shape_param  = thickness,
-		no_texture   = 1,
-		mode        = ShaderMode.Arc,
-		extra0      = radius,
+draw_polyline :: proc(ctx: ^DrawContext, pts: []Vec2f, thickness: f32, style: Style) {
+	if len(pts) < 2 do return
+	for i in 1 ..< len(pts) {
+		draw_line(ctx, pts[i - 1], pts[i], thickness, style)
 	}
-	cur_batch := draw_get_current_batch(ctx)
-	draw_add_instance_to_batch(ctx, cur_batch, instance)
+}
+
+// Angles in radians, 0 = east, increasing clockwise
+draw_arc :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, start_angle, end_angle: f32, thickness: f32, style: Style) {
+	margin := radius + thickness * 0.5 + 1.0
+	draw_instance(ctx, DrawInstance{
+		pos0 = {center.x - margin, center.y - margin},
+		pos1 = {center.x + margin, center.y + margin},
+		uv0 = center,
+		uv1 = {start_angle, end_angle},
+		color = style.fill,
+		border_color = style.border,
+		border_width = style.border_width,
+		shape_param = thickness,
+		no_texture = 1,
+		mode = ShaderMode.Arc,
+		extra0 = radius,
+	})
+}
+
+draw_instance :: proc(ctx: ^DrawContext, instance: DrawInstance) {
+	draw_add_instance_to_batch(ctx, draw_get_current_batch(ctx), instance)
 }
 
 draw_clear :: proc(ctx: ^DrawContext) {
@@ -255,43 +257,23 @@ draw_submit :: proc(ctx: ^DrawContext) {
 	p.end_frame(r)
 }
 
-draw_text :: proc(ctx: ^DrawContext, text: string, x, y: f32, color: ColorU8 = {255, 255, 255, 255}, size: f32 = FONT_SIZE_DEFAULT) {
+// pos is the top-left of the text box
+draw_text :: proc(ctx: ^DrawContext, text: string, pos: Vec2f, color: ColorU8 = {255, 255, 255, 255}, size: f32 = FONT_SIZE_DEFAULT) {
 	str_len := len(text)
 	buf := make([dynamic]DrawInstance, str_len, allocator = context.temp_allocator)
 
 	ascent, _, _ := font_get_vertical_metrics(&ctx.font_state, size)
 
-	counts := font_get_text_quads(&ctx.font_state, text, x, y + ascent, size, buf[:])
+	counts := font_get_text_quads(&ctx.font_state, text, pos.x, pos.y + ascent, size, buf[:])
 
 	draw_set_texture(ctx, ctx.plugin.host.font_atlas, true)
 
 	for &rect in buf {
 		rect.color = color
-		draw_push_instance(ctx, rect)
+		draw_instance(ctx, rect)
 	}
 }
 
 draw_measure_text :: proc(ctx: ^DrawContext, text: string, size: f32 = FONT_SIZE_DEFAULT) -> Vec2f {
 	return font_measure_bounds(&ctx.font_state, text, size)
-}
-
-draw_polyline :: proc(ctx: ^DrawContext, endpts: []Vec2f, color: ColorU8 = {255, 255, 255, 255}, thickness: f32 = 1, border_width: f32 = 0, border_color: ColorU8 = {}) {
-	if len(endpts) < 2 do return
-	start_pt := endpts[0]
-	for end_pt in endpts[1:] {
-		draw_push_pill(ctx, start_pt, end_pt, thickness, color, border_width, border_color)
-		start_pt = end_pt
-	}
-}
-
-draw_filled_rect :: proc(ctx: ^DrawContext, x, y, w, h: f32, color: ColorU8, corner_rad: f32 = 0) {
-	draw_push_rect(ctx, SimpleUIRect{x = x, y = y, width = w, height = h, color = color, corner_rad = corner_rad})
-}
-
-draw_bordered_rect :: proc(ctx: ^DrawContext, x, y, w, h: f32, fill: ColorU8, border: ColorU8, border_width: f32, corner_rad: f32 = 0) {
-	draw_push_rect(ctx, SimpleUIRect{x = x, y = y, width = w, height = h, color = fill, corner_rad = corner_rad, border_color = border, border_width = border_width})
-}
-
-draw_circle :: proc(ctx: ^DrawContext, cx, cy, radius: f32, color: ColorU8) {
-	draw_push_rect(ctx, SimpleUIRect{x = cx - radius, y = cy - radius, width = radius * 2, height = radius * 2, color = color, corner_rad = radius})
 }
