@@ -121,7 +121,14 @@ draw_set_texture :: proc(ctx: ^DrawContext, texture: TextureHandle, single_chann
 	draw_create_new_batch(ctx, params)
 }
 
-draw_set_scissor :: proc(ctx: ^DrawContext, scissor: RectI32) {
+draw_set_scissor :: proc(ctx: ^DrawContext, rect: RectF32) {
+	s := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer).scale_factor
+	x0 := i32(math.round(rect.x * s))
+	y0 := i32(math.round(rect.y * s))
+	x1 := i32(math.round((rect.x + rect.w) * s))
+	y1 := i32(math.round((rect.y + rect.h) * s))
+	scissor := RectI32{x0, y0, x1 - x0, y1 - y0}
+
 	cur_batch := draw_get_current_batch(ctx)
 
 	if cur_batch.params.scissor == scissor || cur_batch.total_instance_count == 0 {
@@ -136,7 +143,7 @@ draw_set_scissor :: proc(ctx: ^DrawContext, scissor: RectI32) {
 }
 
 draw_remove_scissor :: proc(ctx: ^DrawContext) {
-	draw_set_scissor(ctx, RectI32{0, 0, 0, 0})
+	draw_set_scissor(ctx, RectF32{0, 0, 0, 0})
 }
 
 // Push a simple colored rectangle

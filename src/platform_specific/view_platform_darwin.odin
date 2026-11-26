@@ -635,14 +635,18 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	if renderer.render_encoder == nil do return
 	if cmd.instance_count == 0 do return
 
-	// Set scissor if specified (scale logical coords to physical pixels)
 	if cmd.scissor.w > 0 && cmd.scissor.h > 0 {
-		scale := renderer.scale_factor
+		// Metal rejects rects outside the render target
+		x0 := max(cmd.scissor.x, 0)
+		y0 := max(cmd.scissor.y, 0)
+		x1 := min(cmd.scissor.x + cmd.scissor.w, renderer.physical_width)
+		y1 := min(cmd.scissor.y + cmd.scissor.h, renderer.physical_height)
+		if x1 <= x0 || y1 <= y0 do return
 		scissor_rect := MTL.ScissorRect{
-			x = F.Integer(f32(cmd.scissor.x) * scale),
-			y = F.Integer(f32(cmd.scissor.y) * scale),
-			width = F.Integer(f32(cmd.scissor.w) * scale),
-			height = F.Integer(f32(cmd.scissor.h) * scale),
+			x = F.Integer(x0),
+			y = F.Integer(y0),
+			width = F.Integer(x1 - x0),
+			height = F.Integer(y1 - y0),
 		}
 		renderer.render_encoder->setScissorRect(scissor_rect)
 	} else {

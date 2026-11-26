@@ -561,13 +561,9 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	if cmd.instance_count == 0 do return
 
 	if cmd.scissor.w > 0 && cmd.scissor.h > 0 {
-		scale := renderer.scale_factor
-		left := i32(f32(cmd.scissor.x) * scale)
-		top := i32(f32(cmd.scissor.y) * scale)
-		right := i32(f32(cmd.scissor.x + cmd.scissor.w) * scale)
-		bottom := i32(f32(cmd.scissor.y + cmd.scissor.h) * scale)
 		// GL scissor origin is bottom-left
-		gl.Scissor(left, renderer.physical_height - bottom, right - left, bottom - top)
+		bottom := cmd.scissor.y + cmd.scissor.h
+		gl.Scissor(cmd.scissor.x, renderer.physical_height - bottom, cmd.scissor.w, cmd.scissor.h)
 	} else {
 		gl.Scissor(0, 0, renderer.physical_width, renderer.physical_height)
 	}

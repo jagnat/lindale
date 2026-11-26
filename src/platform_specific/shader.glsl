@@ -77,7 +77,13 @@ float rounded_rect_sdf(vec2 p, vec2 halfSize, float cornerRad) {
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - cornerRad;
 }
 
+float edge_coverage(float sdf, float px) {
+	return clamp(0.5 - sdf / px, 0.0, 1.0);
+}
+
 void main() {
+	// SDF units per physical pixel, must precede branches
+	float px = length(fwidth(worldPos)) / sqrt(2.0);
 	float borderWidth = params.x;
 	float shapeParam = params.y;
 	float noTexture = params.z;
@@ -96,11 +102,10 @@ void main() {
 		vec4 outputColor = color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = mix(outputColor, borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0 - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		fragColor = outputColor;
 		return;
 	}
@@ -135,11 +140,10 @@ void main() {
 		vec4 outputColor = color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = mix(outputColor, borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0 - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		fragColor = outputColor;
 		return;
 	}
@@ -165,12 +169,11 @@ void main() {
 		float innerCornerRad = max(cornerRad - borderWidth, 0.0);
 		float innerSdf = rounded_rect_sdf(rectPos, innerHalfSize, innerCornerRad);
 
-		float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 		outputColor = mix(outputColor, borderColor, borderBlend);
 	}
 
-	float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-	outputColor.a *= 1.0 - mixFactor;
+	outputColor.a *= edge_coverage(outerSdf, px);
 
 	fragColor = outputColor;
 }

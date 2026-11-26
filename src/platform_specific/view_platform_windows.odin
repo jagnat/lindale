@@ -781,12 +781,11 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 	if cmd.instance_count == 0 do return
 
 	if cmd.scissor.w > 0 && cmd.scissor.h > 0 {
-		scale := renderer.scale_factor
 		scissor_rect := d3d11.RECT{
-			left = i32(f32(cmd.scissor.x) * scale),
-			top = i32(f32(cmd.scissor.y) * scale),
-			right = i32(f32(cmd.scissor.x + cmd.scissor.w) * scale),
-			bottom = i32(f32(cmd.scissor.y + cmd.scissor.h) * scale),
+			left = cmd.scissor.x,
+			top = cmd.scissor.y,
+			right = cmd.scissor.x + cmd.scissor.w,
+			bottom = cmd.scissor.y + cmd.scissor.h,
 		}
 		renderer.device_context->RSSetScissorRects(1, &scissor_rect)
 	} else {

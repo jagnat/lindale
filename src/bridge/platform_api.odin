@@ -93,7 +93,7 @@ DrawCommand :: struct {
 	instance_count: u32,   // Number of instances to draw
 	texture: TextureHandle,
 	single_channel_texture: bool,
-	scissor: RectI32,     // {0,0,0,0} means no scissor
+	scissor: RectI32,     // physical pixels, {0,0,0,0} means no scissor
 }
 
 // Maximum instances per frame (256MB / 64 bytes)

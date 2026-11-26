@@ -41,6 +41,10 @@ float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
 
+float edge_coverage(float sdf, float px) {
+	return saturate(0.5 - sdf / px);
+}
+
 VSOutput VSMain(VSInput input) {
 	VSOutput output;
 
@@ -75,6 +79,8 @@ VSOutput VSMain(VSInput input) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
+	// SDF units per physical pixel, must precede branches
+	float px = length(fwidth(input.worldPos)) / sqrt(2.0);
 	uint mode = input.mode;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
@@ -94,11 +100,10 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float4 outputColor = input.color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = lerp(outputColor, input.borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0 - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		return outputColor;
 	}
 
@@ -132,11 +137,10 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float4 outputColor = input.color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = lerp(outputColor, input.borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0 - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		return outputColor;
 	}
 
@@ -161,12 +165,11 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float innerCornerRad = max(cornerRad - borderWidth, 0.0);
 		float innerSdf = rounded_rect_sdf(input.rectPos, innerHalfSize, innerCornerRad);
 
-		float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 		outputColor = lerp(outputColor, input.borderColor, borderBlend);
 	}
 
-	float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-	outputColor.a *= 1.0 - mixFactor;
+	outputColor.a *= edge_coverage(outerSdf, px);
 
 	return outputColor;
 }

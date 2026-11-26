@@ -985,14 +985,15 @@ ui_frame_end :: proc(ctx: ^UIContext) {
 	ui_generate_draw_calls(ctx)
 }
 
-// Endpoint-round so siblings stay flush
+// Endpoint-round to physical pixels so siblings stay flush
 ui_snap_components_to_pixels :: proc(ctx: ^UIContext) {
+	s := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer).scale_factor
 	it := ui_iterate_pre_order(ctx)
 	for c in ui_next_pre_order(&it) {
-		x0 := math.round(c.calc_bounds.x)
-		y0 := math.round(c.calc_bounds.y)
-		x1 := math.round(c.calc_bounds.x + c.calc_bounds.w)
-		y1 := math.round(c.calc_bounds.y + c.calc_bounds.h)
+		x0 := math.round(c.calc_bounds.x * s) / s
+		y0 := math.round(c.calc_bounds.y * s) / s
+		x1 := math.round((c.calc_bounds.x + c.calc_bounds.w) * s) / s
+		y1 := math.round((c.calc_bounds.y + c.calc_bounds.h) * s) / s
 		c.calc_bounds = {x0, y0, x1 - x0, y1 - y0}
 	}
 }
@@ -1575,7 +1576,7 @@ ui_generate_draw_calls :: proc(ctx: ^UIContext) {
 			case .Canvas: {
 				d := c.data.(CanvasData) or_continue
 				cb := c.calc_bounds
-				draw_set_scissor(ctx.plugin.draw, RectI32{i32(cb.x), i32(cb.y), i32(cb.w), i32(cb.h)})
+				draw_set_scissor(ctx.plugin.draw, cb)
 				if d.draw_proc != nil do d.draw_proc(ctx, c, d.data)
 				draw_remove_scissor(ctx.plugin.draw)
 			}

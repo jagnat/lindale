@@ -41,6 +41,10 @@ float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
 
+float edge_coverage(float sdf, float px) {
+	return saturate(0.5 - sdf / px);
+}
+
 vertex VSOutput VSMain(VSInput input [[stage_in]],
 	constant UniformBuffer &uniformBuffer [[buffer(0)]],
 	uint vertexId [[vertex_id]]) {
@@ -77,6 +81,8 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 }
 
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
+	// SDF units per physical pixel, must precede branches
+	float px = length(fwidth(input.worldPos)) / sqrt(2.0);
 	uint mode = input.mode;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
@@ -96,11 +102,10 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float4 outputColor = input.color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = mix(outputColor, input.borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0 - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		return outputColor;
 	}
 
@@ -134,11 +139,10 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float4 outputColor = input.color;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
-			float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 			outputColor = mix(outputColor, input.borderColor, borderBlend);
 		}
-		float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-		outputColor.a *= 1.0f - mixFactor;
+		outputColor.a *= edge_coverage(outerSdf, px);
 		return outputColor;
 	}
 
@@ -163,12 +167,11 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float innerCornerRad = max(cornerRad - borderWidth, 0.0);
 		float innerSdf = rounded_rect_sdf(input.rectPos, innerHalfSize, innerCornerRad);
 
-		float borderBlend = smoothstep(-0.5, 0.5, innerSdf);
+		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
 		outputColor = mix(outputColor, input.borderColor, borderBlend);
 	}
 
-	float mixFactor = smoothstep(-0.75, 0.75, outerSdf);
-	outputColor.a *= 1.0f - mixFactor;
+	outputColor.a *= edge_coverage(outerSdf, px);
 
 	return outputColor;
 }
