@@ -113,8 +113,8 @@ DrawCommand :: struct {
 	blend: BlendMode,
 }
 
-// Maximum instances per frame (256MB / 64 bytes)
-MAX_INSTANCES :: 256 * 1024 * 1024 / size_of(DrawInstance)
+// 4MB, renderers double it when a frame needs more
+INITIAL_INSTANCE_CAPACITY :: 4 * 1024 * 1024 / size_of(DrawInstance)
 MAX_TEXTURES :: 64
 
 Renderer :: distinct rawptr

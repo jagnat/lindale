@@ -271,20 +271,10 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		return nil
 	}
 
-	// 1MB instance buffer
-	instance_buffer_size := bridge.MAX_INSTANCES * size_of(bridge.DrawInstance)
-	instance_buffer_desc := d3d11.BUFFER_DESC{
-		ByteWidth = u32(instance_buffer_size),
-		Usage = .DYNAMIC,
-		BindFlags = {.VERTEX_BUFFER},
-		CPUAccessFlags = {.WRITE},
-	}
-	hr = renderer.device->CreateBuffer(&instance_buffer_desc, nil, &renderer.instance_buffer)
-	if hr < 0 {
+	if !create_instance_buffer(renderer, bridge.INITIAL_INSTANCE_CAPACITY) {
 		renderer_destroy(bridge.Renderer(renderer))
 		return nil
 	}
-	renderer.instance_capacity = bridge.MAX_INSTANCES
 
 	uniform_buffer_desc := d3d11.BUFFER_DESC{
 		ByteWidth = size_of(bridge.UniformBuffer),
@@ -733,9 +723,12 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawIn
 	if renderer == nil do return
 	if len(instances) == 0 do return
 	if u32(len(instances)) > renderer.instance_capacity {
-		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instance_capacity)
-		assert(false, "draw instance count exceeded MAX_INSTANCES")
-		return
+		capacity := renderer.instance_capacity
+		for capacity < u32(len(instances)) do capacity *= 2
+		if !create_instance_buffer(renderer, capacity) {
+			log.errorf("failed to grow instance buffer to %d instances", capacity)
+			return
+		}
 	}
 
 	mapped_resource: d3d11.MAPPED_SUBRESOURCE
@@ -840,6 +833,24 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 }
 
 // Pipeline creation
+
+// Replaces the current buffer, which is only released once the new one exists
+@(private)
+create_instance_buffer :: proc(renderer: ^DX11Renderer, capacity: u32) -> bool {
+	desc := d3d11.BUFFER_DESC{
+		ByteWidth = capacity * size_of(bridge.DrawInstance),
+		Usage = .DYNAMIC,
+		BindFlags = {.VERTEX_BUFFER},
+		CPUAccessFlags = {.WRITE},
+	}
+	buffer: ^d3d11.IBuffer
+	if renderer.device->CreateBuffer(&desc, nil, &buffer) < 0 do return false
+
+	if renderer.instance_buffer != nil do renderer.instance_buffer->Release()
+	renderer.instance_buffer = buffer
+	renderer.instance_capacity = capacity
+	return true
+}
 
 @(private)
 create_render_target_view :: proc(renderer: ^DX11Renderer) -> bool {

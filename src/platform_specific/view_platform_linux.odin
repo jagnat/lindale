@@ -73,7 +73,6 @@ GLRenderer :: struct {
 	vao: u32,
 
 	instance_buffer: u32,
-	instance_capacity: u32,
 
 	uniform_buffer: u32,
 	uniforms: bridge.UniformBuffer,
@@ -519,10 +518,6 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawIn
 	renderer := cast(^GLRenderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instance_capacity {
-		assert(false, "draw instance count exceeded MAX_INSTANCES")
-		return
-	}
 
 	// Respecifying the whole store orphans last frame's buffer instead of stalling on it
 	gl.BindBuffer(gl.ARRAY_BUFFER, renderer.instance_buffer)
@@ -703,7 +698,6 @@ create_pipeline :: proc(renderer: ^GLRenderer) -> bool {
 
 	gl.GenBuffers(1, &renderer.instance_buffer)
 	gl.BindBuffer(gl.ARRAY_BUFFER, renderer.instance_buffer)
-	renderer.instance_capacity = bridge.MAX_INSTANCES
 	for _, i in instance_attribs {
 		gl.EnableVertexAttribArray(u32(i))
 		gl.VertexAttribDivisor(u32(i), 1)

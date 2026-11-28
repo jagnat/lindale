@@ -37,6 +37,15 @@ TextureSlot :: struct {
 	in_use: bool,
 }
 
+// The CPU fills one slot while the GPU may still be reading the other
+FRAMES_IN_FLIGHT :: 2
+
+FrameSlot :: struct {
+	instance_buffer: ^MTL.Buffer,
+	instance_capacity: u32,
+	command_buffer: ^MTL.CommandBuffer, // last reader of instance_buffer, retained until it completes
+}
+
 // Metal renderer state - coupled with the view
 MetalRenderer :: struct {
 	view: ^LindaleMetalView,
@@ -45,11 +54,9 @@ MetalRenderer :: struct {
 	command_queue: ^MTL.CommandQueue,
 	pipelines: [bridge.BlendMode]^MTL.RenderPipelineState,
 
-	// One large buffer for all instances
-	instance_buffer: ^MTL.Buffer,
-	instance_capacity: u32,
+	frame_slots: [FRAMES_IN_FLIGHT]FrameSlot,
+	frame_slot: int,
 
-	uniform_buffer: ^MTL.Buffer,
 	uniforms: bridge.UniformBuffer,
 
 	textures: [bridge.MAX_TEXTURES]TextureSlot,
@@ -295,19 +302,11 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		return nil
 	}
 
-	// 1MB instance buffer
-	instance_buffer_size := F.UInteger(bridge.MAX_INSTANCES * size_of(bridge.DrawInstance))
-	renderer.instance_buffer = device->newBufferWithLength(instance_buffer_size, {.StorageModeManaged})
-	if renderer.instance_buffer == nil {
-		free(renderer)
-		return nil
-	}
-	renderer.instance_capacity = bridge.MAX_INSTANCES
-
-	renderer.uniform_buffer = device->newBufferWithLength(size_of(bridge.UniformBuffer), {.StorageModeManaged})
-	if renderer.uniform_buffer == nil {
-		free(renderer)
-		return nil
+	for &slot in renderer.frame_slots {
+		if !create_instance_buffer(renderer, &slot, bridge.INITIAL_INSTANCE_CAPACITY) {
+			free(renderer)
+			return nil
+		}
 	}
 
 	sampler_desc := F.new(MTL.SamplerDescriptor)
@@ -342,8 +341,11 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	}
 
 	if renderer.sampler != nil do F.release(cast(^F.Object)renderer.sampler)
-	if renderer.uniform_buffer != nil do F.release(cast(^F.Object)renderer.uniform_buffer)
-	if renderer.instance_buffer != nil do F.release(cast(^F.Object)renderer.instance_buffer)
+	// In-flight command buffers retain what they use, so no need to wait
+	for &slot in renderer.frame_slots {
+		if slot.command_buffer != nil do F.release(cast(^F.Object)slot.command_buffer)
+		if slot.instance_buffer != nil do F.release(cast(^F.Object)slot.instance_buffer)
+	}
 	for pipeline in renderer.pipelines do if pipeline != nil do F.release(cast(^F.Object)pipeline)
 	if renderer.command_queue != nil do F.release(cast(^F.Object)renderer.command_queue)
 
@@ -516,6 +518,14 @@ renderer_begin_frame :: proc(r: bridge.Renderer) -> bool {
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return false
 
+	renderer.frame_slot = (renderer.frame_slot + 1) % FRAMES_IN_FLIGHT
+	slot := &renderer.frame_slots[renderer.frame_slot]
+	if slot.command_buffer != nil {
+		slot.command_buffer->waitUntilCompleted()
+		F.release(cast(^F.Object)slot.command_buffer)
+		slot.command_buffer = nil
+	}
+
 	// contentsScale and drawableSize need to be in lock-step.
 	// A cross-DPI screen change updates one but not the other, stranding the drawable at the old pixel count
 	scale_factor := get_backing_scale_factor(renderer)
@@ -547,6 +557,9 @@ renderer_end_frame :: proc(r: bridge.Renderer) {
 		(cast(^MTL.Drawable)renderer.current_drawable)->present()
 	}
 
+	F.retain(cast(^F.Object)renderer.command_buffer)
+	renderer.frame_slots[renderer.frame_slot].command_buffer = renderer.command_buffer
+
 	renderer.command_buffer = nil
 	renderer.current_drawable = nil
 }
@@ -555,17 +568,21 @@ renderer_upload_instances :: proc(r: bridge.Renderer, instances: []bridge.DrawIn
 	renderer := cast(^MetalRenderer)r
 	if renderer == nil do return
 	if len(instances) == 0 do return
-	if u32(len(instances)) > renderer.instance_capacity {
-		log.errorf("instance overflow: %d > cap %d — dropping upload, GPU buffer stale", len(instances), renderer.instance_capacity)
-		assert(false, "draw instance count exceeded MAX_INSTANCES")
-		return
+	slot := &renderer.frame_slots[renderer.frame_slot]
+	if u32(len(instances)) > slot.instance_capacity {
+		capacity := slot.instance_capacity
+		for capacity < u32(len(instances)) do capacity *= 2
+		if !create_instance_buffer(renderer, slot, capacity) {
+			log.errorf("failed to grow instance buffer to %d instances", capacity)
+			return
+		}
 	}
 
-	buffer_ptr := renderer.instance_buffer->contentsAsSlice([]bridge.DrawInstance)
+	buffer_ptr := slot.instance_buffer->contentsAsSlice([]bridge.DrawInstance)
 	copy(buffer_ptr, instances)
 
 	// Mark the modified range for managed storage mode
-	renderer.instance_buffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.DrawInstance))})
+	slot.instance_buffer->didModifyRange(F.Range{0, F.UInteger(len(instances) * size_of(bridge.DrawInstance))})
 }
 
 renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
@@ -616,7 +633,7 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 	renderer.render_encoder->setViewport(viewport)
 
 	// Bind instance buffer (buffer index 1 for vertex data)
-	renderer.render_encoder->setVertexBuffer(renderer.instance_buffer, 0, 1)
+	renderer.render_encoder->setVertexBuffer(renderer.frame_slots[renderer.frame_slot].instance_buffer, 0, 1)
 }
 
 renderer_end_pass :: proc(r: bridge.Renderer) {
@@ -663,11 +680,10 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 
 	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
 
-	uniform_ptr := renderer.uniform_buffer->contentsAsSlice([]bridge.UniformBuffer)
-	uniform_ptr[0] = renderer.uniforms
-	renderer.uniform_buffer->didModifyRange(F.Range{0, size_of(bridge.UniformBuffer)})
-	renderer.render_encoder->setVertexBuffer(renderer.uniform_buffer, 0, 0)
-	renderer.render_encoder->setFragmentBuffer(renderer.uniform_buffer, 0, 0)
+	// Copied at encode time, a shared buffer would give every draw the last write
+	uniform_bytes := ([^]byte)(&renderer.uniforms)[:size_of(bridge.UniformBuffer)]
+	renderer.render_encoder->setVertexBytes(uniform_bytes, 0)
+	renderer.render_encoder->setFragmentBytes(uniform_bytes, 0)
 
 	texture_handle := cmd.texture
 	if texture_handle == bridge.INVALID_TEXTURE {
@@ -687,6 +703,18 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 }
 
 // Pipeline creation
+
+// Only called once the slot's last command buffer has completed
+@(private)
+create_instance_buffer :: proc(renderer: ^MetalRenderer, slot: ^FrameSlot, capacity: u32) -> bool {
+	buffer := renderer.device->newBufferWithLength(F.UInteger(capacity * size_of(bridge.DrawInstance)), {.StorageModeManaged})
+	if buffer == nil do return false
+
+	if slot.instance_buffer != nil do F.release(cast(^F.Object)slot.instance_buffer)
+	slot.instance_buffer = buffer
+	slot.instance_capacity = capacity
+	return true
+}
 
 @(private)
 create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {

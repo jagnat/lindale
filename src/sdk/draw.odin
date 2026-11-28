@@ -77,7 +77,7 @@ draw_get_current_batch :: proc(ctx: ^DrawContext) -> ^RectDrawBatch {
 }
 
 draw_create_new_batch :: proc(ctx: ^DrawContext, params: RectDrawBatchParams) -> ^RectDrawBatch {
-	new_batch := new(RectDrawBatch, allocator = context.temp_allocator)
+	new_batch := new(RectDrawBatch, allocator = ctx.plugin.host.frame_allocator)
 	new_batch.params = params
 	if ctx.batches_last != nil {
 		ctx.batches_last.next = new_batch
@@ -91,8 +91,8 @@ draw_create_new_batch :: proc(ctx: ^DrawContext, params: RectDrawBatchParams) ->
 
 draw_add_instance_to_batch :: proc(ctx: ^DrawContext, batch: ^RectDrawBatch, instance: DrawInstance) {
 	last_chunk := batch.chunk_last
-	if last_chunk == nil || last_chunk.instance_count + 1 >= len(last_chunk.instance_pool) {
-		new_chunk := new(RectDrawChunk, allocator = context.temp_allocator)
+	if last_chunk == nil || last_chunk.instance_count >= len(last_chunk.instance_pool) {
+		new_chunk := new(RectDrawChunk, allocator = ctx.plugin.host.frame_allocator)
 		if last_chunk != nil do last_chunk.next = new_chunk
 		batch.chunk_last = new_chunk
 		if batch.chunk_first == nil do batch.chunk_first = new_chunk
@@ -240,7 +240,7 @@ draw_submit :: proc(ctx: ^DrawContext) {
 	}
 
 	if ctx.batches_first != nil {
-		instances := make([]DrawInstance, ctx.total_instance_count, context.temp_allocator)
+		instances := make([]DrawInstance, ctx.total_instance_count, ctx.plugin.host.frame_allocator)
 		idx: u32 = 0
 		for batch := ctx.batches_first; batch != nil; batch = batch.next {
 			for chunk := batch.chunk_first; chunk != nil; chunk = chunk.next {
@@ -272,16 +272,15 @@ draw_submit :: proc(ctx: ^DrawContext) {
 
 // pos is the top-left of the text box
 draw_text :: proc(ctx: ^DrawContext, text: string, pos: Vec2f, color: ColorU8 = {255, 255, 255, 255}, size: f32 = FONT_SIZE_DEFAULT) {
-	str_len := len(text)
-	buf := make([dynamic]DrawInstance, str_len, allocator = context.temp_allocator)
+	buf := make([]DrawInstance, len(text), ctx.plugin.host.frame_allocator)
 
 	ascent, _, _ := font_get_vertical_metrics(&ctx.font_state, size)
 
-	counts := font_get_text_quads(&ctx.font_state, text, pos.x, pos.y + ascent, size, buf[:])
+	count := font_get_text_quads(&ctx.font_state, text, pos.x, pos.y + ascent, size, buf)
 
 	draw_set_texture(ctx, ctx.plugin.host.font_atlas, true)
 
-	for &rect in buf {
+	for &rect in buf[:count] {
 		rect.color = color
 		draw_instance(ctx, rect)
 	}
