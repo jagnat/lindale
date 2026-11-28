@@ -13,6 +13,9 @@ ColorU8 :: b.ColorU8
 ColorF32 :: b.ColorF32
 DrawInstance :: b.DrawInstance
 ShaderMode   :: b.ShaderMode
+BlendMode :: b.BlendMode
+DrawFlag :: b.DrawFlag
+DrawFlags :: b.DrawFlags
 TextureHandle :: b.TextureHandle
 DrawCommand :: b.DrawCommand
 MouseState :: b.MouseState

@@ -547,8 +547,6 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 	gl.BindBufferBase(gl.UNIFORM_BUFFER, 0, renderer.uniform_buffer)
 
 	gl.Enable(gl.BLEND)
-	gl.BlendEquation(gl.FUNC_ADD)
-	gl.BlendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ZERO)
 }
 
 renderer_end_pass :: proc(r: bridge.Renderer) {
@@ -566,6 +564,21 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 		gl.Scissor(cmd.scissor.x, renderer.physical_height - bottom, cmd.scissor.w, cmd.scissor.h)
 	} else {
 		gl.Scissor(0, 0, renderer.physical_width, renderer.physical_height)
+	}
+
+	switch cmd.blend {
+	case .Normal:
+		gl.BlendEquation(gl.FUNC_ADD)
+		gl.BlendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+	case .Additive:
+		gl.BlendEquation(gl.FUNC_ADD)
+		gl.BlendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE)
+	case .Multiply:
+		gl.BlendEquation(gl.FUNC_ADD)
+		gl.BlendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+	case .Max:
+		// Factors are ignored for MAX
+		gl.BlendEquation(gl.MAX)
 	}
 
 	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
@@ -595,35 +608,43 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 // Pipeline creation
 
 @(private="file")
+InstanceAttribKind :: enum {
+	Float,
+	Normalized, // u8 -> 0..1
+	Integer,
+}
+
+@(private="file")
 InstanceAttrib :: struct {
 	components: i32,
 	type: u32,
+	kind: InstanceAttribKind,
 	offset: uintptr,
 }
 
 @(private="file")
 instance_attribs := [?]InstanceAttrib{
-	{2, gl.FLOAT, offset_of(bridge.DrawInstance, pos0)},
-	{2, gl.FLOAT, offset_of(bridge.DrawInstance, pos1)},
-	{2, gl.FLOAT, offset_of(bridge.DrawInstance, uv0)},
-	{2, gl.FLOAT, offset_of(bridge.DrawInstance, uv1)},
-	{4, gl.UNSIGNED_BYTE, offset_of(bridge.DrawInstance, color)},
-	{4, gl.UNSIGNED_BYTE, offset_of(bridge.DrawInstance, border_color)},
-	{3, gl.FLOAT, offset_of(bridge.DrawInstance, border_width)}, // border_width, shape_param, no_texture
-	{1, gl.UNSIGNED_INT, offset_of(bridge.DrawInstance, mode)},
-	{2, gl.FLOAT, offset_of(bridge.DrawInstance, extra0)}, // extra0, extra1
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, pos0)},
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, pos1)},
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, uv0)},
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, uv1)},
+	{4, gl.UNSIGNED_BYTE, .Normalized, offset_of(bridge.DrawInstance, color)},
+	{4, gl.UNSIGNED_BYTE, .Normalized, offset_of(bridge.DrawInstance, border_color)},
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, border_width)}, // border_width, shape_param
+	{2, gl.FLOAT, .Float, offset_of(bridge.DrawInstance, extra0)}, // extra0, extra1
+	{4, gl.UNSIGNED_BYTE, .Integer, offset_of(bridge.DrawInstance, mode)}, // mode, flags, 2 spare bytes
 }
 
 @(private="file")
 point_instance_attribs :: proc(base_offset: uintptr) {
 	stride := i32(size_of(bridge.DrawInstance))
 	for attrib, i in instance_attribs {
-		switch attrib.type {
-		case gl.UNSIGNED_INT:
+		switch attrib.kind {
+		case .Integer:
 			gl.VertexAttribIPointer(u32(i), attrib.components, attrib.type, stride, base_offset + attrib.offset)
-		case gl.UNSIGNED_BYTE:
+		case .Normalized:
 			gl.VertexAttribPointer(u32(i), attrib.components, attrib.type, true, stride, base_offset + attrib.offset)
-		case:
+		case .Float:
 			gl.VertexAttribPointer(u32(i), attrib.components, attrib.type, false, stride, base_offset + attrib.offset)
 		}
 	}

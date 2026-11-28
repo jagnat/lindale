@@ -8,6 +8,9 @@ struct UniformBuffer {
 	uint _pad;
 };
 
+// Matches bridge.DrawFlag
+constant uint DRAW_FLAG_TEXTURED = 1u;
+
 struct VSInput {
 	float2 pos0 [[attribute(0)]];
 	float2 pos1 [[attribute(1)]];
@@ -15,9 +18,9 @@ struct VSInput {
 	float2 uv1 [[attribute(3)]];
 	float4 color [[attribute(4)]];
 	float4 borderColor [[attribute(5)]];
-	float3 params [[attribute(6)]]; // (borderWidth, shapeParam, noTexture)
-	uint mode [[attribute(7)]];
-	float2 extras [[attribute(8)]]; // (extra0, extra1)
+	float2 params [[attribute(6)]]; // (borderWidth, shapeParam)
+	float2 extras [[attribute(7)]]; // (extra0, extra1)
+	uchar4 modeFlags [[attribute(8)]]; // (mode, flags, spare, spare)
 };
 
 struct VSOutput {
@@ -27,8 +30,8 @@ struct VSOutput {
 	float2 halfRectSize [[flat]];
 	float4 color [[flat]];
 	float4 borderColor [[flat]];
-	float3 params [[flat]];
-	uint mode [[flat]];
+	float2 params [[flat]];
+	uint2 modeFlags [[flat]];
 	float2 worldPos;
 	float2 instanceUv0 [[flat]];
 	float2 instanceUv1 [[flat]];
@@ -43,6 +46,17 @@ float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 
 float edge_coverage(float sdf, float px) {
 	return saturate(0.5 - sdf / px);
+}
+
+float4 premultiply(float4 c) {
+	return float4(c.rgb * c.a, c.a);
+}
+
+// Interleaved gradient noise under 1 LSB, breaks up 8-bit banding
+float4 dither(float4 c, float2 fragCoord) {
+	float n = fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))));
+	c.rgb += (n - 0.5) / 255.0;
+	return c;
 }
 
 vertex VSOutput VSMain(VSInput input [[stage_in]],
@@ -71,7 +85,7 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 	output.color = input.color;
 	output.borderColor = input.borderColor;
 	output.params = input.params;
-	output.mode = input.mode;
+	output.modeFlags = uint2(input.modeFlags.xy);
 	output.worldPos = posToPick;
 	output.instanceUv0 = input.uv0;
 	output.instanceUv1 = input.uv1;
@@ -83,10 +97,12 @@ vertex VSOutput VSMain(VSInput input [[stage_in]],
 fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &uniformBuffer [[buffer(0)]], texture2d<float> tex [[texture(0)]], sampler sampl [[sampler(0)]]) {
 	// SDF units per physical pixel, must precede branches
 	float px = length(fwidth(input.worldPos)) / sqrt(2.0);
-	uint mode = input.mode;
+	uint mode = input.modeFlags.x;
+	uint flags = input.modeFlags.y;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
-	float noTexture = input.params.z;
+	float4 fillColor = premultiply(input.color);
+	float4 borderColor = premultiply(input.borderColor);
 
 	if (mode == 1u) {
 		// Pill (capsule) SDF
@@ -99,14 +115,14 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float d = length(pa - ba * h);
 		float outerSdf = d - shapeParam * 0.5;
 
-		float4 outputColor = input.color;
+		float4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = mix(outputColor, input.borderColor, borderBlend);
+			outputColor = mix(outputColor, borderColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		return outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		return dither(outputColor, input.pos.xy);
 	}
 
 	if (mode == 2u) {
@@ -136,27 +152,27 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		}
 		float outerSdf = d - shapeParam * 0.5;
 
-		float4 outputColor = input.color;
+		float4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = mix(outputColor, input.borderColor, borderBlend);
+			outputColor = mix(outputColor, borderColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		return outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		return dither(outputColor, input.pos.xy);
 	}
 
 	// mode == 0: Rect SDF
-	float4 outputColor = input.color;
+	float4 outputColor = fillColor;
 	float cornerRad = shapeParam;
 
-	if (noTexture < 1) {
+	if ((flags & DRAW_FLAG_TEXTURED) != 0u) {
 		float4 sampleColor = tex.sample(sampl, input.uv);
 
 		if (uniformBuffer.singleChannelTexture == 1) {
-			outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
+			outputColor = fillColor * sampleColor.r;
 		} else {
-			outputColor = input.color * sampleColor;
+			outputColor = fillColor * sampleColor;
 		}
 	}
 
@@ -168,10 +184,10 @@ fragment float4 PSMain(VSOutput input [[stage_in]], constant UniformBuffer &unif
 		float innerSdf = rounded_rect_sdf(input.rectPos, innerHalfSize, innerCornerRad);
 
 		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-		outputColor = mix(outputColor, input.borderColor, borderBlend);
+		outputColor = mix(outputColor, borderColor, borderBlend);
 	}
 
-	outputColor.a *= edge_coverage(outerSdf, px);
+	outputColor *= edge_coverage(outerSdf, px);
 
-	return outputColor;
+	return dither(outputColor, input.pos.xy);
 }

@@ -43,7 +43,7 @@ MetalRenderer :: struct {
 	layer: ^CA.MetalLayer,
 	device: ^MTL.Device,
 	command_queue: ^MTL.CommandQueue,
-	pipeline: ^MTL.RenderPipelineState,
+	pipelines: [bridge.BlendMode]^MTL.RenderPipelineState,
 
 	// One large buffer for all instances
 	instance_buffer: ^MTL.Buffer,
@@ -344,7 +344,7 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	if renderer.sampler != nil do F.release(cast(^F.Object)renderer.sampler)
 	if renderer.uniform_buffer != nil do F.release(cast(^F.Object)renderer.uniform_buffer)
 	if renderer.instance_buffer != nil do F.release(cast(^F.Object)renderer.instance_buffer)
-	if renderer.pipeline != nil do F.release(cast(^F.Object)renderer.pipeline)
+	for pipeline in renderer.pipelines do if pipeline != nil do F.release(cast(^F.Object)pipeline)
 	if renderer.command_queue != nil do F.release(cast(^F.Object)renderer.command_queue)
 
 	if renderer.view != nil {
@@ -604,7 +604,6 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 	color_attachment->setStoreAction(.Store)
 
 	renderer.render_encoder = renderer.command_buffer->renderCommandEncoderWithDescriptor(pass_desc)
-	renderer.render_encoder->setRenderPipelineState(renderer.pipeline)
 
 	viewport := MTL.Viewport{
 		originX = 0,
@@ -659,6 +658,8 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 		}
 		renderer.render_encoder->setScissorRect(scissor_rect)
 	}
+
+	renderer.render_encoder->setRenderPipelineState(renderer.pipelines[cmd.blend])
 
 	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
 
@@ -740,18 +741,18 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	vertex_desc->attributes()->object(5)->setOffset(8 * size_of(f32) + 4)
 	vertex_desc->attributes()->object(5)->setBufferIndex(1)
 
-	// Attribute 6: params - border_width, shape_param, no_texture
-	vertex_desc->attributes()->object(6)->setFormat(.Float3)
+	// Attribute 6: params - border_width, shape_param
+	vertex_desc->attributes()->object(6)->setFormat(.Float2)
 	vertex_desc->attributes()->object(6)->setOffset(10 * size_of(f32))
 	vertex_desc->attributes()->object(6)->setBufferIndex(1)
 
-	// Attribute 7: mode - shape selector
-	vertex_desc->attributes()->object(7)->setFormat(.UInt)
-	vertex_desc->attributes()->object(7)->setOffset(13 * size_of(f32))
+	// Attribute 7: extras - extra0, extra1
+	vertex_desc->attributes()->object(7)->setFormat(.Float2)
+	vertex_desc->attributes()->object(7)->setOffset(12 * size_of(f32))
 	vertex_desc->attributes()->object(7)->setBufferIndex(1)
 
-	// Attribute 8: extras - extra0, extra1
-	vertex_desc->attributes()->object(8)->setFormat(.Float2)
+	// Attribute 8: mode, flags, 2 spare bytes
+	vertex_desc->attributes()->object(8)->setFormat(.UChar4)
 	vertex_desc->attributes()->object(8)->setOffset(14 * size_of(f32))
 	vertex_desc->attributes()->object(8)->setBufferIndex(1)
 
@@ -767,20 +768,36 @@ create_pipeline :: proc(renderer: ^MetalRenderer) -> bool {
 	pipeline_desc->setFragmentFunction(fragment_func)
 	pipeline_desc->setVertexDescriptor(vertex_desc)
 
-	// Color attachment with alpha blending
 	color_attachment := pipeline_desc->colorAttachments()->object(0)
 	color_attachment->setPixelFormat(.BGRA8Unorm)
 	color_attachment->setBlendingEnabled(true)
-	color_attachment->setSourceRGBBlendFactor(.SourceAlpha)
-	color_attachment->setDestinationRGBBlendFactor(.OneMinusSourceAlpha)
-	color_attachment->setRgbBlendOperation(.Add)
-	color_attachment->setSourceAlphaBlendFactor(.One)
-	color_attachment->setDestinationAlphaBlendFactor(.Zero)
-	color_attachment->setAlphaBlendOperation(.Add)
 
-	pipeline, pipeline_err := renderer.device->newRenderPipelineState(pipeline_desc)
-	if pipeline_err != nil do return false
+	// Blend state is baked into the pipeline, so one per mode
+	for mode in bridge.BlendMode {
+		src_rgb := MTL.BlendFactor.One
+		dst_rgb := MTL.BlendFactor.OneMinusSourceAlpha
+		dst_alpha := MTL.BlendFactor.OneMinusSourceAlpha
+		op := MTL.BlendOperation.Add
+		switch mode {
+		case .Normal:
+		case .Additive:
+			dst_rgb = .One
+			dst_alpha = .One
+		case .Multiply:
+			src_rgb = .DestinationColor
+		case .Max:
+			op = .Max
+		}
+		color_attachment->setSourceRGBBlendFactor(src_rgb)
+		color_attachment->setDestinationRGBBlendFactor(dst_rgb)
+		color_attachment->setRgbBlendOperation(op)
+		color_attachment->setSourceAlphaBlendFactor(.One)
+		color_attachment->setDestinationAlphaBlendFactor(dst_alpha)
+		color_attachment->setAlphaBlendOperation(op)
 
-	renderer.pipeline = pipeline
+		pipeline, pipeline_err := renderer.device->newRenderPipelineState(pipeline_desc)
+		if pipeline_err != nil do return false
+		renderer.pipelines[mode] = pipeline
+	}
 	return true
 }

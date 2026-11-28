@@ -4,6 +4,9 @@ cbuffer UniformBuffer : register(b0) {
 	uint singleChannelTexture;
 }
 
+// Matches bridge.DrawFlag
+static const uint DRAW_FLAG_TEXTURED = 1u;
+
 Texture2D tex : register(t0);
 SamplerState sampl : register(s0);
 
@@ -14,9 +17,9 @@ struct VSInput {
 	float2 uv1 : TEXCOORD3;
 	float4 color : TEXCOORD4;
 	float4 borderColor : TEXCOORD5;
-	float3 params : TEXCOORD6; // (borderWidth, shapeParam, noTexture)
-	uint mode : TEXCOORD7;
-	float2 extras : TEXCOORD8; // (extra0, extra1)
+	float2 params : TEXCOORD6; // (borderWidth, shapeParam)
+	float2 extras : TEXCOORD7; // (extra0, extra1)
+	uint4 modeFlags : TEXCOORD8; // (mode, flags, spare, spare)
 	uint vertexId : SV_VertexID;
 };
 
@@ -27,8 +30,8 @@ struct VSOutput {
 	nointerpolation float2 halfRectSize : TEXCOORD2;
 	nointerpolation float4 color : TEXCOORD3;
 	nointerpolation float4 borderColor : TEXCOORD4;
-	nointerpolation float3 params : TEXCOORD5;
-	nointerpolation uint mode : TEXCOORD6;
+	nointerpolation float2 params : TEXCOORD5;
+	nointerpolation uint2 modeFlags : TEXCOORD6;
 	float2 worldPos : TEXCOORD7;
 	nointerpolation float2 instanceUv0 : TEXCOORD8;
 	nointerpolation float2 instanceUv1 : TEXCOORD9;
@@ -43,6 +46,17 @@ float rounded_rect_sdf(float2 input, float2 halfRectSize, float cornerRad) {
 
 float edge_coverage(float sdf, float px) {
 	return saturate(0.5 - sdf / px);
+}
+
+float4 premultiply(float4 c) {
+	return float4(c.rgb * c.a, c.a);
+}
+
+// Interleaved gradient noise under 1 LSB, breaks up 8-bit banding
+float4 dither(float4 c, float2 fragCoord) {
+	float n = frac(52.9829189 * frac(dot(fragCoord, float2(0.06711056, 0.00583715))));
+	c.rgb += (n - 0.5) / 255.0;
+	return c;
 }
 
 VSOutput VSMain(VSInput input) {
@@ -69,7 +83,7 @@ VSOutput VSMain(VSInput input) {
 	output.color = input.color;
 	output.borderColor = input.borderColor;
 	output.params = input.params;
-	output.mode = input.mode;
+	output.modeFlags = input.modeFlags.xy;
 	output.worldPos = posToPick;
 	output.instanceUv0 = input.uv0;
 	output.instanceUv1 = input.uv1;
@@ -81,10 +95,12 @@ VSOutput VSMain(VSInput input) {
 float4 PSMain(VSOutput input) : SV_TARGET {
 	// SDF units per physical pixel, must precede branches
 	float px = length(fwidth(input.worldPos)) / sqrt(2.0);
-	uint mode = input.mode;
+	uint mode = input.modeFlags.x;
+	uint flags = input.modeFlags.y;
 	float borderWidth = input.params.x;
 	float shapeParam = input.params.y;
-	float noTexture = input.params.z;
+	float4 fillColor = premultiply(input.color);
+	float4 borderColor = premultiply(input.borderColor);
 
 	if (mode == 1u) {
 		// Pill (capsule) SDF
@@ -97,14 +113,14 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float d = length(pa - ba * h);
 		float outerSdf = d - shapeParam * 0.5;
 
-		float4 outputColor = input.color;
+		float4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = lerp(outputColor, input.borderColor, borderBlend);
+			outputColor = lerp(outputColor, borderColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		return outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		return dither(outputColor, input.pos.xy);
 	}
 
 	if (mode == 2u) {
@@ -134,27 +150,27 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		}
 		float outerSdf = d - shapeParam * 0.5;
 
-		float4 outputColor = input.color;
+		float4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = lerp(outputColor, input.borderColor, borderBlend);
+			outputColor = lerp(outputColor, borderColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		return outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		return dither(outputColor, input.pos.xy);
 	}
 
 	// mode == 0: Rect SDF
-	float4 outputColor = input.color;
+	float4 outputColor = fillColor;
 	float cornerRad = shapeParam;
 
-	if (noTexture < 1.0) {
+	if ((flags & DRAW_FLAG_TEXTURED) != 0u) {
 		float4 sampleColor = tex.Sample(sampl, input.uv);
 
 		if (singleChannelTexture == 1) {
-			outputColor = float4(input.color.rgb, input.color.a * sampleColor.r);
+			outputColor = fillColor * sampleColor.r;
 		} else {
-			outputColor = input.color * sampleColor;
+			outputColor = fillColor * sampleColor;
 		}
 	}
 
@@ -166,10 +182,10 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 		float innerSdf = rounded_rect_sdf(input.rectPos, innerHalfSize, innerCornerRad);
 
 		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-		outputColor = lerp(outputColor, input.borderColor, borderBlend);
+		outputColor = lerp(outputColor, borderColor, borderBlend);
 	}
 
-	outputColor.a *= edge_coverage(outerSdf, px);
+	outputColor *= edge_coverage(outerSdf, px);
 
-	return outputColor;
+	return dither(outputColor, input.pos.xy);
 }

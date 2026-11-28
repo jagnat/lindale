@@ -18,6 +18,7 @@ RectDrawBatchParams :: struct {
 	scissor: RectI32,
 	texture: TextureHandle,
 	single_channel_texture: bool,
+	blend: BlendMode,
 }
 
 RectDrawBatch :: struct {
@@ -119,6 +120,20 @@ draw_set_texture :: proc(ctx: ^DrawContext, texture: TextureHandle, single_chann
 	draw_create_new_batch(ctx, params)
 }
 
+draw_set_blend_mode :: proc(ctx: ^DrawContext, blend: BlendMode) {
+	cur_batch := draw_get_current_batch(ctx)
+
+	if cur_batch.params.blend == blend || cur_batch.total_instance_count == 0 {
+		cur_batch.params.blend = blend
+		return
+	}
+
+	params := cur_batch.params
+	params.blend = blend
+
+	draw_create_new_batch(ctx, params)
+}
+
 draw_set_scissor :: proc(ctx: ^DrawContext, rect: RectF32) {
 	s := ctx.plugin.host.platform.get_size(ctx.plugin.host.renderer).scale_factor
 	x0 := i32(math.round(rect.x * s))
@@ -152,7 +167,6 @@ draw_rect :: proc(ctx: ^DrawContext, rect: RectF32, style: Style, corner_rad: f3
 		border_color = style.border,
 		border_width = style.border_width,
 		shape_param = corner_rad,
-		no_texture = 1,
 		mode = ShaderMode.Rect,
 	})
 }
@@ -173,7 +187,6 @@ draw_line :: proc(ctx: ^DrawContext, p0, p1: Vec2f, thickness: f32, style: Style
 		border_color = style.border,
 		border_width = style.border_width,
 		shape_param = thickness,
-		no_texture = 1,
 		mode = ShaderMode.Pill,
 	})
 }
@@ -197,7 +210,6 @@ draw_arc :: proc(ctx: ^DrawContext, center: Vec2f, radius: f32, start_angle, end
 		border_color = style.border,
 		border_width = style.border_width,
 		shape_param = thickness,
-		no_texture = 1,
 		mode = ShaderMode.Arc,
 		extra0 = radius,
 	})
@@ -249,6 +261,7 @@ draw_submit :: proc(ctx: ^DrawContext) {
 			texture = batch.params.texture,
 			single_channel_texture = batch.params.single_channel_texture,
 			scissor = batch.params.scissor,
+			blend = batch.params.blend,
 		})
 		offset += batch.total_instance_count
 	}

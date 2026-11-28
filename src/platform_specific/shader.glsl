@@ -9,6 +9,9 @@ layout(std140) uniform UniformBuffer {
 
 uniform sampler2D tex;
 
+// Matches bridge.DrawFlag
+const uint DRAW_FLAG_TEXTURED = 1u;
+
 #ifdef VERTEX
 #define VARYING out
 #else
@@ -20,8 +23,8 @@ VARYING vec2 rectPos;
 flat VARYING vec2 halfRectSize;
 flat VARYING vec4 color;
 flat VARYING vec4 borderColor;
-flat VARYING vec3 params; // (borderWidth, shapeParam, noTexture)
-flat VARYING uint mode;
+flat VARYING vec2 params; // (borderWidth, shapeParam)
+flat VARYING uvec2 modeFlags; // (mode, flags)
 VARYING vec2 worldPos;
 flat VARYING vec2 instanceUv0;
 flat VARYING vec2 instanceUv1;
@@ -35,9 +38,9 @@ layout(location = 2) in vec2 inUv0;
 layout(location = 3) in vec2 inUv1;
 layout(location = 4) in vec4 inColor;
 layout(location = 5) in vec4 inBorderColor;
-layout(location = 6) in vec3 inParams;
-layout(location = 7) in uint inMode;
-layout(location = 8) in vec2 inExtras;
+layout(location = 6) in vec2 inParams;
+layout(location = 7) in vec2 inExtras;
+layout(location = 8) in uvec4 inModeFlags;
 
 void main() {
 	vec2 posToPick = inPos0;
@@ -61,7 +64,7 @@ void main() {
 	color = inColor;
 	borderColor = inBorderColor;
 	params = inParams;
-	mode = inMode;
+	modeFlags = inModeFlags.xy;
 	worldPos = posToPick;
 	instanceUv0 = inUv0;
 	instanceUv1 = inUv1;
@@ -81,12 +84,26 @@ float edge_coverage(float sdf, float px) {
 	return clamp(0.5 - sdf / px, 0.0, 1.0);
 }
 
+vec4 premultiply(vec4 c) {
+	return vec4(c.rgb * c.a, c.a);
+}
+
+// Interleaved gradient noise under 1 LSB, breaks up 8-bit banding
+vec4 dither(vec4 c) {
+	float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+	c.rgb += (n - 0.5) / 255.0;
+	return c;
+}
+
 void main() {
 	// SDF units per physical pixel, must precede branches
 	float px = length(fwidth(worldPos)) / sqrt(2.0);
+	uint mode = modeFlags.x;
+	uint flags = modeFlags.y;
 	float borderWidth = params.x;
 	float shapeParam = params.y;
-	float noTexture = params.z;
+	vec4 fillColor = premultiply(color);
+	vec4 strokeColor = premultiply(borderColor);
 
 	if (mode == 1u) {
 		// Pill (capsule) SDF
@@ -99,14 +116,14 @@ void main() {
 		float d = length(pa - ba * h);
 		float outerSdf = d - shapeParam * 0.5;
 
-		vec4 outputColor = color;
+		vec4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = mix(outputColor, borderColor, borderBlend);
+			outputColor = mix(outputColor, strokeColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		fragColor = outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		fragColor = dither(outputColor);
 		return;
 	}
 
@@ -137,28 +154,28 @@ void main() {
 		}
 		float outerSdf = d - shapeParam * 0.5;
 
-		vec4 outputColor = color;
+		vec4 outputColor = fillColor;
 		if (borderWidth > 0.0) {
 			float innerSdf = d - max(shapeParam * 0.5 - borderWidth, 0.0);
 			float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-			outputColor = mix(outputColor, borderColor, borderBlend);
+			outputColor = mix(outputColor, strokeColor, borderBlend);
 		}
-		outputColor.a *= edge_coverage(outerSdf, px);
-		fragColor = outputColor;
+		outputColor *= edge_coverage(outerSdf, px);
+		fragColor = dither(outputColor);
 		return;
 	}
 
 	// mode == 0: Rect SDF
-	vec4 outputColor = color;
+	vec4 outputColor = fillColor;
 	float cornerRad = shapeParam;
 
-	if (noTexture < 1.0) {
+	if ((flags & DRAW_FLAG_TEXTURED) != 0u) {
 		vec4 sampleColor = texture(tex, uv);
 
 		if (singleChannelTexture == 1u) {
-			outputColor = vec4(color.rgb, color.a * sampleColor.r);
+			outputColor = fillColor * sampleColor.r;
 		} else {
-			outputColor = color * sampleColor;
+			outputColor = fillColor * sampleColor;
 		}
 	}
 
@@ -170,12 +187,12 @@ void main() {
 		float innerSdf = rounded_rect_sdf(rectPos, innerHalfSize, innerCornerRad);
 
 		float borderBlend = 1.0 - edge_coverage(innerSdf, px);
-		outputColor = mix(outputColor, borderColor, borderBlend);
+		outputColor = mix(outputColor, strokeColor, borderBlend);
 	}
 
-	outputColor.a *= edge_coverage(outerSdf, px);
+	outputColor *= edge_coverage(outerSdf, px);
 
-	fragColor = outputColor;
+	fragColor = dither(outputColor);
 }
 
 #endif

@@ -64,7 +64,7 @@ DX11Renderer :: struct {
 	next_texture_slot: u32,
 	sampler: ^d3d11.ISamplerState,
 
-	blend_state: ^d3d11.IBlendState,
+	blend_states: [bridge.BlendMode]^d3d11.IBlendState,
 	rasterizer_state: ^d3d11.IRasterizerState,
 
 	// logical = points for UI, physical = actual pixels
@@ -313,26 +313,38 @@ renderer_create :: proc(parent: rawptr, width, height: i32) -> bridge.Renderer {
 		return nil
 	}
 
-	blend_desc := d3d11.BLEND_DESC{
-		AlphaToCoverageEnable = false,
-		IndependentBlendEnable = false,
-		RenderTarget = {
-			0 = {
-				BlendEnable = true,
-				SrcBlend = .SRC_ALPHA,
-				DestBlend = .INV_SRC_ALPHA,
-				BlendOp = .ADD,
-				SrcBlendAlpha = .ONE,
-				DestBlendAlpha = .ZERO,
-				BlendOpAlpha = .ADD,
-				RenderTargetWriteMask = 0xf,
+	for mode in bridge.BlendMode {
+		blend_desc := d3d11.BLEND_DESC{
+			RenderTarget = {
+				0 = {
+					BlendEnable = true,
+					SrcBlend = .ONE,
+					DestBlend = .INV_SRC_ALPHA,
+					BlendOp = .ADD,
+					SrcBlendAlpha = .ONE,
+					DestBlendAlpha = .INV_SRC_ALPHA,
+					BlendOpAlpha = .ADD,
+					RenderTargetWriteMask = 0xf,
+				},
 			},
-		},
-	}
-	hr = renderer.device->CreateBlendState(&blend_desc, &renderer.blend_state)
-	if hr < 0 {
-		renderer_destroy(bridge.Renderer(renderer))
-		return nil
+		}
+		rt := &blend_desc.RenderTarget[0]
+		switch mode {
+		case .Normal:
+		case .Additive:
+			rt.DestBlend = .ONE
+			rt.DestBlendAlpha = .ONE
+		case .Multiply:
+			rt.SrcBlend = .DEST_COLOR
+		case .Max:
+			rt.BlendOp = .MAX
+			rt.BlendOpAlpha = .MAX
+		}
+		hr = renderer.device->CreateBlendState(&blend_desc, &renderer.blend_states[mode])
+		if hr < 0 {
+			renderer_destroy(bridge.Renderer(renderer))
+			return nil
+		}
 	}
 
 	rasterizer_desc := d3d11.RASTERIZER_DESC{
@@ -382,7 +394,7 @@ renderer_destroy :: proc(r: bridge.Renderer) {
 	}
 
 	if renderer.rasterizer_state != nil do renderer.rasterizer_state->Release()
-	if renderer.blend_state != nil do renderer.blend_state->Release()
+	for state in renderer.blend_states do if state != nil do state->Release()
 	if renderer.sampler != nil do renderer.sampler->Release()
 	if renderer.uniform_buffer != nil do renderer.uniform_buffer->Release()
 	if renderer.instance_buffer != nil do renderer.instance_buffer->Release()
@@ -765,9 +777,6 @@ renderer_begin_pass :: proc(r: bridge.Renderer, clear_color: bridge.ColorF32) {
 
 	renderer.device_context->IASetPrimitiveTopology(.TRIANGLESTRIP)
 
-	blend_factor := [4]f32{0, 0, 0, 0}
-	renderer.device_context->OMSetBlendState(renderer.blend_state, &blend_factor, 0xffffffff)
-
 	renderer.device_context->RSSetState(renderer.rasterizer_state)
 }
 
@@ -797,6 +806,9 @@ renderer_draw :: proc(r: bridge.Renderer, cmd: bridge.DrawCommand) {
 		}
 		renderer.device_context->RSSetScissorRects(1, &scissor_rect)
 	}
+
+	blend_factor := [4]f32{0, 0, 0, 0}
+	renderer.device_context->OMSetBlendState(renderer.blend_states[cmd.blend], &blend_factor, 0xffffffff)
 
 	renderer.uniforms.single_channel_texture = cmd.single_channel_texture ? 1 : 0
 
@@ -932,12 +944,12 @@ create_pipeline :: proc(renderer: ^DX11Renderer) -> bool {
 		{SemanticName = "TEXCOORD", SemanticIndex = 4, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 32, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 		// Attribute 5: border_color
 		{SemanticName = "TEXCOORD", SemanticIndex = 5, Format = .R8G8B8A8_UNORM,      InputSlot = 0, AlignedByteOffset = 36, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		// Attribute 6: params - border_width, shape_param, no_texture
-		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32B32_FLOAT,     InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		// Attribute 7: mode - shape selector
-		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32_UINT,            InputSlot = 0, AlignedByteOffset = 52, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
-		// Attribute 8: extras - extra0, extra1
-		{SemanticName = "TEXCOORD", SemanticIndex = 8, Format = .R32G32_FLOAT,        InputSlot = 0, AlignedByteOffset = 56, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 6: params - border_width, shape_param
+		{SemanticName = "TEXCOORD", SemanticIndex = 6, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 40, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 7: extras - extra0, extra1
+		{SemanticName = "TEXCOORD", SemanticIndex = 7, Format = .R32G32_FLOAT, InputSlot = 0, AlignedByteOffset = 48, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
+		// Attribute 8: mode, flags, 2 spare bytes
+		{SemanticName = "TEXCOORD", SemanticIndex = 8, Format = .R8G8B8A8_UINT, InputSlot = 0, AlignedByteOffset = 56, InputSlotClass = .INSTANCE_DATA, InstanceDataStepRate = 1},
 	}
 
 	hr = renderer.device->CreateInputLayout(

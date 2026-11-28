@@ -43,15 +43,30 @@ MouseState :: struct {
 	modifiers: KeyModifierSet,
 }
 
-ShaderMode :: enum u32 {
+ShaderMode :: enum u8 {
 	Rect = 0,
 	Pill = 1,
 	Arc  = 2,
 }
 
+// Blend factors assume premultiplied alpha pixel shader output
+BlendMode :: enum u32 {
+	Normal,
+	Additive,
+	Multiply,
+	Max,
+}
+
+// Bit values mirrored as DRAW_FLAG_* in the shaders
+DrawFlag :: enum u8 {
+	Textured, // samples tex between uv0 and uv1
+}
+DrawFlags :: bit_set[DrawFlag; u8]
+
 // Instance data for SDF draw primitives.
 // pos0/pos1 are always the AABB for the vertex shader quad.
-// uv0/uv1 and extras are reinterpreted per mode.
+// Shape fields (uv0, uv1, shape_param, extra0, extra1) are reinterpreted per mode.
+// Style fields (color, border_color, border_width, flags) mean the same in every mode.
 // Must match vertex shader input format.
 DrawInstance :: struct #packed {
 	pos0: [2]f32, // AABB top-left
@@ -62,10 +77,11 @@ DrawInstance :: struct #packed {
 	border_color: ColorU8,
 	border_width: f32,
 	shape_param: f32, // Rect: corner_rad. Pill/Arc: thickness.
-	no_texture: f32,
-	mode: ShaderMode,
 	extra0: f32, // Arc: radius.
 	extra1: f32,
+	mode: ShaderMode,
+	flags: DrawFlags,
+	_spare: [6]u8, // read by the shaders as modeFlags.zw, otherwise free
 }
 #assert(size_of(DrawInstance) == 64)
 
@@ -83,7 +99,7 @@ INVALID_TEXTURE :: TextureHandle(0)
 
 // Texture format for creation
 PixelFormat :: enum {
-	RGBA8,       // 4 bytes per pixel
+	RGBA8, // 4 bytes per pixel, premultiplied alpha
 	R8,          // 1 byte per pixel (fonts, masks)
 }
 
@@ -94,6 +110,7 @@ DrawCommand :: struct {
 	texture: TextureHandle,
 	single_channel_texture: bool,
 	scissor: RectI32,     // physical pixels, {0,0,0,0} means no scissor
+	blend: BlendMode,
 }
 
 // Maximum instances per frame (256MB / 64 bytes)

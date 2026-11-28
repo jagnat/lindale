@@ -45,6 +45,7 @@ font_get_text_quads :: proc(ctx: ^FontState, text: string, x, y: f32, size: f32,
 			pos1 = {quad.x1 * inv_scale, quad.y1 * inv_scale},
 			uv0  = {quad.s0, quad.t0},
 			uv1  = {quad.s1, quad.t1},
+			flags = {.Textured},
 		}
 		rects[i] = instance
 		i += 1
